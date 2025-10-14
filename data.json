@@ -1,0 +1,14 @@
+{
+    "Ali": {
+        "password": "2900",
+        "registered_at": "2025-10-09 14:22:27"
+    },
+    "Connor": {
+        "password": "2009",
+        "registered_at": "2025-10-09 14:25:17"
+    },
+    "Ben": {
+        "password": "Ben2900",
+        "registered_at": "2025-10-14 13:09:40"
+    }
+}

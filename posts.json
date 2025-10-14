@@ -1,0 +1,32 @@
+{
+    "Ali": [
+        {
+            "post": "Hello world!",
+            "posted_at": "2025-10-09 14:00:00"
+        },
+        {
+            "post": "Another update!",
+            "posted_at": "2025-10-09 15:00:00"
+        }
+    ],
+    "Connor": [
+        {
+            "post": "Gay",
+            "posted_at": "2025-10-09 15:09:25"
+        },
+        {
+            "post": "KLSPOAM",
+            "posted_at": "2025-10-09 15:10:06"
+        },
+        {
+            "post": "uduawda",
+            "posted_at": "2025-10-09 15:10:11"
+        }
+    ],
+    "Ben": [
+        {
+            "post": "I think Connor is mad",
+            "posted_at": "2025-10-14 13:09:56"
+        }
+    ]
+}
