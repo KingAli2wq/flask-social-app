@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.tox/
+.pytest_cache/
+coverage.xml
+
+# Environments
+.env
+env/
+venv/
+ENV/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database
+*.sqlite3
+
+# Media (optional - consider enabling Git LFS for large media)
+# Uncomment to ignore raw media files if you don't want to track them in git
+# /media/*.mp4
+# /media/*.mov
+# /media/*.mkv
+
+# Ignore Python compiled files in repo root
+*.pyc
