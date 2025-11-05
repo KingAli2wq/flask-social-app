@@ -1,0 +1,219 @@
+{
+    "Ali|Connor": [
+        {
+            "sender": "Ali",
+            "content": "Hey yo wsp?",
+            "time": "2025-10-17 14:56:22",
+            "attachments": [],
+            "id": "106fdba54a9d44978468c268322d71c6",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Connor",
+            "content": "hey yooo",
+            "time": "2025-10-17 14:57:00",
+            "attachments": [],
+            "id": "873ed9d4cc3846d3bc052ae3a2689516",
+            "reactions": {
+                "👍": [
+                    "Ali"
+                ],
+                "❤️": [
+                    "Ali"
+                ]
+            },
+            "seen_by": [
+                "Ali"
+            ],
+            "updated_at": "2025-10-29 14:28:29"
+        },
+        {
+            "sender": "Ali",
+            "content": "yoooo",
+            "time": "2025-10-17 15:10:57",
+            "attachments": [],
+            "id": "2830d2d6bb464316b529a0aa55dd5a44",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Connor",
+            "content": "g",
+            "time": "2025-10-19 20:59:37",
+            "attachments": [],
+            "id": "5d133d4e2da04695a16e4102ddb73cc7",
+            "reactions": {
+                "👍": [
+                    "Ali"
+                ]
+            },
+            "seen_by": [
+                "Ali"
+            ],
+            "updated_at": "2025-10-30 13:29:21"
+        },
+        {
+            "sender": "Ali",
+            "content": "heyyy",
+            "time": "2025-10-19 21:03:41",
+            "attachments": [],
+            "id": "95da4f56ca7445dca842e33b1ba9b90c",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Connor",
+            "content": "s",
+            "time": "2025-10-19 21:04:25",
+            "attachments": [],
+            "id": "f8e2d52c60ba4d3294cdd5dd329cff34",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Ali",
+            "content": "hey",
+            "time": "2025-10-20 00:45:01",
+            "attachments": [],
+            "id": "4da8540ed450424288fea589cf1fc6d1",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Connor",
+            "content": "We should check the #Hackathon hashtag later.",
+            "time": "2025-10-27 10:15:08",
+            "attachments": [],
+            "id": "770555b2c28841d6aacb28a519c1911b",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Ali",
+            "content": "Agreed, I heard Maya is hosting a space at 8.",
+            "time": "2025-10-27 10:16:44",
+            "attachments": [],
+            "id": "4e96815913d34298a1d1d1b0675956b2",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        }
+    ],
+    "Ali|Maya": [
+        {
+            "sender": "Ali",
+            "content": "Maya, have you seen the new #DevEcho update?",
+            "time": "2025-10-26 09:14:02",
+            "attachments": [],
+            "id": "00421a8cbf904e9c8c656c3fdc45dd1b",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Maya",
+            "content": "Yes! The trending analytics tab looks slick.",
+            "time": "2025-10-26 09:15:37",
+            "attachments": [],
+            "id": "32c6499a2a494e4bb25721bfef60f07b",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        },
+        {
+            "sender": "Ali",
+            "content": "Let's brainstorm features for the launch stream tonight.",
+            "time": "2025-10-26 09:18:05",
+            "attachments": [],
+            "id": "c9734ff3a8b24652ad441db2d4f2f5ff",
+            "reactions": {},
+            "seen_by": [
+                "Ali"
+            ]
+        }
+    ],
+    "Maya|Sofia": [
+        {
+            "sender": "Maya",
+            "content": "Sofia, can you review the new onboarding copy?",
+            "time": "2025-10-26 13:22:11",
+            "attachments": []
+        },
+        {
+            "sender": "Sofia",
+            "content": "On it! Loving the #DesignTeam feedback thread.",
+            "time": "2025-10-26 13:24:46",
+            "attachments": []
+        },
+        {
+            "sender": "Maya",
+            "content": "Thanks! I'll add the screenshots later this afternoon.",
+            "time": "2025-10-26 13:27:03",
+            "attachments": []
+        }
+    ],
+    "Jordan|Sofia": [
+        {
+            "sender": "Jordan",
+            "content": "Going live at 6pm with a Q&A on the new analytics.",
+            "time": "2025-10-26 17:02:55",
+            "attachments": []
+        },
+        {
+            "sender": "Sofia",
+            "content": "Perfect, I'll schedule a story shoutout in 10 minutes.",
+            "time": "2025-10-26 17:04:18",
+            "attachments": []
+        }
+    ],
+    "Liam|Priya": [
+        {
+            "sender": "Liam",
+            "content": "Analytics panel shows a spike in followers overnight.",
+            "time": "2025-10-27 07:42:09",
+            "attachments": []
+        },
+        {
+            "sender": "Priya",
+            "content": "Yup, #DevTips is trending again across the network!",
+            "time": "2025-10-27 07:44:51",
+            "attachments": []
+        },
+        {
+            "sender": "Liam",
+            "content": "Let's publish a quick carousel to keep momentum going.",
+            "time": "2025-10-27 07:47:33",
+            "attachments": []
+        }
+    ],
+    "Ben|Priya": [
+        {
+            "sender": "Ben",
+            "content": "Thanks for the beta feedback!",
+            "time": "2025-10-25 20:14:56",
+            "attachments": []
+        },
+        {
+            "sender": "Priya",
+            "content": "Anytime, I'll test the group chats tonight as well.",
+            "time": "2025-10-25 20:16:43",
+            "attachments": []
+        }
+    ]
+}

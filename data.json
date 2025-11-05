@@ -1,14 +1,156 @@
 {
     "Ali": {
         "password": "2900",
-        "registered_at": "2025-10-09 14:22:27"
+        "registered_at": "2025-10-16 17:02:05",
+        "notifications": [],
+        "following": [
+            "Connor",
+            "Maya",
+            "Sofia"
+        ],
+        "followers": [
+            "Connor",
+            "Maya",
+            "Jordan"
+        ],
+        "profile_picture": "Profile Pictures/image (5).png",
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
     },
     "Connor": {
         "password": "2009",
-        "registered_at": "2025-10-09 14:25:17"
+        "registered_at": "2025-10-16 17:02:05",
+        "notifications": [],
+        "following": [
+            "Ali",
+            "Maya"
+        ],
+        "followers": [
+            "Ali",
+            "Maya",
+            "Sofia"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
     },
     "Ben": {
         "password": "Ben2900",
-        "registered_at": "2025-10-14 13:09:40"
+        "registered_at": "2025-10-16 17:02:05",
+        "notifications": [],
+        "following": [
+            "Liam"
+        ],
+        "followers": [
+            "Priya"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
+    },
+    "Maya": {
+        "password": "maya2025",
+        "registered_at": "2025-10-24 09:15:18",
+        "notifications": [],
+        "following": [
+            "Ali",
+            "Sofia",
+            "Priya"
+        ],
+        "followers": [
+            "Ali",
+            "Connor",
+            "Jordan",
+            "Sofia"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
+    },
+    "Jordan": {
+        "password": "jordan2025",
+        "registered_at": "2025-10-25 11:27:42",
+        "notifications": [],
+        "following": [
+            "Ali",
+            "Connor",
+            "Maya"
+        ],
+        "followers": [
+            "Sofia",
+            "Liam"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
+    },
+    "Sofia": {
+        "password": "sofia2025",
+        "registered_at": "2025-10-25 15:04:11",
+        "notifications": [],
+        "following": [
+            "Maya",
+            "Ali",
+            "Connor",
+            "Jordan"
+        ],
+        "followers": [
+            "Ali",
+            "Connor",
+            "Jordan"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
+    },
+    "Liam": {
+        "password": "liam2025",
+        "registered_at": "2025-10-26 08:48:33",
+        "notifications": [],
+        "following": [
+            "Jordan",
+            "Maya"
+        ],
+        "followers": [
+            "Ben",
+            "Priya"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
+    },
+    "Priya": {
+        "password": "priya2025",
+        "registered_at": "2025-10-26 19:02:51",
+        "notifications": [],
+        "following": [
+            "Maya",
+            "Sofia",
+            "Liam",
+            "Ben"
+        ],
+        "followers": [
+            "Ben",
+            "Maya"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07"
     }
 }

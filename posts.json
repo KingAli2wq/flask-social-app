@@ -1,32 +1,313 @@
-{
-    "Ali": [
-        {
-            "post": "Hello world!",
-            "posted_at": "2025-10-09 14:00:00"
-        },
-        {
-            "post": "Another update!",
-            "posted_at": "2025-10-09 15:00:00"
-        }
-    ],
-    "Connor": [
-        {
-            "post": "Gay",
-            "posted_at": "2025-10-09 15:09:25"
-        },
-        {
-            "post": "KLSPOAM",
-            "posted_at": "2025-10-09 15:10:06"
-        },
-        {
-            "post": "uduawda",
-            "posted_at": "2025-10-09 15:10:11"
-        }
-    ],
-    "Ben": [
-        {
-            "post": "I think Connor is mad",
-            "posted_at": "2025-10-14 13:09:56"
-        }
-    ]
-}
+[
+    {
+        "author": "Ali",
+        "content": "awlmdawdaw",
+        "created_at": "2025-10-16 17:59:11",
+        "edited": false,
+        "edited_at": null,
+        "replies": [],
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Ali",
+        "content": "@Connor",
+        "created_at": "2025-10-16 18:33:39",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Connor",
+                "content": "hey wsp",
+                "created_at": "2025-10-17 13:47:26",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [],
+                "disliked_by": [],
+                "likes": 0,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Connor"
+        ],
+        "disliked_by": [],
+        "likes": 1,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Connor",
+        "content": "Hey, wsp",
+        "created_at": "2025-10-17 13:47:42",
+        "edited": true,
+        "edited_at": "2025-10-17 13:48:51",
+        "replies": [],
+        "liked_by": [
+            "Connor",
+            "Ali"
+        ],
+        "disliked_by": [],
+        "likes": 2,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Ali",
+        "content": "",
+        "created_at": "2025-10-17 14:04:21",
+        "attachments": [
+            {
+                "type": "image",
+                "path": "media/image.png"
+            }
+        ],
+        "edited": false,
+        "edited_at": null,
+        "replies": [],
+        "liked_by": [
+            "Connor"
+        ],
+        "disliked_by": [],
+        "likes": 1,
+        "dislikes": 0
+    },
+    {
+        "author": "Ali",
+        "content": "heyyy",
+        "created_at": "2025-10-20 01:20:08",
+        "edited": false,
+        "edited_at": null,
+        "replies": [],
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Ali",
+        "content": "Test, 123",
+        "created_at": "2025-10-23 17:40:17",
+        "edited": false,
+        "edited_at": null,
+        "replies": [],
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
+        "attachments": [
+            {
+                "type": "video",
+                "path": "media/vecteezy_countdown-timer-intro-video-with-paper-background_11362996.mp4",
+                "name": "vecteezy_countdown-timer-intro-video-with-paper-background_11362996.mp4",
+                "size": 2061910
+            }
+        ]
+    },
+    {
+        "author": "Ali",
+        "content": "Test 234",
+        "created_at": "2025-10-23 18:03:39",
+        "edited": false,
+        "edited_at": null,
+        "replies": [],
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
+        "attachments": [
+            {
+                "type": "video",
+                "path": "media/34730-403408248.mp4",
+                "name": "34730-403408248.mp4",
+                "size": 8450157
+            }
+        ]
+    },
+    {
+        "author": "Maya",
+        "content": "Launching the analytics insights tab today! #DevEcho #Analytics",
+        "created_at": "2025-10-26 10:08:12",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Ali",
+                "content": "Can't wait to showcase it on the feed!",
+                "created_at": "2025-10-26 10:15:02",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Maya"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Ali",
+            "Connor",
+            "Sofia"
+        ],
+        "disliked_by": [],
+        "likes": 3,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Jordan",
+        "content": "Going live at 6pm to talk roadmaps and community feedback. Drop your questions! #LiveStream #DevEcho",
+        "created_at": "2025-10-26 16:48:05",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Sofia",
+                "content": "I'll be moderating the chat — send me any topics you want covered!",
+                "created_at": "2025-10-26 16:51:47",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Jordan"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Ali",
+            "Liam",
+            "Priya"
+        ],
+        "disliked_by": [],
+        "likes": 3,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Sofia",
+        "content": "Finalizing the onboarding illustrations tonight. Which palette do you prefer? #DesignTeam #Product",
+        "created_at": "2025-10-26 14:32:19",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Maya",
+                "content": "Option B feels more on-brand. Loving the gradients!",
+                "created_at": "2025-10-26 14:40:10",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Sofia"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Maya",
+            "Jordan",
+            "Connor"
+        ],
+        "disliked_by": [],
+        "likes": 3,
+        "dislikes": 0,
+        "attachments": [
+            {
+                "type": "image",
+                "path": "media/image.png",
+                "name": "image.png"
+            }
+        ]
+    },
+    {
+        "author": "Liam",
+        "content": "Quick #DevTips thread: schedule your posts around the analytics peaks for max reach.",
+        "created_at": "2025-10-27 08:02:44",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Priya",
+                "content": "Yes! Tuesday mornings have been gold for us lately.",
+                "created_at": "2025-10-27 08:06:12",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Liam"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Priya",
+            "Jordan",
+            "Ben"
+        ],
+        "disliked_by": [],
+        "likes": 3,
+        "dislikes": 0,
+        "attachments": []
+    },
+    {
+        "author": "Priya",
+        "content": "Shoutout to everyone testing the new group chat flow tonight! #Community #Feedback",
+        "created_at": "2025-10-27 09:36:57",
+        "edited": false,
+        "edited_at": null,
+        "replies": [
+            {
+                "author": "Liam",
+                "content": "I'll compile the analytics after the session and drop a summary.",
+                "created_at": "2025-10-27 09:41:20",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Priya"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            },
+            {
+                "author": "Connor",
+                "content": "Count me in — I'll stress test the notifications.",
+                "created_at": "2025-10-27 09:44:33",
+                "edited": false,
+                "edited_at": null,
+                "liked_by": [
+                    "Ali"
+                ],
+                "disliked_by": [],
+                "likes": 1,
+                "dislikes": 0,
+                "attachments": []
+            }
+        ],
+        "liked_by": [
+            "Maya",
+            "Sofia",
+            "Ali",
+            "Jordan"
+        ],
+        "disliked_by": [],
+        "likes": 4,
+        "dislikes": 0,
+        "attachments": []
+    }
+]

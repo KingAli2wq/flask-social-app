@@ -1,101 +1,396 @@
-from flask import Flask, render_template, request, redirect, url_for, session
-import json
-from datetime import datetime
+from __future__ import annotations
 
-app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+from pathlib import Path
+from typing import Dict, Optional
 
-# Load users and posts
-try:
-    with open("data.json", "r") as file:
-        users = json.load(file)
-except:
-    users = {}
+import customtkinter as ctk
+from PIL import Image
 
-try:
-    with open("posts.json", "r") as file:
-        posts = json.load(file)
-except:
-    posts = {}
+from UI import (
+    build_dm_frame,
+    build_home_frame,
+    build_search_frame,
+    build_videos_frame,
+    build_inspect_profile_frame,
+    build_notifications_frame,
+    build_profile_frame,
+    handle_frame_shown,
+    handle_open_messages,
+    handle_show_notifications,
+    handle_sign_in,
+    initialize_ui,
+    register_nav_controls,
+    register_show_frame_callback,
+    refresh_views,
+    create_nav_button,
+    refresh_nav_icons,
+    set_active_nav,
+    set_nav_icon_key,
+    set_nav_palette,
+    update_theme_palette,
+)
 
-@app.route('/')
-def home():
-    return render_template("home.html", posts=posts)
+Palette = Dict[str, str]
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "media" / "dev_echo_logo.png"
+SPLASH_LOGO_PATH = BASE_DIR / "media" / "dev_echo_loading.png"
+LOGO_SIZE: tuple[int, int] = (36, 36)
+SPLASH_LOGO_SIZE: tuple[int, int] = (180, 180)
+SPLASH_DURATION_MS = 1500
 
-        if username in users:
-            return "Username already exists."
+THEMES: dict[str, dict[str, object]] = {
+    "dark": {
+        "appearance": "Dark",
+        "palette": {
+            "bg": "#0b1120",
+            "surface": "#111827",
+            "card": "#1f2937",
+            "accent": "#2563eb",
+            "accent_hover": "#1d4ed8",
+            "muted": "#94a3b8",
+            "text": "#f8fafc",
+            "danger": "#ef4444",
+            "danger_hover": "#dc2626",
+        },
+    },
+    "light": {
+        "appearance": "Light",
+        "palette": {
+            "bg": "#f8fafc",
+            "surface": "#e2e8f0",
+            "card": "#ffffff",
+            "accent": "#455d58",
+            "accent_hover": "#233031",
+            "muted": "#64748b",
+            "text": "#0f172a",
+            "danger": "#ef4444",
+            "danger_hover": "#dc2626",
+        },
+    },
+}
 
-        if password in [info["password"] for info in users.values()]:
-            return "Password already exists."
+current_theme = "dark"
+current_palette: Palette = dict(THEMES[current_theme]["palette"])  # type: ignore[arg-type]
 
-        users[username] = {
-            "password": password,
-            "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
+frames: dict[str, ctk.CTkFrame] = {}
+active_frame_name = "home"
+root: ctk.CTk
+nav_panel: ctk.CTkFrame
+nav_buttons_frame: ctk.CTkFrame
+nav_footer: ctk.CTkFrame
+content: ctk.CTkFrame
+home_btn: ctk.CTkButton
+profile_btn: ctk.CTkButton
+signin_btn: ctk.CTkButton
+notifications_btn: ctk.CTkButton
+messages_btn: ctk.CTkButton
+theme_btn: ctk.CTkButton
+exit_btn: ctk.CTkButton
 
-        with open("data.json", "w") as file:
-            json.dump(users, file, indent=4)
+logo_img: Optional[ctk.CTkImage] = None
+splash_logo_img: Optional[ctk.CTkImage] = None
+splash_screen: Optional[ctk.CTkToplevel] = None
 
-        session['username'] = username
-        return redirect(url_for('profile'))
+FRAME_TO_NAV = {
+    "home": "home",
+    "videos": "videos",
+    "search": "search",
+    "profile": "profile",
+    "notifications": "notifications",
+    "inspect_profile": "profile",
+    "dm": "messages",
+}
 
-    return render_template("register.html")
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+def load_logo_image(path: Path, size: tuple[int, int]) -> Optional[ctk.CTkImage]:
+    """Load the DevEcho logo if the asset is available."""
+    if not path.exists():
+        print(f"Logo asset missing: {path}")
+        return None
+    try:
+        with Image.open(path) as source:
+            pil_image = source.convert("RGBA")
+    except OSError as exc:
+        print(f"Failed to load logo asset: {exc}")
+        return None
+    return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=size)
 
-        if username in users and users[username]["password"] == password:
-            session['username'] = username
-            return redirect(url_for('profile'))
-        else:
-            return "Invalid username or password."
 
-    return render_template("login.html")
+def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
+    """Render a splash screen while the main window initializes."""
+    splash = ctk.CTkToplevel(parent)
+    splash.overrideredirect(True)
+    splash.attributes("-topmost", True)
+    splash.configure(fg_color=current_palette["bg"])
 
-@app.route('/profile')
-def profile():
-    username = session.get('username')
-    if not username:
-        return redirect(url_for('login'))
+    width, height = 360, 420
+    screen_width = splash.winfo_screenwidth()
+    screen_height = splash.winfo_screenheight()
+    pos_x = int((screen_width - width) / 2)
+    pos_y = int((screen_height - height) / 2)
+    splash.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
 
-    user_data = users.get(username)
-    user_posts = posts.get(username, [])
-    return render_template("profile.html", username=username, user_data=user_data, user_posts=user_posts)
+    container = ctk.CTkFrame(splash, fg_color="transparent")
+    container.pack(expand=True, fill="both", padx=32, pady=32)
 
-@app.route('/post', methods=['POST'])
-def post():
-    username = session.get('username')
-    if not username:
-        return redirect(url_for('login'))
-
-    new_post = {
-        "post": request.form['post'],
-        "posted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    if username in posts:
-        posts[username].append(new_post)
+    if splash_logo_img:
+        logo_label = ctk.CTkLabel(container, text="", image=splash_logo_img, fg_color="transparent")
+        logo_label.pack(pady=(24, 16))
     else:
-        posts[username] = [new_post]
+        placeholder = ctk.CTkLabel(
+            container,
+            text="DevEcho",
+            font=ctk.CTkFont(size=36, weight="bold"),
+            text_color=current_palette["text"],
+        )
+        placeholder.pack(pady=(48, 16))
 
-    with open("posts.json", "w") as file:
-        json.dump(posts, file, indent=4)
+    message = ctk.CTkLabel(
+        container,
+        text="Loading DevEcho...",
+        font=ctk.CTkFont(size=18, weight="bold"),
+        text_color=current_palette["text"],
+    )
+    message.pack(pady=(0, 24))
 
-    return redirect(url_for('home'))
+    progress = ctk.CTkProgressBar(container, mode="indeterminate")
+    progress.pack(fill="x", pady=(0, 12))
+    progress.start()
 
-@app.route('/logout')
-def logout():
-    session.pop('username', None)
-    return redirect(url_for('login'))
+    footer = ctk.CTkLabel(
+        container,
+        text="Preparing your feed",
+        font=ctk.CTkFont(size=12),
+        text_color=current_palette["muted"],
+    )
+    footer.pack()
 
-if __name__ == '__main__':
-    app.run(debug=True)
+    splash.update_idletasks()
+    return splash
+
+
+def show_frame(name: str) -> None:
+    global active_frame_name
+    for frame in frames.values():
+        frame.grid_remove()
+    target = frames.get(name)
+    if target:
+        target.grid(row=0, column=0, sticky="nswe")
+        active_frame_name = name
+    set_active_nav(FRAME_TO_NAV.get(name))
+    handle_frame_shown(name)
+
+
+def refresh_ui() -> None:
+    refresh_views(frames)
+
+
+def update_theme_button() -> None:
+    icon_key = "theme_sun" if current_theme == "dark" else "theme_moon"
+    set_nav_icon_key("theme", icon_key)
+
+
+def configure_shell_palette() -> None:
+    root.configure(fg_color=current_palette["bg"])
+    if nav_panel:
+        nav_panel.configure(fg_color=current_palette["surface"])
+    if nav_buttons_frame:
+        nav_buttons_frame.configure(fg_color="transparent")
+    if nav_footer:
+        nav_footer.configure(fg_color="transparent")
+    set_nav_palette(current_palette)
+    update_theme_button()
+
+
+def apply_theme(mode: str) -> None:
+    global current_theme, current_palette
+    if mode not in THEMES:
+        return
+    theme = THEMES[mode]
+    current_theme = mode
+    current_palette = dict(theme["palette"])  # type: ignore[arg-type]
+    configure_shell_palette()
+    update_theme_palette(current_palette)
+
+
+def toggle_theme() -> None:
+    apply_theme("light" if current_theme == "dark" else "dark")
+
+
+ctk.set_appearance_mode(THEMES[current_theme]["appearance"])  # type: ignore[arg-type]
+
+root = ctk.CTk()
+root.title("DevEcho")
+root.geometry("900x600")
+root.minsize(720, 520)
+root.withdraw()
+
+
+def _apply_fullscreen_size() -> None:
+    """Resize the window to match the full screen dimensions."""
+    width = root.winfo_screenwidth()
+    height = root.winfo_screenheight()
+    root.geometry(f"{width}x{height}+0+0")
+    try:
+        root.state("zoomed")
+    except Exception:
+        pass
+
+splash_logo_img = load_logo_image(SPLASH_LOGO_PATH, SPLASH_LOGO_SIZE)
+splash_screen = show_splash_screen(root)
+
+root.configure(fg_color=current_palette["bg"])
+root.grid_rowconfigure(0, weight=1)
+root.grid_columnconfigure(0, weight=0)
+root.grid_columnconfigure(1, weight=1)
+
+logo_img = load_logo_image(LOGO_PATH, LOGO_SIZE)
+
+nav_panel = ctk.CTkFrame(root, width=96, corner_radius=0, fg_color=current_palette["surface"])
+nav_panel.grid(row=0, column=0, sticky="ns")
+nav_panel.grid_rowconfigure(1, weight=1)
+
+brand_frame = ctk.CTkFrame(nav_panel, fg_color="transparent")
+brand_frame.grid(row=0, column=0, pady=(24, 12))
+if logo_img:
+    ctk.CTkLabel(brand_frame, text="", image=logo_img, fg_color="transparent").pack()
+else:
+    ctk.CTkLabel(
+        brand_frame,
+        text="DevEcho",
+        font=ctk.CTkFont(size=18, weight="bold"),
+        text_color=current_palette["text"],
+    ).pack()
+
+nav_buttons_frame = ctk.CTkFrame(nav_panel, fg_color="transparent")
+nav_buttons_frame.grid(row=1, column=0, sticky="n", padx=0, pady=(12, 12))
+set_nav_palette(current_palette)
+
+home_btn = create_nav_button(
+    "home",
+    "home",
+    parent=nav_buttons_frame,
+    row=0,
+    command=lambda: show_frame("home"),
+    pady=(0, 12),
+)
+videos_btn = create_nav_button(
+    "videos",
+    "videos",
+    parent=nav_buttons_frame,
+    row=1,
+    command=lambda: show_frame("videos"),
+    pady=10,
+)
+search_btn = create_nav_button(
+    "search",
+    "search",
+    parent=nav_buttons_frame,
+    row=2,
+    command=lambda: show_frame("search"),
+    pady=10,
+)
+notifications_btn = create_nav_button(
+    "notifications",
+    "notifications",
+    parent=nav_buttons_frame,
+    row=3,
+    command=handle_show_notifications,
+    pady=10,
+)
+messages_btn = create_nav_button(
+    "messages",
+    "messages",
+    parent=nav_buttons_frame,
+    row=4,
+    command=handle_open_messages,
+    pady=10,
+)
+profile_btn = create_nav_button(
+    "profile",
+    "profile",
+    parent=nav_buttons_frame,
+    row=5,
+    command=lambda: show_frame("profile"),
+    pady=10,
+)
+signin_btn = create_nav_button(
+    "signin",
+    "signin",
+    parent=nav_buttons_frame,
+    row=6,
+    command=handle_sign_in,
+    pady=10,
+)
+
+nav_footer = ctk.CTkFrame(nav_panel, fg_color="transparent")
+nav_footer.grid(row=2, column=0, sticky="s", padx=0, pady=(12, 24))
+theme_btn = create_nav_button(
+    "theme",
+    "theme_sun" if current_theme == "dark" else "theme_moon",
+    parent=nav_footer,
+    row=0,
+    command=toggle_theme,
+    pady=(0, 12),
+)
+exit_btn = create_nav_button(
+    "exit",
+    "exit",
+    parent=nav_footer,
+    row=1,
+    command=root.destroy,
+    pady=(0, 0),
+)
+
+content = ctk.CTkFrame(root, corner_radius=12, fg_color="transparent")
+content.grid(row=0, column=1, sticky="nswe", padx=(12, 16), pady=16)
+content.grid_rowconfigure(0, weight=1)
+content.grid_columnconfigure(0, weight=1)
+
+refresh_nav_icons()
+set_active_nav("home")
+
+register_show_frame_callback(show_frame)
+register_nav_controls(
+    home=home_btn,
+    videos=videos_btn,
+    search=search_btn,
+    profile=profile_btn,
+    signin=signin_btn,
+    notifications=notifications_btn,
+    messages_btn=messages_btn,
+)
+configure_shell_palette()
+frames["home"] = build_home_frame(content, current_palette)
+frames["videos"] = build_videos_frame(content, current_palette)
+frames["search"] = build_search_frame(content, current_palette)
+frames["profile"] = build_profile_frame(content, current_palette)
+frames["notifications"] = build_notifications_frame(content, current_palette)
+frames["inspect_profile"] = build_inspect_profile_frame(content, current_palette)
+frames["dm"] = build_dm_frame(content, current_palette)
+
+for frame in frames.values():
+    frame.grid(row=0, column=0, sticky="nswe")
+    frame.grid_remove()
+
+initialize_ui(frames)
+refresh_ui()
+update_theme_button()
+show_frame(active_frame_name)
+
+
+def complete_startup() -> None:
+    global splash_screen
+    if splash_screen is not None:
+        splash_screen.destroy()
+        splash_screen = None
+    root.deiconify()
+    root.lift()
+    _apply_fullscreen_size()
+    root.attributes("-topmost", True)
+    root.after(200, lambda: root.attributes("-topmost", False))
+
+
+root.after(SPLASH_DURATION_MS, complete_startup)
+root.mainloop()
