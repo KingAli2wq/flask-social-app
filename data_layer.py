@@ -25,6 +25,63 @@ os.makedirs(PROFILE_PICS_DIR, exist_ok=True)
 
 STORY_TTL_SECONDS = 24 * 60 * 60
 
+SERVER_CONFIG_PATH = os.path.join(BASE_DIR, "server_config.json")
+
+
+def _hydrate_server_config() -> None:
+    """Load persisted server settings into environment, if present."""
+    if os.environ.get("SOCIAL_SERVER_URL"):
+        return
+    try:
+        with open(SERVER_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
+    url = str(data.get("url") or "").strip()
+    token = str(data.get("token") or "").strip()
+    if url:
+        os.environ["SOCIAL_SERVER_URL"] = url
+        if token:
+            os.environ["SOCIAL_SERVER_TOKEN"] = token
+        else:
+            os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+
+
+def set_server_config(url: Optional[str], token: Optional[str]) -> None:
+    """Update env vars and persist server settings for future launches."""
+    url_value = (url or "").strip()
+    token_value = (token or "").strip()
+    if url_value:
+        os.environ["SOCIAL_SERVER_URL"] = url_value
+        if token_value:
+            os.environ["SOCIAL_SERVER_TOKEN"] = token_value
+        else:
+            os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+        payload = {"url": url_value}
+        if token_value:
+            payload["token"] = token_value
+        else:
+            payload["token"] = ""
+        try:
+            with open(SERVER_CONFIG_PATH, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2)
+        except Exception:
+            pass
+    else:
+        os.environ.pop("SOCIAL_SERVER_URL", None)
+        os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+        try:
+            os.remove(SERVER_CONFIG_PATH)
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+
+_hydrate_server_config()
+
 
 def load_json(path: str, default: Any):
     # If a server is configured via env, attempt to fetch resource from server
@@ -594,6 +651,7 @@ __all__ = [
     "MEDIA_DIR",
     "PROFILE_PICS_DIR",
     "DEFAULT_PROFILE_PIC",
+    "set_server_config",
     "load_json",
     "save_json",
     "now_ts",

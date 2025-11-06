@@ -2,7 +2,12 @@
     "Ali": {
         "password": "2900",
         "registered_at": "2025-10-16 17:02:05",
-        "notifications": [],
+        "notifications": [
+            {
+                "message": "@Connor posted a new update",
+                "time": "2025-11-06 17:35:23"
+            }
+        ],
         "following": [
             "Connor",
             "Maya",
@@ -27,10 +32,6 @@
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-06 11:44:17"
-            },
-            {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-06 12:50:27"
             }
         ],
         "following": [
@@ -75,8 +76,8 @@
                 "time": "2025-11-06 11:44:17"
             },
             {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-06 12:50:27"
+                "message": "@Connor posted a new update",
+                "time": "2025-11-06 17:35:23"
             }
         ],
         "following": [
@@ -104,10 +105,6 @@
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-06 11:44:17"
-            },
-            {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-06 12:50:27"
             }
         ],
         "following": [
@@ -129,7 +126,12 @@
     "Sofia": {
         "password": "sofia2025",
         "registered_at": "2025-10-25 15:04:11",
-        "notifications": [],
+        "notifications": [
+            {
+                "message": "@Connor posted a new update",
+                "time": "2025-11-06 17:35:23"
+            }
+        ],
         "following": [
             "Maya",
             "Ali",

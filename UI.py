@@ -55,6 +55,7 @@ from data_layer import (
 	users,
 	purge_expired_stories,
 	STORY_TTL_SECONDS,
+	set_server_config,
 )
 from global_state.helpers import (
     configure_helpers,
@@ -3966,11 +3967,8 @@ def _open_server_settings() -> None:
 	if new_url and not new_url.lower().startswith(("http://", "https://")):
 		messagebox.showerror("Invalid URL", "Please enter a URL starting with http:// or https://.")
 		return
-	if new_url:
-		os.environ["SOCIAL_SERVER_URL"] = new_url
-	else:
-		os.environ.pop("SOCIAL_SERVER_URL", None)
-		os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+	if not new_url:
+		set_server_config(None, None)
 		_update_server_status()
 		_update_videos_controls()
 		return
@@ -3982,12 +3980,11 @@ def _open_server_settings() -> None:
 		initialvalue=current_token,
 		show="*",
 	)
-	if token_prompt is not None:
+	if token_prompt is None:
+		set_server_config(new_url, current_token or None)
+	else:
 		token_value = token_prompt.strip()
-		if token_value:
-			os.environ["SOCIAL_SERVER_TOKEN"] = token_value
-		else:
-			os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+		set_server_config(new_url, token_value or None)
 
 	_update_server_status(check=True)
 	_update_videos_controls()
