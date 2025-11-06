@@ -54,6 +54,34 @@ app = Flask(__name__)
 CORS(app)
 
 
+# Simple token-based protection for LAN usage. If SOCIAL_SERVER_TOKEN is set in
+# the environment, all /api/* endpoints (except /api/ping) will require the
+# token. Clients may send it via the Authorization: Bearer <token> header or
+# X-SOCIAL-TOKEN header.
+def _check_token_allowed() -> bool:
+    token = os.environ.get("SOCIAL_SERVER_TOKEN")
+    if not token:
+        return True
+    auth = request.headers.get("Authorization") or ""
+    if auth.startswith("Bearer ") and auth.split(" ", 1)[1].strip() == token:
+        return True
+    header = request.headers.get("X-SOCIAL-TOKEN")
+    if header and header == token:
+        return True
+    return False
+
+
+@app.before_request
+def _require_token_for_api():
+    # allow ping without token
+    if request.path == "/api/ping":
+        return None
+    if request.path.startswith("/api/"):
+        if not _check_token_allowed():
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
+    return None
+
+
 @app.route("/api/ping", methods=["GET"]) 
 def ping():
     return jsonify({"ok": True, "message": "server running"})

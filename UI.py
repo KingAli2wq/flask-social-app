@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -43,6 +44,8 @@ from data_layer import (
 	MEDIA_DIR,
 	PROFILE_PICS_DIR,
 	messages,
+	load_json,
+	MESSAGES_PATH,
 	now_ts,
 	persist,
 	posts,
@@ -3592,6 +3595,9 @@ def update_theme_palette(palette: Palette) -> None:
 
 	# Home view components
 	status_lbl: ctk.CTkLabel = _home_widgets.get("status")
+	server_status_lbl: ctk.CTkLabel = _home_widgets.get("server_status_label")
+	server_check_btn: ctk.CTkButton = _home_widgets.get("server_check_button")
+	server_config_btn: ctk.CTkButton = _home_widgets.get("server_config_button")
 	stories_frame: ctk.CTkFrame = _home_widgets.get("stories_frame")
 	stories_bar: ctk.CTkFrame = _home_widgets.get("stories_bar")
 	add_story_btn: ctk.CTkButton = _home_widgets.get("add_story_button")
@@ -3607,6 +3613,24 @@ def update_theme_palette(palette: Palette) -> None:
 		status_lbl.configure(
 			text=f"Signed in as @{_ui_state.current_user}" if _ui_state.current_user else "Signed out",
 			text_color=text_color if _ui_state.current_user else muted,
+		)
+	if server_status_lbl:
+		server_status_lbl.configure(text_color=muted)
+	if server_check_btn:
+		server_check_btn.configure(
+			fg_color="transparent",
+			border_width=1,
+			border_color=muted,
+			text_color=muted,
+			hover_color=surface,
+		)
+	if server_config_btn:
+		server_config_btn.configure(
+			fg_color="transparent",
+			border_width=1,
+			border_color=_palette.get("accent", "#4c8dff"),
+			text_color=_palette.get("accent", "#4c8dff"),
+			hover_color=surface,
 		)
 	if stories_frame:
 		stories_frame.configure(fg_color=surface)
@@ -3635,6 +3659,7 @@ def update_theme_palette(palette: Palette) -> None:
 
 	_refresh_stories_bar()
 	_refresh_post_attachments()
+	_update_server_status()
 
 	# Profile view components
 	profile_name: ctk.CTkLabel = _profile_widgets.get("name")
@@ -3786,6 +3811,186 @@ def _get_after_anchor() -> Optional[Any]:
 	if frame:
 		return frame
 	return None
+
+
+# Polling for messages ------------------------------------------------------
+# Uses data_layer.load_json to fetch latest messages when a server is configured.
+# We update the in-memory `messages` dict (mutating it in-place) so other
+# modules that imported `messages` see the changes. Scheduling is via tkinter
+# `.after` anchored at a UI frame.
+_DM_POLL_BASE = int(os.environ.get("DM_POLL_SECONDS", "3"))
+_DM_POLL_MAX = int(os.environ.get("DM_POLL_MAX_SECONDS", "30"))
+
+
+def _poll_messages_once() -> bool:
+	"""Fetch messages and update in-memory dict. Returns True on success.
+	"""
+	try:
+		new = load_json(MESSAGES_PATH, {})
+		if isinstance(new, dict):
+			if new != messages:
+				messages.clear()
+				messages.update(new)
+				_mark_dirty("dm")
+				_request_render("dm")
+		return True
+	except Exception:
+		return False
+
+
+def _start_message_poller() -> None:
+	"""Start the recurring poll with exponential backoff on failures.
+	Anchors scheduling on the GUI widget via `.after()`.
+	"""
+	anchor = _get_after_anchor()
+	if not anchor:
+		return
+
+	state = {"delay": _DM_POLL_BASE}
+
+	def _schedule() -> None:
+		ok = _poll_messages_once()
+		if ok:
+			state["delay"] = _DM_POLL_BASE
+		else:
+			# exponential backoff (capped)
+			state["delay"] = min(_DM_POLL_MAX, max(_DM_POLL_BASE, state["delay"] * 2))
+		try:
+			anchor.after(state["delay"] * 1000, _schedule)
+		except Exception:
+			return
+
+	try:
+		anchor.after(1000, _schedule)
+	except Exception:
+		pass
+
+
+def _server_summary_text(include_url: bool = True) -> Optional[str]:
+	server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+	if not server_url:
+		return None
+	token = os.environ.get("SOCIAL_SERVER_TOKEN")
+	token_note = "token set" if token else "token missing"
+	if include_url:
+		return f"Server: {server_url} ({token_note})"
+	return f"Server configured ({token_note})"
+
+
+def _apply_server_status_result(text: str, color: str) -> None:
+	anchor = _get_after_anchor()
+
+	def _update() -> None:
+		label = _home_widgets.get("server_status_label")
+		if label and getattr(label, "winfo_exists", lambda: False)():
+			try:
+				label.configure(text=text, text_color=color)
+			except Exception:
+				return
+
+	if anchor:
+		try:
+			anchor.after(0, _update)
+		except Exception:
+			_update()
+	else:
+		_update()
+
+
+def _update_server_status(*, check: bool = False) -> None:
+	label = _home_widgets.get("server_status_label")
+	if not label:
+		return
+	muted = _palette.get("muted", "#94a3b8")
+	server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+	if not server_url:
+		try:
+			label.configure(text="Server: local mode (no remote URL)", text_color=muted)
+		except Exception:
+			pass
+		return
+	token = os.environ.get("SOCIAL_SERVER_TOKEN")
+	token_note = "token set" if token else "token missing"
+	base_text = f"Server: {server_url} ({token_note})"
+	try:
+		label.configure(text=f"{base_text}{' — checking...' if check else ''}", text_color=muted)
+	except Exception:
+		pass
+	if not check:
+		return
+
+	def _worker(base: str, url: str, token_value: Optional[str]) -> None:
+		try:
+			import requests  # type: ignore
+		except Exception:
+			_apply_server_status_result(base + " — install 'requests' to check", _palette.get("danger", "#ef4444"))
+			return
+		headers: dict[str, str] = {}
+		if token_value:
+			headers["Authorization"] = f"Bearer {token_value}"
+			headers["X-SOCIAL-TOKEN"] = token_value
+		try:
+			resp = requests.get(f"{url.rstrip('/')}/api/ping", headers=headers, timeout=5)
+			if resp.status_code == 200:
+				payload = resp.json()
+				if isinstance(payload, dict) and payload.get("ok"):
+					text = base + " — online"
+					color = _palette.get("accent", "#2563eb")
+				else:
+					text = base + " — unexpected response"
+					color = _palette.get("danger", "#ef4444")
+			elif resp.status_code == 401:
+				text = base + " — unauthorized (token rejected)"
+				color = _palette.get("danger", "#ef4444")
+			else:
+				text = base + f" — error {resp.status_code}"
+				color = _palette.get("danger", "#ef4444")
+		except Exception:
+			text = base + " — offline"
+			color = _palette.get("danger", "#ef4444")
+		_apply_server_status_result(text, color)
+
+	threading.Thread(target=_worker, args=(base_text, server_url, token), daemon=True).start()
+
+
+def _open_server_settings() -> None:
+	current_url = os.environ.get("SOCIAL_SERVER_URL", "")
+	prompt = simpledialog.askstring(
+		"Server URL",
+		"Enter the server URL (leave blank to disable remote sync):",
+		initialvalue=current_url,
+	)
+	if prompt is None:
+		return
+	new_url = (prompt or "").strip()
+	if new_url and not new_url.lower().startswith(("http://", "https://")):
+		messagebox.showerror("Invalid URL", "Please enter a URL starting with http:// or https://.")
+		return
+	if new_url:
+		os.environ["SOCIAL_SERVER_URL"] = new_url
+	else:
+		os.environ.pop("SOCIAL_SERVER_URL", None)
+		os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+		_update_server_status()
+		_update_videos_controls()
+		return
+
+	current_token = os.environ.get("SOCIAL_SERVER_TOKEN", "")
+	token_prompt = simpledialog.askstring(
+		"Server token",
+		"Enter the access token (leave blank to clear):",
+		initialvalue=current_token,
+		show="*",
+	)
+	if token_prompt is not None:
+		token_value = token_prompt.strip()
+		if token_value:
+			os.environ["SOCIAL_SERVER_TOKEN"] = token_value
+		else:
+			os.environ.pop("SOCIAL_SERVER_TOKEN", None)
+
+	_update_server_status(check=True)
+	_update_videos_controls()
 
 
 def _render_view(view: str) -> None:
@@ -4001,7 +4206,7 @@ def build_search_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFram
 def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	_set_palette(palette)
 	frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")
-	frame.grid_rowconfigure(3, weight=1)
+	frame.grid_rowconfigure(4, weight=1)
 	frame.grid_columnconfigure(0, weight=1)
 
 	status_lbl = ctk.CTkLabel(
@@ -4013,8 +4218,49 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	)
 	status_lbl.grid(row=0, column=0, sticky="we", padx=16, pady=(16, 6))
 
+	server_row = ctk.CTkFrame(frame, fg_color="transparent")
+	server_row.grid(row=1, column=0, sticky="we", padx=16, pady=(0, 12))
+	server_row.grid_columnconfigure(0, weight=1)
+
+	server_status_lbl = ctk.CTkLabel(
+		server_row,
+		text="Server: local mode (no remote URL)",
+		anchor="w",
+		justify="left",
+		wraplength=420,
+		font=ctk.CTkFont(size=12),
+		text_color=palette.get("muted", "#94a3b8"),
+	)
+	server_status_lbl.grid(row=0, column=0, sticky="w")
+
+	server_check_btn = ctk.CTkButton(
+		server_row,
+		text="Check",
+		width=80,
+		fg_color="transparent",
+		border_width=1,
+		border_color=palette.get("muted", "#94a3b8"),
+		text_color=palette.get("muted", "#94a3b8"),
+		hover_color=palette.get("surface", "#111b2e"),
+		command=lambda: _update_server_status(check=True),
+	)
+	server_check_btn.grid(row=0, column=1, padx=(8, 0))
+
+	server_config_btn = ctk.CTkButton(
+		server_row,
+		text="Configure",
+		width=110,
+		fg_color="transparent",
+		border_width=1,
+		border_color=palette.get("accent", "#4c8dff"),
+		text_color=palette.get("accent", "#4c8dff"),
+		hover_color=palette.get("surface", "#111b2e"),
+		command=_open_server_settings,
+	)
+	server_config_btn.grid(row=0, column=2, padx=(8, 0))
+
 	stories_card = ctk.CTkFrame(frame, corner_radius=16, fg_color=palette.get("surface", "#111b2e"))
-	stories_card.grid(row=1, column=0, sticky="we", padx=16, pady=(0, 16))
+	stories_card.grid(row=2, column=0, sticky="we", padx=16, pady=(0, 16))
 	stories_card.grid_columnconfigure(1, weight=1)
 
 	add_story_btn = ctk.CTkButton(
@@ -4036,7 +4282,7 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	placeholder_lbl.grid(row=0, column=0, padx=12, pady=12, sticky="w")
 
 	composer = ctk.CTkFrame(frame, corner_radius=16, fg_color=palette.get("surface", "#111b2e"))
-	composer.grid(row=2, column=0, sticky="we", padx=16, pady=(0, 16))
+	composer.grid(row=3, column=0, sticky="we", padx=16, pady=(0, 16))
 	composer.grid_columnconfigure(0, weight=1)
 	composer.grid_rowconfigure(0, weight=1)
 
@@ -4077,7 +4323,7 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	attachments_frame.grid_remove()
 
 	feed_frame = ctk.CTkScrollableFrame(frame, corner_radius=16, fg_color="transparent")
-	feed_frame.grid(row=3, column=0, sticky="nswe", padx=16, pady=(0, 16))
+	feed_frame.grid(row=4, column=0, sticky="nswe", padx=16, pady=(0, 16))
 	feed_frame.grid_columnconfigure(0, weight=1)
 
 	_bind_return_submit(post_text, _handle_submit_post, allow_shift_newline=True)
@@ -4093,6 +4339,9 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 		{
 			"frame": frame,
 			"status": status_lbl,
+			"server_status_label": server_status_lbl,
+			"server_check_button": server_check_btn,
+			"server_config_button": server_config_btn,
 			"stories_frame": stories_card,
 			"stories_bar": stories_bar,
 			"add_story_button": add_story_btn,
@@ -4104,6 +4353,8 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 			"feed": feed_frame,
 		}
 	)
+
+	_update_server_status()
 
 	_stories_widgets.update(
 		{
@@ -4766,8 +5017,13 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 
 	_mark_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search")
 	_update_home_status()
+	_update_server_status(check=True)
 	_update_videos_controls()
 	_render_active_view()
+
+	# start background poller for messages so DMs update in near-real-time when
+	# a remote server is configured. Poll interval controlled by DM_POLL_SECONDS env var.
+	_start_message_poller()
 
 
 def refresh_views(_frames_unused: dict[str, ctk.CTkFrame]) -> None:
@@ -4868,6 +5124,7 @@ def _update_home_status() -> None:
 			attach_btn.configure(state="disabled")
 		if add_story_btn:
 			add_story_btn.configure(state="disabled")
+	_update_server_status()
 
 
 def _update_videos_controls() -> None:
@@ -4893,14 +5150,17 @@ def _update_videos_controls() -> None:
 				text_color=_palette.get("muted", "#94a3b8"),
 			)
 		return
+
+	server_note = _server_summary_text()
 	if status_lbl:
-		current_text = status_lbl.cget("text") if hasattr(status_lbl, "cget") else ""
-		if not current_text or current_text == "Sign in to upload videos":
-			status_lbl.configure(
-				text="Choose a video to share",
-				text_color=_palette.get("muted", "#94a3b8"),
-			)
-			_videos_widgets["status_mode"] = "muted"
+		text_lines = ["Choose a video to share"]
+		if server_note:
+			text_lines.append(server_note)
+		status_lbl.configure(
+			text="\n".join(text_lines),
+			text_color=_palette.get("muted", "#94a3b8"),
+		)
+		_videos_widgets["status_mode"] = "muted"
 
 
 def _render_feed_section() -> None:

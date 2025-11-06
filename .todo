@@ -1,0 +1,3 @@
+- [x] Add UI controls to view and edit server URL/token configuration with clear status indicators.
+- [ ] Ensure server runner installs waitress (or documents install) and verify token-protected instance locally.
+- [ ] Prototype real-time updates (SSE/WebSocket) for messages to supplement polling.

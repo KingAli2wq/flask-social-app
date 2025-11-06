@@ -27,6 +27,40 @@ STORY_TTL_SECONDS = 24 * 60 * 60
 
 
 def load_json(path: str, default: Any):
+    # If a server is configured via env, attempt to fetch resource from server
+    server_url = os.environ.get("SOCIAL_SERVER_URL")
+    if server_url:
+        try:
+            import requests
+
+            name = os.path.basename(path)
+            mapping = {
+                "data.json": "users",
+                "posts.json": "posts",
+                "messages.json": "messages",
+                "stories.json": "stories",
+                "videos.json": "videos",
+                "scheduled_posts.json": "scheduled_posts",
+                "notfication.json": "notifications",
+                "group_chats.json": "group_chats",
+            }
+            resource = mapping.get(name)
+            if resource:
+                headers = {}
+                token = os.environ.get("SOCIAL_SERVER_TOKEN")
+                if token:
+                    # prefer Authorization header but accept X-SOCIAL-TOKEN too
+                    headers["Authorization"] = f"Bearer {token}"
+                    headers["X-SOCIAL-TOKEN"] = token
+                resp = requests.get(f"{server_url.rstrip('/')}/api/{resource}", headers=headers, timeout=6)
+                if resp.status_code == 200:
+                    data = resp.json().get("data")
+                    if data is not None:
+                        return data
+                # if unauthorized, bubble up to caller via None -> fallback to local
+        except Exception:
+            # fall back to local file reads on any failure
+            pass
     try:
         with open(path, "r", encoding="utf-8") as fh:
             return json.load(fh)
@@ -37,6 +71,44 @@ def load_json(path: str, default: Any):
 
 
 def save_json(path: str, payload: Any) -> None:
+    # If a server is configured, attempt to push payload to server resource
+    server_url = os.environ.get("SOCIAL_SERVER_URL")
+    if server_url:
+        try:
+            import requests
+
+            name = os.path.basename(path)
+            mapping = {
+                "data.json": "users",
+                "posts.json": "posts",
+                "messages.json": "messages",
+                "stories.json": "stories",
+                "videos.json": "videos",
+                "scheduled_posts.json": "scheduled_posts",
+                "notfication.json": "notifications",
+                "group_chats.json": "group_chats",
+            }
+            resource = mapping.get(name)
+            if resource:
+                headers = {}
+                token = os.environ.get("SOCIAL_SERVER_TOKEN")
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+                    headers["X-SOCIAL-TOKEN"] = token
+                # prefer PUT for idempotent update
+                resp = requests.put(f"{server_url.rstrip('/')}/api/{resource}", json=payload, headers=headers, timeout=10)
+                if resp.status_code in (200, 204):
+                    return
+                # some servers may accept POST
+                if resp.status_code >= 400:
+                    try:
+                        requests.post(f"{server_url.rstrip('/')}/api/{resource}", json=payload, headers=headers, timeout=10)
+                        return
+                    except Exception:
+                        pass
+        except Exception:
+            # on any failure, fall back to local file write
+            pass
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=4, ensure_ascii=False)
