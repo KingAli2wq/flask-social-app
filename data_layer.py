@@ -291,6 +291,70 @@ def _clean_str(value: Any) -> str:
     return text
 
 
+def _build_normalized_users(
+    raw_users_data: Any,
+    notifications_data: Any,
+) -> Dict[str, Dict[str, Any]]:
+    normalized: Dict[str, Dict[str, Any]] = {}
+    notifications_map: Dict[str, Any] = notifications_data if isinstance(notifications_data, dict) else {}
+
+    if isinstance(raw_users_data, dict):
+        for username, info in raw_users_data.items():
+            if not isinstance(username, str) or not isinstance(info, dict):
+                continue
+            record: Dict[str, Any] = {
+                "password": info.get("password", ""),
+                "registered_at": info.get("registered_at", now_ts()),
+                "notifications": [note for note in notifications_map.get(username, []) if isinstance(note, dict)],
+                "following": list(info.get("following", [])),
+                "followers": list(info.get("followers", [])),
+                "profile_picture": info.get("profile_picture"),
+                "bio": info.get("bio"),
+                "location": info.get("location"),
+                "website": info.get("website"),
+                "last_active_at": info.get("last_active_at"),
+                "badges": info.get("badges"),
+            }
+            normalized[username] = record
+
+    for username, notes in notifications_map.items():
+        if not isinstance(username, str) or not isinstance(notes, list):
+            continue
+        record = normalized.setdefault(
+            username,
+            {
+                "password": "",
+                "registered_at": now_ts(),
+                "notifications": [],
+                "following": [],
+                "followers": [],
+                "profile_picture": None,
+                "bio": "",
+                "location": "",
+                "website": "",
+                "last_active_at": now_ts(),
+                "badges": [],
+            },
+        )
+        record["notifications"] = [note for note in notes if isinstance(note, dict)]
+
+    for username, record in normalized.items():
+        record["following"] = [str(name).strip() for name in record.get("following", []) if isinstance(name, str)]
+        record["followers"] = [str(name).strip() for name in record.get("followers", []) if isinstance(name, str)]
+        record["notifications"] = [note for note in record.get("notifications", []) if isinstance(note, dict)]
+        record["bio"] = _clean_str(record.get("bio"))
+        record["location"] = _clean_str(record.get("location"))
+        record["website"] = _clean_str(record.get("website"))
+        record["last_active_at"] = record.get("last_active_at") or now_ts()
+        badges_value = record.get("badges")
+        if isinstance(badges_value, list):
+            record["badges"] = _normalize_badges(badges_value)
+        else:
+            record["badges"] = []
+
+    return normalized
+
+
 def _coerce_epoch(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -570,54 +634,7 @@ if isinstance(raw_scheduled_posts, list):
             scheduled_posts.append(normalized_scheduled)
 
 
-users: Dict[str, Dict[str, Any]] = {}
-for username, info in raw_users.items():
-    users[username] = {
-        "password": info.get("password", ""),
-        "registered_at": info.get("registered_at", now_ts()),
-        "notifications": notifications_data.get(username, []),
-        "following": list(info.get("following", [])),
-        "followers": list(info.get("followers", [])),
-        "profile_picture": info.get("profile_picture"),
-        "bio": _clean_str(info.get("bio")),
-        "location": _clean_str(info.get("location")),
-        "website": _clean_str(info.get("website")),
-        "last_active_at": info.get("last_active_at") or now_ts(),
-        "badges": _normalize_badges(info.get("badges")),
-    }
-
-
-for username, notes in notifications_data.items():
-    users.setdefault(
-        username,
-        {
-            "password": "",
-            "registered_at": now_ts(),
-            "notifications": notes,
-            "following": [],
-            "followers": [],
-            "profile_picture": None,
-            "bio": "",
-            "location": "",
-            "website": "",
-            "last_active_at": now_ts(),
-            "badges": [],
-        },
-    )
-
-
-for uname in users:
-    users[uname].setdefault("following", [])
-    users[uname].setdefault("followers", [])
-    users[uname].setdefault("bio", "")
-    users[uname].setdefault("location", "")
-    users[uname].setdefault("website", "")
-    users[uname].setdefault("last_active_at", now_ts())
-    badges_value = users[uname].get("badges")
-    if isinstance(badges_value, list):
-        users[uname]["badges"] = _normalize_badges(badges_value)
-    else:
-        users[uname]["badges"] = []
+users: Dict[str, Dict[str, Any]] = _build_normalized_users(raw_users, notifications_data)
 
 
 def purge_expired_stories(now_value: Optional[float] = None) -> bool:
@@ -638,6 +655,67 @@ def persist() -> None:
     save_json(GROUP_CHATS_PATH, group_chats)
 
 
+def refresh_remote_state() -> Dict[str, bool]:
+    """Re-fetch remote datasets and update in-memory structures. Returns changed sections."""
+    changes: Dict[str, bool] = {}
+
+    try:
+        raw_posts_remote = load_json(POSTS_PATH, [])
+        if isinstance(raw_posts_remote, list):
+            normalized_posts = [normalize_post(dict(item)) for item in raw_posts_remote if isinstance(item, dict)]
+            if normalized_posts != posts:
+                posts[:] = normalized_posts
+                changes["posts"] = True
+    except Exception:
+        pass
+
+    try:
+        raw_stories_remote = load_json(STORIES_PATH, [])
+        if isinstance(raw_stories_remote, list):
+            now_value = time.time()
+            normalized_stories: List[Dict[str, Any]] = []
+            for entry in raw_stories_remote:
+                if not isinstance(entry, dict):
+                    continue
+                normalized_story = normalize_story(dict(entry))
+                if normalized_story and normalized_story.get("expires_at", 0) > now_value:
+                    normalized_stories.append(normalized_story)
+            if normalized_stories != stories:
+                stories[:] = normalized_stories
+                changes["stories"] = True
+    except Exception:
+        pass
+
+    try:
+        raw_videos_remote = load_json(VIDEOS_PATH, [])
+        if isinstance(raw_videos_remote, list):
+            normalized_videos: List[Dict[str, Any]] = []
+            for entry in raw_videos_remote:
+                if not isinstance(entry, dict):
+                    continue
+                normalized_video = normalize_video(dict(entry))
+                if normalized_video:
+                    normalized_videos.append(normalized_video)
+            if normalized_videos != videos:
+                videos[:] = normalized_videos
+                changes["videos"] = True
+    except Exception:
+        pass
+
+    try:
+        raw_users_remote = load_json(USERS_PATH, {})
+        notifications_remote = load_json(NOTIFICATIONS_PATH, {})
+        normalized_users = _build_normalized_users(raw_users_remote, notifications_remote)
+        if normalized_users != users:
+            users.clear()
+            users.update(normalized_users)
+            changes["users"] = True
+    except Exception:
+        pass
+
+    return changes
+
+
 __all__ = [
     "BASE_DIR",
     "USERS_PATH",
@@ -652,6 +730,7 @@ __all__ = [
     "PROFILE_PICS_DIR",
     "DEFAULT_PROFILE_PIC",
     "set_server_config",
+    "refresh_remote_state",
     "load_json",
     "save_json",
     "now_ts",

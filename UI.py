@@ -56,6 +56,7 @@ from data_layer import (
 	purge_expired_stories,
 	STORY_TTL_SECONDS,
 	set_server_config,
+	refresh_remote_state,
 )
 from global_state.helpers import (
     configure_helpers,
@@ -3823,9 +3824,35 @@ _DM_POLL_BASE = int(os.environ.get("DM_POLL_SECONDS", "3"))
 _DM_POLL_MAX = int(os.environ.get("DM_POLL_MAX_SECONDS", "30"))
 
 
+def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
+	if not changes:
+		return
+
+	dirty_views: set[str] = set()
+
+	if changes.get("posts") or changes.get("users"):
+		dirty_views.update({"home", "profile", "inspect_profile", "search"})
+	if changes.get("stories"):
+		dirty_views.add("home")
+	if changes.get("videos"):
+		dirty_views.add("videos")
+	if changes.get("users"):
+		dirty_views.update({"notifications", "dm"})
+		_profile_avatar_cache.clear()
+		_mark_dm_sidebar_dirty()
+
+	if dirty_views:
+		_mark_dirty(*dirty_views)
+		for view in dirty_views:
+			_request_render(view)
+
+	if changes.get("stories"):
+		_refresh_stories_bar()
+
+
 def _poll_messages_once() -> bool:
-	"""Fetch messages and update in-memory dict. Returns True on success.
-	"""
+	"""Fetch messages and update in-memory dict. Returns True on success."""
+	success = False
 	try:
 		new = load_json(MESSAGES_PATH, {})
 		if isinstance(new, dict):
@@ -3834,9 +3861,17 @@ def _poll_messages_once() -> bool:
 				messages.update(new)
 				_mark_dirty("dm")
 				_request_render("dm")
-		return True
+		success = True
 	except Exception:
-		return False
+		success = False
+
+	try:
+		changes = refresh_remote_state()
+	except Exception:
+		changes = {}
+	_apply_remote_refresh_changes(changes)
+
+	return success
 
 
 def _start_message_poller() -> None:

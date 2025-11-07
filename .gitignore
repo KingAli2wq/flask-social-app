@@ -46,3 +46,6 @@ Thumbs.db
 
 # Ignore Python compiled files in repo root
 *.pyc
+
+# Local server configuration (per-machine)
+server_config.json
