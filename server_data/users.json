@@ -86,74 +86,7 @@
     "Ben": {
         "password": "Ben2900",
         "registered_at": "2025-10-16 17:02:05",
-        "notifications": [
-            {
-                "message": "@Ali started following you",
-                "meta": {
-                    "from": "Ali",
-                    "type": "follow"
-                },
-                "time": "2025-11-06 23:42:31"
-            },
-            {
-                "message": "@Ali sent you a direct message",
-                "meta": {
-                    "from": "Ali",
-                    "type": "dm"
-                },
-                "time": "2025-11-06 23:42:35"
-            },
-            {
-                "message": "@Ali sent you a direct message",
-                "meta": {
-                    "from": "Ali",
-                    "type": "dm"
-                },
-                "time": "2025-11-06 23:50:12"
-            },
-            {
-                "message": "@Ali sent a message in test rework2",
-                "meta": {
-                    "from": "Ali",
-                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                    "type": "group_dm"
-                },
-                "time": "2025-11-07 00:04:52"
-            },
-            {
-                "message": "You are now the owner of test rework2",
-                "meta": {
-                    "from": "Ali",
-                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                    "type": "group_dm"
-                },
-                "time": "2025-11-07 00:05:29"
-            },
-            {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-07 00:21:56"
-            },
-            {
-                "message": "@Ali sent you a direct message",
-                "meta": {
-                    "from": "Ali",
-                    "type": "dm"
-                },
-                "time": "2025-11-07 00:22:17"
-            },
-            {
-                "message": "@Ali sent you a direct message",
-                "meta": {
-                    "from": "Ali",
-                    "type": "dm"
-                },
-                "time": "2025-11-07 00:22:28"
-            },
-            {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-07 00:23:35"
-            }
-        ],
+        "notifications": [],
         "following": [
             "Ali"
         ],
@@ -235,6 +168,22 @@
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-07 00:23:35"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-07 00:24:01"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-07 00:24:22"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-07 00:24:30"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-07 00:25:01"
             }
         ],
         "following": [

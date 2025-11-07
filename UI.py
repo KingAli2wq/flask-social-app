@@ -1095,7 +1095,7 @@ def _handle_join_group_invite(token: str) -> None:
 	_mark_dm_sidebar_dirty()
 	_open_group_chat(chat.get("id") or "")
 	_request_render("dm")
-	_request_render("notifications")
+	_refresh_notifications_ui()
 	messagebox.showinfo("Group chat", "You joined the group chat!")
 
 
@@ -1802,6 +1802,7 @@ def _handle_upload_video() -> None:
 		_notify_remote_sync_issue("media", "upload the video file")
 	if followers_notified or mentions_delivered:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 	trigger_immediate_sync("videos")
 	_notify_remote_sync_issue("videos", "publish the video")
 	if missing_mentions:
@@ -3104,6 +3105,7 @@ def _open_story_editor(rel_path: str, story_type: str) -> None:
 			)
 		if mentions_delivered:
 			trigger_immediate_sync("notifications")
+			_refresh_notifications_ui()
 		messagebox.showinfo("Story posted", "Your story has been added.")
 		_hide_story_overlay()
 
@@ -3487,6 +3489,7 @@ def _submit_video_comment(video_id: str) -> None:
 	persist()
 	if mentions_delivered:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 	_render_video_comments(video_id)
 
 
@@ -3541,6 +3544,7 @@ def _submit_video_comment_reply(video_id: str, comment_id: str, text_var: tk.Str
 	persist()
 	if mentions_delivered:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 	_render_video_comments(video_id)
 
 
@@ -5856,6 +5860,12 @@ def _update_nav_controls() -> None:
 		_update_video_reaction_ui(vid)
 
 
+def _refresh_notifications_ui() -> None:
+	"""Ensure the notifications view and nav badge reflect current state."""
+	_request_render("notifications")
+	_update_nav_controls()
+
+
 def _update_home_status() -> None:
 	status_lbl: ctk.CTkLabel = _home_widgets.get("status")
 	post_btn: ctk.CTkButton = _home_widgets.get("post_button")
@@ -6887,6 +6897,7 @@ def _handle_submit_post() -> None:
 	)
 	if mentions_sent or followers_notified:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 
 	# Immediate real-time sync for posts
 	trigger_immediate_sync("posts")
@@ -7075,6 +7086,7 @@ def _handle_submit_reply(post_idx: int, var: tk.StringVar) -> None:
 		)
 	if mentions_delivered:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 	persist()
 	var.set("")
 	_ui_state.feed_state.reply_input_target = None
@@ -7322,13 +7334,13 @@ def _handle_follow(username: str) -> None:
 		)
 		if notification_delivered:
 			trigger_immediate_sync("notifications")
+			_refresh_notifications_ui()
 	
 	# Immediate real-time sync for follow changes
 	trigger_immediate_sync("users")
 	_mark_dm_sidebar_dirty()
 	_mark_dirty("search")
 	_request_render("dm")
-	_request_render("notifications")
 	_request_render("inspect_profile")
 	if current:
 		_request_render("profile")
@@ -7435,7 +7447,7 @@ def _handle_transfer_group_owner() -> None:
 	)
 	if notification_delivered:
 		trigger_immediate_sync("notifications")
-	_request_render("notifications")
+	_refresh_notifications_ui()
 
 
 def _handle_edit_group_announcement() -> None:
@@ -7573,7 +7585,7 @@ def _handle_create_group_chat() -> None:
 	_dismiss_group_modal()
 	_set_active_dm_conversation(group_id, None)
 	_request_render("dm")
-	_request_render("notifications")
+	_refresh_notifications_ui()
 	if _show_frame_cb:
 		_show_frame_cb("dm")
 
@@ -7621,7 +7633,7 @@ def _handle_leave_group_chat() -> None:
 	_set_active_dm_conversation(None, None)
 	_select_default_dm_conversation()
 	_request_render("dm")
-	_request_render("notifications")
+	_refresh_notifications_ui()
 
 
 def _open_create_group_modal() -> None:

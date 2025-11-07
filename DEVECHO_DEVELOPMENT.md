@@ -229,6 +229,23 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 7, 2025 - Notification Badge Fix**
+
+### ✅ **Completed Today:**
+1. **Badge Refresh Helper:** Added `_refresh_notifications_ui()` that re-renders the notifications view and updates the nav badge in one call, ensuring the UI reflects new alerts immediately.
+2. **Comprehensive Integration:** Every notification trigger—mentions, follows, DMs, group actions, post/story/video publishes—now invokes the helper right after persisting, so the badge count stays current without manual navigation.
+3. **Duplicate Call Cleanup:** Removed scattered `_request_render("notifications")` calls and consolidated logic to avoid redundant renders or stale badge states.
+
+### 🐛 **Problem Solved:**
+- Users reported missing notification badges after mentions and messages, caused by render requests not triggering nav control updates.
+- Now the badge and notification list stay synchronized across all notification sources.
+
+### 🧪 **Validation:**
+- Confirmed badge appears immediately when receiving mentions, follows, DMs, and group invites without switching tabs.
+- Verified badge disappears when viewing notifications or clearing the list.
+
+---
+
 ## 🗓️ **November 7, 2025 - Mention Deep Links & Notification Navigation**
 
 ### ✅ **Completed Today:**
