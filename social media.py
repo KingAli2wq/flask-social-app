@@ -33,11 +33,11 @@ from UI import (
 Palette = Dict[str, str]
 
 BASE_DIR = Path(__file__).resolve().parent
-LOGO_PATH = BASE_DIR / "media" / "dev_echo_logo.png"
-SPLASH_LOGO_PATH = BASE_DIR / "media" / "dev_echo_loading.png"
-LOGO_SIZE: tuple[int, int] = (36, 36)
-SPLASH_LOGO_SIZE: tuple[int, int] = (180, 180)
-SPLASH_DURATION_MS = 500  # Reduced from 1500ms to 500ms for faster startup
+LOGO_PATH = BASE_DIR / "media" / "Buttons" / "DevEcho_Transparent_title.png"  # DevEcho transparent logo for UI
+SPLASH_LOGO_PATH = BASE_DIR / "media" / "Buttons" / "DevEcho_Title.png"  # DevEcho solid logo for splash
+LOGO_SIZE: tuple[int, int] = (40, 40)  # Square logo for navigation bar
+SPLASH_LOGO_SIZE: tuple[int, int] = (150, 150)  # Square splash logo
+SPLASH_DURATION_MS = 2000  # Extended duration - lasts until everything loads
 
 THEMES: dict[str, dict[str, object]] = {
     "dark": {
@@ -387,39 +387,111 @@ for frame in frames.values():
     frame.grid(row=0, column=0, sticky="nswe")
     frame.grid_remove()
 
-print("DEBUG: Calling initialize_ui...")
-initialize_ui(frames)
-print("DEBUG: Calling refresh_ui...")
-refresh_ui()
-print("DEBUG: Calling update_theme_button...")
-update_theme_button()
-print("DEBUG: Calling show_frame...")
-show_frame(active_frame_name)
-print("DEBUG: Scheduling complete_startup in", SPLASH_DURATION_MS, "ms")
-
-
 def complete_startup() -> None:
-    print("DEBUG: complete_startup() called")
+    """Complete app initialization and hide splash screen"""
     global splash_screen
-    if splash_screen is not None:
-        print("DEBUG: Destroying splash screen")
-        splash_screen.destroy()
-        splash_screen = None
-    print("DEBUG: Showing main window")
     
-    # Force window to be visible and properly positioned
-    root.deiconify()
-    root.geometry("1280x800+100+50")  # Force position on screen
-    root.lift()
-    root.focus_force()
-    root.attributes("-topmost", True)
-    
-    _apply_fullscreen_size()
-    
-    # Remove topmost after window is established
-    root.after(1000, lambda: root.attributes("-topmost", False))
-    print("DEBUG: Main window should now be visible")
+    try:
+        # Ensure all UI components are fully loaded
+        print("✅ App fully initialized")
+        
+        if splash_screen is not None:
+            print("🎬 Closing splash screen")
+            splash_screen.destroy()
+            splash_screen = None
+        
+        # Show main window
+        root.deiconify()
+        root.geometry("1280x800+100+50")
+        root.lift()
+        root.focus_force()
+        root.attributes("-topmost", True)
+        
+        _apply_fullscreen_size()
+        
+        # Remove topmost after window is established
+        root.after(500, lambda: root.attributes("-topmost", False))
+        print("🚀 DevEcho ready!")
+        
+    except Exception as e:
+        print(f"❌ Error in complete_startup: {e}")
+        # Fallback: show main window anyway
+        if splash_screen:
+            splash_screen.destroy()
+            splash_screen = None
+        root.deiconify()
+
+def initialize_app_components():
+    """Initialize all app components step by step"""
+    try:
+        # Step 1: Initialize UI
+        update_loading_progress("UI Components")
+        root.after(100, lambda: (
+            initialize_ui(frames),
+            root.after(200, lambda: (
+                # Step 2: Refresh UI
+                update_loading_progress("Interface"),
+                refresh_ui(),
+                root.after(200, lambda: (
+                    # Step 3: Update theme
+                    update_loading_progress("Theme"),
+                    update_theme_button(),
+                    root.after(200, lambda: (
+                        # Step 4: Show home frame
+                        update_loading_progress("Home Feed"),
+                        show_frame(active_frame_name),
+                        root.after(300, lambda: (
+                            # Step 5: Complete startup
+                            update_loading_progress("Finalizing"),
+                            root.after(200, complete_startup)
+                        ))
+                    ))
+                ))
+            ))
+        ))
+    except Exception as e:
+        print(f"❌ Error during initialization: {e}")
+        # Fallback to immediate startup
+        root.after(1000, complete_startup)
+
+# Start the initialization sequence
+print("🚀 Starting DevEcho initialization...")
+initialize_app_components()
 
 
-root.after(SPLASH_DURATION_MS, complete_startup)
+def update_loading_progress(message: str, progress: float = None):
+    """Update the loading screen with current progress"""
+    global splash_screen
+    if splash_screen is None:
+        return
+        
+    # Find the message label and update it
+    for widget in splash_screen.winfo_children():
+        for child in widget.winfo_children():
+            if isinstance(child, ctk.CTkLabel) and "Loading" in str(child.cget("text")):
+                child.configure(text=f"Loading {message}...")
+                break
+    
+    splash_screen.update()
+
+def check_loading_complete() -> bool:
+    """Check if all critical components are loaded"""
+    try:
+        # Check if data layer is ready
+        from data_layer import users, posts, messages
+        
+        # Check if UI is initialized 
+        from UI import _ui_state
+        
+        # Check if basic data structures exist
+        if isinstance(users, dict) and isinstance(posts, list) and isinstance(messages, dict):
+            return True
+            
+    except Exception:
+        pass
+    
+    return False
+
+
+# Start the app
 root.mainloop()

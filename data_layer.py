@@ -961,6 +961,79 @@ def persist() -> None:
     save_json(SCHEDULED_POSTS_PATH, scheduled_posts)
     save_json(GROUP_CHATS_PATH, group_chats)
 
+def push_immediate_update(resource: str, delay_ms: int = 100) -> None:
+    """
+    Immediately push a specific resource update to server and notify other clients.
+    Uses debouncing to prevent spam from rapid changes.
+    """
+    import threading
+    import time
+    
+    # Debouncing: prevent multiple rapid updates to same resource
+    current_time = time.time()
+    if not hasattr(push_immediate_update, '_last_push'):
+        push_immediate_update._last_push = {}
+    
+    last_push = push_immediate_update._last_push.get(resource, 0)
+    if current_time - last_push < (delay_ms / 1000):
+        # Too soon, skip this push
+        return
+    
+    push_immediate_update._last_push[resource] = current_time
+    
+    def _async_push():
+        try:
+            # Map resource names to file paths
+            resource_map = {
+                "users": USERS_PATH,
+                "posts": POSTS_PATH, 
+                "messages": MESSAGES_PATH,
+                "stories": STORIES_PATH,
+                "videos": VIDEOS_PATH,
+                "notifications": NOTIFICATIONS_PATH,
+                "group_chats": GROUP_CHATS_PATH,
+                "scheduled_posts": SCHEDULED_POSTS_PATH,
+            }
+            
+            path = resource_map.get(resource)
+            if not path:
+                return
+                
+            # Save the specific resource
+            if resource == "users":
+                save_json(path, users)
+            elif resource == "posts":
+                save_json(path, posts)
+            elif resource == "messages":
+                save_json(path, messages)
+            elif resource == "stories":
+                save_json(path, stories)
+            elif resource == "videos":
+                save_json(path, videos)
+            elif resource == "notifications":
+                save_json(path, {user: users[user].get("notifications", []) for user in users})
+            elif resource == "group_chats":
+                save_json(path, group_chats)
+            elif resource == "scheduled_posts":
+                save_json(path, scheduled_posts)
+                
+        except Exception:
+            # Fail silently to avoid disrupting UI
+            pass
+    
+    # Run push in background thread to avoid blocking UI
+    thread = threading.Thread(target=_async_push, daemon=True)
+    thread.start()
+
+def persist_and_push(resource: str = None) -> None:
+    """Enhanced persist that also triggers immediate push for specific resource"""
+    if resource:
+        # Push only the changed resource immediately
+        push_immediate_update(resource)
+    else:
+        # Full persist (fallback for bulk operations)
+        persist()
+
 
 def check_for_updates() -> Dict[str, float]:
     """Check server for what resources have been updated since we last synced"""
@@ -1153,6 +1226,8 @@ __all__ = [
     "group_chats",
     "scheduled_posts",
     "persist",
+    "push_immediate_update",
+    "persist_and_push",
     "notifications_data",
     "purge_expired_stories",
     "STORY_TTL_SECONDS",

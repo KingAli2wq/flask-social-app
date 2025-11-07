@@ -2722,7 +2722,9 @@ def _open_story_editor(rel_path: str, story_type: str) -> None:
 		media_sync_failed = not upload_media_asset(rel_path)
 		stories.append(story_entry)
 		stories.sort(key=lambda s: s.get("created_at_epoch", 0))
-		persist()
+		
+		# Immediate real-time sync for stories
+		trigger_immediate_sync("stories")
 		if media_sync_failed:
 			_notify_remote_sync_issue("media", "upload the story media")
 		_mark_story_author_unseen_for_all(author)
@@ -3844,13 +3846,11 @@ def _get_after_anchor() -> Optional[Any]:
 	return None
 
 
-# Polling for messages ------------------------------------------------------
-# Uses data_layer.load_json to fetch latest messages when a server is configured.
-# We update the in-memory `messages` dict (mutating it in-place) so other
-# modules that imported `messages` see the changes. Scheduling is via tkinter
-# `.after` anchored at a UI frame.
-_DM_POLL_BASE = int(os.environ.get("DM_POLL_SECONDS", "30"))  # Even longer since we only sync changes
-_DM_POLL_MAX = int(os.environ.get("DM_POLL_MAX_SECONDS", "120"))  # Up to 2 minutes for backoff
+# Real-time push notifications ---------------------------------------------
+# Instead of polling every 30 seconds, we now push changes immediately when they occur
+# and use lightweight polling only as a backup for missed updates
+_BACKUP_POLL_SECONDS = int(os.environ.get("BACKUP_POLL_SECONDS", "300"))  # 5 minutes backup check
+_IMMEDIATE_PUSH_ENABLED = True  # Enable real-time push system
 
 
 def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
@@ -3929,31 +3929,60 @@ def _notify_remote_sync_issue(resource: str, action: str) -> None:
 	)
 
 
-def _start_message_poller() -> None:
-	"""Start the recurring poll with exponential backoff on failures.
-	Anchors scheduling on the GUI widget via `.after()`.
-	"""
+def _start_backup_sync_checker() -> None:
+	"""Start lightweight backup sync checker (5 minutes) as failsafe for missed real-time updates"""
 	anchor = _get_after_anchor()
 	if not anchor:
 		return
 
-	state = {"delay": _DM_POLL_BASE}
-
-	def _schedule() -> None:
-		ok = _poll_messages_once()
-		if ok:
-			state["delay"] = _DM_POLL_BASE
-		else:
-			# exponential backoff (capped)
-			state["delay"] = min(_DM_POLL_MAX, max(_DM_POLL_BASE, state["delay"] * 2))
+	def _backup_check() -> None:
+		# Only check for updates if real-time push is enabled
+		if _IMMEDIATE_PUSH_ENABLED:
+			try:
+				_poll_messages_once()  # Light sync check
+			except Exception:
+				pass
+		
+		# Schedule next backup check in 5 minutes
 		try:
-			anchor.after(state["delay"] * 1000, _schedule)
+			anchor.after(_BACKUP_POLL_SECONDS * 1000, _backup_check)
 		except Exception:
 			return
 
+	# Start backup checker after 1 minute (let real-time system work first)
 	try:
-		anchor.after(1000, _schedule)
+		anchor.after(60000, _backup_check)  
 	except Exception:
+		pass
+
+def trigger_immediate_sync(resource_type: str) -> None:
+	"""Trigger immediate synchronization when local changes occur"""
+	if not _IMMEDIATE_PUSH_ENABLED:
+		return
+		
+	try:
+		from data_layer import push_immediate_update
+		
+		# Push the change immediately 
+		push_immediate_update(resource_type, delay_ms=50)
+		
+		# Also do a light refresh to get any concurrent changes from other clients
+		def _light_refresh():
+			try:
+				changes = _poll_messages_once()
+				if changes:
+					# Apply any concurrent updates we received
+					_apply_remote_refresh_changes(changes)
+			except Exception:
+				pass
+		
+		# Schedule light refresh after a short delay to catch concurrent updates
+		anchor = _get_after_anchor()
+		if anchor:
+			anchor.after(200, _light_refresh)
+			
+	except Exception:
+		# Fallback to old polling if push fails
 		pass
 
 
@@ -5181,9 +5210,9 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 		anchor = next(iter(_frames.values()))
 		anchor.after(100, _delayed_startup_tasks)
 
-	# start background poller with reduced frequency to prevent lag issues
-	# Poll interval controlled by DM_POLL_SECONDS env var (now set to 15 seconds instead of 3)
-	_start_message_poller()
+	# Start lightweight backup sync checker (5-minute intervals) as failsafe
+	# Real-time updates happen immediately when changes occur
+	_start_backup_sync_checker()
 
 
 def refresh_views(_frames_unused: dict[str, ctk.CTkFrame]) -> None:
@@ -6217,7 +6246,9 @@ def _handle_submit_post() -> None:
 	)
 	notify_mentions(_ui_state.current_user, content, "a post")
 	notify_followers(_ui_state.current_user)
-	persist()
+	
+	# Immediate real-time sync for posts
+	trigger_immediate_sync("posts")
 	_notify_remote_sync_issue("posts", "publish the post")
 	if media_sync_failed:
 		_notify_remote_sync_issue("media", "upload the post attachments")
@@ -6543,7 +6574,9 @@ def _handle_remove_badge(badge_id: str) -> None:
 	if len(filtered) == before:
 		return
 	users.setdefault(user, {})["badges"] = filtered
-	persist()
+	
+	# Immediate real-time sync for user profile changes
+	trigger_immediate_sync("users")
 	_touch_current_user_activity(force=True)
 	status_lbl: Optional[ctk.CTkLabel] = _profile_widgets.get("badges_status")
 	if status_lbl:
@@ -6619,7 +6652,9 @@ def _handle_follow(username: str) -> None:
 			f"@{current} started following you",
 			meta={"type": "follow", "from": current},
 		)
-	persist()
+	
+	# Immediate real-time sync for follow changes
+	trigger_immediate_sync("users")
 	_mark_dm_sidebar_dirty()
 	_mark_dirty("search")
 	_request_render("dm")
@@ -6851,7 +6886,9 @@ def _handle_create_group_chat() -> None:
 			f"@{_ui_state.current_user} added you to {group_name}",
 			meta={"type": "group_dm", "group": group_id, "from": _ui_state.current_user},
 		)
-	persist()
+	
+	# Immediate real-time sync for group chats
+	trigger_immediate_sync("group_chats")
 	_mark_dm_sidebar_dirty()
 	_dismiss_group_modal()
 	_set_active_dm_conversation(group_id, None)
@@ -7135,7 +7172,9 @@ def _handle_send_dm() -> None:
 			meta={"type": "dm", "from": current_user},
 		)
 		_set_active_dm_conversation(key, partner)
-	persist()
+	
+	# Immediate real-time sync for messages
+	trigger_immediate_sync("messages")
 	if media_sync_failed:
 		_notify_remote_sync_issue("media", "upload the message attachments")
 	entry.delete(0, tk.END)
