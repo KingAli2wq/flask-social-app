@@ -7,6 +7,24 @@
         "created_at": "2025-11-06 17:58:57",
         "created_at_epoch": 1762473537.086069,
         "expires_at": 1762559937.086069,
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
         "text": "d"
+    },
+    {
+        "id": "7e25a392-9ccb-4788-b97b-6bd9a81a4d9e",
+        "author": "Ali",
+        "path": "media/wp2123812-castle-in-the-sky-wallpapers.jpg",
+        "type": "image",
+        "created_at": "2025-11-06 18:15:22",
+        "created_at_epoch": 1762474522.2753575,
+        "expires_at": 1762560922.2753575,
+        "liked_by": [],
+        "disliked_by": [],
+        "likes": 0,
+        "dislikes": 0,
+        "text": "NiCeo"
     }
 ]

@@ -53,6 +53,7 @@ from data_layer import (
 	stories,
 	group_chats,
 	users,
+	scheduled_posts,
 	purge_expired_stories,
 	STORY_TTL_SECONDS,
 	set_server_config,
@@ -6118,9 +6119,18 @@ def _handle_delete_post(idx: int) -> None:
 		return
 	if not messagebox.askyesno("Delete post", "Are you sure you want to delete this post?"):
 		return
+	post_record = posts[idx]
+	attachments = [dict(att) for att in post_record.get("attachments", []) if isinstance(att, dict)]
 	posts.pop(idx)
 	persist()
 	_notify_remote_sync_issue("posts", "delete the post")
+	for att in attachments:
+		path = att.get("path")
+		if path and not _attachment_in_use(path):
+			_delete_media_file(path)
+		thumb = att.get("thumbnail")
+		if thumb and not _attachment_in_use(thumb):
+			_delete_media_file(thumb)
 	_request_render("home")
 	_request_render("profile")
 	if _ui_state.inspected_user == _ui_state.current_user:
@@ -7031,6 +7041,43 @@ def _delete_media_file(rel_path: str) -> None:
 		os.remove(abs_path)
 	except OSError:
 		pass
+
+
+def _normalized_rel_path(rel_path: Optional[str]) -> str:
+	if not rel_path:
+		return ""
+	return rel_path.replace("\\", "/").strip()
+
+
+def _attachment_in_use(rel_path: str) -> bool:
+	norm = _normalized_rel_path(rel_path)
+	if not norm:
+		return False
+	for post in posts:
+		for att in post.get("attachments", []):
+			if isinstance(att, dict) and _normalized_rel_path(att.get("path")) == norm:
+				return True
+	for entry in scheduled_posts:
+		for att in entry.get("attachments", []):
+			if isinstance(att, dict) and _normalized_rel_path(att.get("path")) == norm:
+				return True
+	for story in stories:
+		if _normalized_rel_path(story.get("path")) == norm:
+			return True
+	for video in videos:
+		if _normalized_rel_path(video.get("path")) == norm:
+			return True
+	for convo in messages.values():
+		for message in convo:
+			for att in message.get("attachments", []):
+				if isinstance(att, dict) and _normalized_rel_path(att.get("path")) == norm:
+					return True
+	for chat in group_chats:
+		for msg in chat.get("messages", []) or []:
+			for att in msg.get("attachments", []):
+				if isinstance(att, dict) and _normalized_rel_path(att.get("path")) == norm:
+					return True
+	return False
 
 
 def _make_photo_image(image: "Image.Image", max_width: int, max_height: int) -> Optional[tk.PhotoImage]:  # type: ignore[name-defined]

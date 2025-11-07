@@ -26,10 +26,10 @@
                 "time": "2025-10-28 22:05:03",
                 "attachments": [
                     {
-                        "type": "video",
-                        "path": "media/The Screaming Sheep (Original Upload) - AjQ2891 (720p, h264)_1.mp4",
                         "name": "The Screaming Sheep (Original Upload) - AjQ2891 (720p, h264)_1.mp4",
-                        "size": 2941811
+                        "path": "media/The Screaming Sheep (Original Upload) - AjQ2891 (720p, h264)_1.mp4",
+                        "size": 2941811,
+                        "type": "video"
                     }
                 ]
             }

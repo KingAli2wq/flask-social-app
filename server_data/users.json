@@ -25,31 +25,6 @@
         "last_active_at": "2025-10-29 14:48:07",
         "badges": []
     },
-    "Connor": {
-        "password": "2009",
-        "registered_at": "2025-10-16 17:02:05",
-        "notifications": [
-            {
-                "message": "@Ali posted a new update",
-                "time": "2025-11-06 11:44:17"
-            }
-        ],
-        "following": [
-            "Ali",
-            "Maya"
-        ],
-        "followers": [
-            "Ali",
-            "Maya",
-            "Sofia"
-        ],
-        "profile_picture": null,
-        "bio": "",
-        "location": "",
-        "website": "",
-        "last_active_at": "2025-10-29 14:48:07",
-        "badges": []
-    },
     "Ben": {
         "password": "Ben2900",
         "registered_at": "2025-10-16 17:02:05",
@@ -67,28 +42,34 @@
         "last_active_at": "2025-10-29 14:48:07",
         "badges": []
     },
-    "Maya": {
-        "password": "maya2025",
-        "registered_at": "2025-10-24 09:15:18",
+    "Connor": {
+        "password": "2009",
+        "registered_at": "2025-10-16 17:02:05",
         "notifications": [
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-06 11:44:17"
             },
             {
-                "message": "@Connor posted a new update",
-                "time": "2025-11-06 17:59:05"
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:02"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:59"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:17:52"
             }
         ],
         "following": [
             "Ali",
-            "Sofia",
-            "Priya"
+            "Maya"
         ],
         "followers": [
             "Ali",
-            "Connor",
-            "Jordan",
+            "Maya",
             "Sofia"
         ],
         "profile_picture": null,
@@ -105,6 +86,18 @@
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-06 11:44:17"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:02"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:59"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:17:52"
             }
         ],
         "following": [
@@ -115,33 +108,6 @@
         "followers": [
             "Sofia",
             "Liam"
-        ],
-        "profile_picture": null,
-        "bio": "",
-        "location": "",
-        "website": "",
-        "last_active_at": "2025-10-29 14:48:07",
-        "badges": []
-    },
-    "Sofia": {
-        "password": "sofia2025",
-        "registered_at": "2025-10-25 15:04:11",
-        "notifications": [
-            {
-                "message": "@Connor posted a new update",
-                "time": "2025-11-06 17:59:05"
-            }
-        ],
-        "following": [
-            "Maya",
-            "Ali",
-            "Connor",
-            "Jordan"
-        ],
-        "followers": [
-            "Ali",
-            "Connor",
-            "Jordan"
         ],
         "profile_picture": null,
         "bio": "",
@@ -169,6 +135,49 @@
         "last_active_at": "2025-10-29 14:48:07",
         "badges": []
     },
+    "Maya": {
+        "password": "maya2025",
+        "registered_at": "2025-10-24 09:15:18",
+        "notifications": [
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 11:44:17"
+            },
+            {
+                "message": "@Connor posted a new update",
+                "time": "2025-11-06 17:59:05"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:02"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:15:59"
+            },
+            {
+                "message": "@Ali posted a new update",
+                "time": "2025-11-06 18:17:52"
+            }
+        ],
+        "following": [
+            "Ali",
+            "Sofia",
+            "Priya"
+        ],
+        "followers": [
+            "Ali",
+            "Connor",
+            "Jordan",
+            "Sofia"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07",
+        "badges": []
+    },
     "Priya": {
         "password": "priya2025",
         "registered_at": "2025-10-26 19:02:51",
@@ -182,6 +191,33 @@
         "followers": [
             "Ben",
             "Maya"
+        ],
+        "profile_picture": null,
+        "bio": "",
+        "location": "",
+        "website": "",
+        "last_active_at": "2025-10-29 14:48:07",
+        "badges": []
+    },
+    "Sofia": {
+        "password": "sofia2025",
+        "registered_at": "2025-10-25 15:04:11",
+        "notifications": [
+            {
+                "message": "@Connor posted a new update",
+                "time": "2025-11-06 17:59:05"
+            }
+        ],
+        "following": [
+            "Maya",
+            "Ali",
+            "Connor",
+            "Jordan"
+        ],
+        "followers": [
+            "Ali",
+            "Connor",
+            "Jordan"
         ],
         "profile_picture": null,
         "bio": "",
