@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, MutableMapping, MutableSequence, Any
+from typing import Callable, MutableMapping, MutableSequence, Any, Optional
 import re
 
 _ctx: dict[str, Any] = {}
@@ -66,23 +66,43 @@ def push_notification(username: str, message: str, *, meta: dict | None = None) 
     return True
 
 
-def notify_mentions(author: str, text: str, context: str) -> bool:
+def notify_mentions(
+    author: str,
+    text: str,
+    context: str,
+    *,
+    mentions: Optional[list[str]] = None,
+    meta_factory: Optional[Callable[[str], Optional[dict]]] = None,
+) -> bool:
     users = _require("users")
-    mentioned = {name.lower() for name in re.findall(r"@(\w+)", text or "")}
+    if mentions is not None:
+        targets = {name.lower() for name in mentions if isinstance(name, str)}
+    else:
+        targets = {name.lower() for name in re.findall(r"@(\w+)", text or "")}
     delivered = False
     for username in users:
-        if username != author and username.lower() in mentioned:
-            if push_notification(username, f"@{author} mentioned you in {context}"):
+        if username == author:
+            continue
+        if username.lower() in targets:
+            meta_payload = meta_factory(username) if meta_factory else None
+            if push_notification(username, f"@{author} mentioned you in {context}", meta=meta_payload):
                 delivered = True
     return delivered
 
 
-def notify_followers(author: str) -> int:
+def notify_followers(
+    author: str,
+    *,
+    message: Optional[str] = None,
+    meta_factory: Optional[Callable[[str], Optional[dict]]]=None,
+) -> int:
     users = _require("users")
     followers = users.get(author, {}).get("followers", [])
     count = 0
     for follower in followers:
-        if push_notification(follower, f"@{author} posted a new update"):
+        payload = message or f"@{author} posted a new update"
+        meta_payload = meta_factory(follower) if meta_factory else None
+        if push_notification(follower, payload, meta=meta_payload):
             count += 1
     return count
 

@@ -140,6 +140,8 @@ class _UIState:
 			editing_post_index=None,
 			editing_reply_target=None,
 			reply_input_target=None,
+			focus_post_id=None,
+			focus_reply_id=None,
 		)
 	)
 	search_query: str = ""
@@ -185,6 +187,8 @@ def _compute_view_signature(view: str) -> Optional[tuple]:
 		feed_state.editing_post_index,
 		feed_state.editing_reply_target,
 		feed_state.reply_input_target,
+		feed_state.focus_post_id,
+		feed_state.focus_reply_id,
 	)
 	if view == "home":
 		post_entries: list[tuple] = []
@@ -669,6 +673,8 @@ def set_nav_notifications_alert(active: bool) -> None:
 _home_widgets: dict[str, Any] = {}
 _videos_widgets: dict[str, Any] = {}
 _video_cards: dict[str, dict[str, Any]] = {}
+_video_focus_id: Optional[str] = None
+_video_focus_open_comments = False
 _comment_icon_image: Optional[ctk.CTkImage] = None
 _reaction_icon_cache: dict[tuple[str, tuple[int, int]], Optional[ctk.CTkImage]] = {}
 _video_fullscreen_windows: dict[str, dict[str, Any]] = {}
@@ -1751,8 +1757,9 @@ def _handle_upload_video() -> None:
 	media_sync_failed = not upload_media_asset(rel_path)
 	caption_entry: ctk.CTkEntry = _videos_widgets.get("caption_entry")
 	caption = caption_entry.get().strip() if caption_entry else ""
+	video_id = str(uuid4())
 	video_record: dict[str, Any] = {
-		"id": str(uuid4()),
+		"id": video_id,
 		"author": _ui_state.current_user,
 		"path": rel_path,
 		"created_at": now_ts(),
@@ -1762,13 +1769,32 @@ def _handle_upload_video() -> None:
 		video_record["caption"] = caption
 	videos.append(video_record)
 	persist()
-	followers_notified = notify_followers(_ui_state.current_user)
+	followers_notified = notify_followers(
+		_ui_state.current_user,
+		message=f"@{_ui_state.current_user} uploaded a new video",
+		meta_factory=lambda _user: {
+			"type": "video_publish",
+			"video_id": video_id,
+			"from": _ui_state.current_user,
+		},
+	)
 	missing_mentions: list[str] = []
 	mentions_delivered = False
 	if caption:
 		resolved_mentions, missing_mentions = _split_mentions(caption, author=_ui_state.current_user)
 		if resolved_mentions:
-			mentions_delivered = notify_mentions(_ui_state.current_user, caption, "a video")
+			mentions_delivered = notify_mentions(
+				_ui_state.current_user,
+				caption,
+				"a video",
+				mentions=resolved_mentions,
+				meta_factory=lambda _user: {
+					"type": "mention",
+					"resource": "video",
+					"video_id": video_id,
+					"from": _ui_state.current_user,
+				},
+			)
 	if caption_entry:
 		caption_entry.delete(0, tk.END)
 	_set_video_upload_path("")
@@ -3057,8 +3083,19 @@ def _open_story_editor(rel_path: str, story_type: str) -> None:
 			_notify_remote_sync_issue("media", "upload the story media")
 		_mark_story_author_unseen_for_all(author)
 		mentions_delivered = False
-		if text_content:
-			mentions_delivered = notify_mentions(author, text_content, "their story")
+		if text_content and resolved_mentions:
+			mentions_delivered = notify_mentions(
+				author,
+				text_content,
+				"their story",
+				mentions=resolved_mentions,
+				meta_factory=lambda _user: {
+					"type": "mention",
+					"resource": "story",
+					"story_id": story_entry.get("id"),
+					"from": author,
+				},
+			)
 		if missing_mentions:
 			messagebox.showwarning(
 				"Some mentions not found",
@@ -3220,6 +3257,57 @@ def _find_story(story_id: str) -> Optional[dict[str, Any]]:
 	return None
 
 
+def _find_post_index(post_id: str) -> Optional[int]:
+	target = str(post_id or "").strip()
+	if not target:
+		return None
+	for idx, post in enumerate(posts):
+		if str(post.get("id") or "").strip() == target:
+			return idx
+	return None
+
+
+def _focus_post_from_notification(post_id: str, *, reply_id: Optional[str] = None) -> None:
+	if not post_id:
+		return
+	index = _find_post_index(post_id)
+	if index is None:
+		messagebox.showinfo("Post unavailable", "That post is no longer available.")
+		return
+	_feed_state = _ui_state.feed_state
+	_feed_state.focus_post_id = str(post_id)
+	_feed_state.focus_reply_id = str(reply_id) if reply_id else None
+	if reply_id:
+		_feed_state.expanded_replies.add(index)
+	_mark_dirty("home")
+	_request_render("home")
+	if _show_frame_cb:
+		_show_frame_cb("home")
+
+
+def _open_story_from_notification(story_id: str) -> None:
+	if not story_id:
+		return
+	story = _find_story(story_id)
+	if not story:
+		messagebox.showinfo("Story unavailable", "That story has expired or was removed.")
+		return
+	author = story.get("author") or ""
+	_open_story_viewer(author, story_id=story_id)
+
+
+def _open_video_from_notification(video_id: str, *, open_comments: bool = False) -> None:
+	if not video_id:
+		return
+	global _video_focus_id, _video_focus_open_comments
+	_video_focus_id = video_id
+	_video_focus_open_comments = open_comments
+	_mark_dirty("videos")
+	_request_render("videos")
+	if _show_frame_cb:
+		_show_frame_cb("videos")
+
+
 def _find_video_comment(video: dict[str, Any], comment_id: str) -> Optional[dict[str, Any]]:
 	for comment in video.get("comments", []):
 		if comment.get("id") == comment_id:
@@ -3376,7 +3464,20 @@ def _submit_video_comment(video_id: str) -> None:
 	resolved, missing = _split_mentions(text, author=_ui_state.current_user)
 	mentions_delivered = False
 	if resolved:
-		mentions_delivered = notify_mentions(_ui_state.current_user, text, "a video comment")
+		comment_id = comment.get("id")
+		mentions_delivered = notify_mentions(
+			_ui_state.current_user,
+			text,
+			"a video comment",
+			mentions=resolved,
+			meta_factory=lambda _user: {
+				"type": "mention",
+				"resource": "video_comment",
+				"video_id": video_id,
+				"comment_id": comment_id,
+				"from": _ui_state.current_user,
+			},
+		)
 	entry.delete(0, tk.END)
 	if missing:
 		_set_video_status(
@@ -3416,7 +3517,21 @@ def _submit_video_comment_reply(video_id: str, comment_id: str, text_var: tk.Str
 	resolved, missing = _split_mentions(text, author=_ui_state.current_user)
 	mentions_delivered = False
 	if resolved:
-		mentions_delivered = notify_mentions(_ui_state.current_user, text, "a video reply")
+		reply_id = reply.get("id")
+		mentions_delivered = notify_mentions(
+			_ui_state.current_user,
+			text,
+			"a video reply",
+			mentions=resolved,
+			meta_factory=lambda _user: {
+				"type": "mention",
+				"resource": "video_reply",
+				"video_id": video_id,
+				"comment_id": comment_id,
+				"reply_id": reply_id,
+				"from": _ui_state.current_user,
+			},
+		)
 	text_var.set("")
 	if missing:
 		_set_video_status(
@@ -3527,6 +3642,7 @@ def _close_video_fullscreen(video_id: str) -> None:
 
 
 def _render_videos() -> None:
+	global _video_focus_id, _video_focus_open_comments
 	feed: ctk.CTkScrollableFrame = _videos_widgets.get("feed")
 	if not feed:
 		return
@@ -3556,6 +3672,11 @@ def _render_videos() -> None:
 		card.grid_columnconfigure(1, weight=1)
 		card.grid_columnconfigure(2, weight=3)
 		card.grid_rowconfigure(0, weight=1)
+		if _video_focus_id and video_id == _video_focus_id:
+			try:
+				card.configure(border_width=2, border_color=_palette.get("accent", "#4c8dff"))
+			except Exception:
+				card.configure(fg_color="#132036")
 		video_container = ctk.CTkFrame(
 			card,
 			fg_color=_palette.get("card", "#1f2937"),
@@ -3692,8 +3813,15 @@ def _render_videos() -> None:
 			"attachment": attachment,
 			"fullscreen_button": full_btn,
 			"reply_vars": {},
+			"card_frame": card,
 		}
+		if _video_focus_id and video_id == _video_focus_id and _video_focus_open_comments:
+			if not _video_cards[video_id]["panel_visible"]:
+				_toggle_video_comments(video_id)
 		_update_video_reaction_ui(video_id)
+
+	_video_focus_id = None
+	_video_focus_open_comments = False
 
 def _show_story_slide() -> None:
 	state = _active_story_viewer
@@ -3777,7 +3905,7 @@ def _show_prev_story() -> None:
 		_show_story_slide()
 
 
-def _open_story_viewer(author: str) -> None:
+def _open_story_viewer(author: str, story_id: Optional[str] = None) -> None:
 	global _active_story_viewer
 	_purge_story_cache_if_needed()
 	items = [s for s in stories if (s.get("author") or "unknown") == author]
@@ -3884,10 +4012,19 @@ def _open_story_viewer(author: str) -> None:
 	next_btn = ctk.CTkButton(controls, text="Next", width=100, command=_show_next_story)
 	next_btn.grid(row=0, column=2, sticky="we", padx=(8, 0))
 
+	start_index = 0
+	if story_id:
+		target = str(story_id).strip()
+		for idx, candidate in enumerate(items):
+			candidate_id = str(candidate.get("id") or candidate.get("path") or "").strip()
+			if candidate_id and candidate_id == target:
+				start_index = idx
+				break
+
 	state = {
 		"window": overlay,
 		"items": items,
-		"index": 0,
+		"index": start_index,
 		"media_frame": media_frame,
 		"progress": progress,
 		"prev_btn": prev_btn,
@@ -5816,6 +5953,16 @@ def _render_feed_section() -> None:
 		open_image=_open_image,
 	)
 
+	if _ui_state.feed_state.focus_post_id or _ui_state.feed_state.focus_reply_id:
+		def _clear_focus_markers() -> None:
+			_ui_state.feed_state.focus_post_id = None
+			_ui_state.feed_state.focus_reply_id = None
+
+		try:
+			feed_container.after(800, _clear_focus_markers)
+		except Exception:
+			_clear_focus_markers()
+
 
 def _render_profile_section() -> None:
 	info_lbl = _profile_widgets.get("info")
@@ -6257,9 +6404,48 @@ def _render_notifications() -> None:
 		card.grid(sticky="we", padx=0, pady=6)
 		card.grid_columnconfigure(0, weight=1)
 
-		meta = note.get("meta") or {}
-		dm_sender = meta.get("from") if meta.get("type") == "dm" else None
-		group_target = meta.get("group") if meta.get("type") == "group_dm" else None
+		meta = note.get("meta") if isinstance(note.get("meta"), dict) else {}
+		meta_type = meta.get("type") if isinstance(meta, dict) else None
+		click_handler: Optional[Callable[[Any], None]] = None
+		if meta_type == "dm":
+			sender = meta.get("from")
+			if sender:
+				click_handler = lambda _e, user=sender: _open_dm_from_notification(user)
+		elif meta_type == "group_dm":
+			group_target = meta.get("group")
+			if group_target:
+				click_handler = lambda _e, chat_id=group_target: _open_group_from_notification(chat_id)
+		elif meta_type == "mention":
+			resource = meta.get("resource")
+			if resource in {"post", "reply"}:
+				post_id = meta.get("post_id")
+				reply_id = meta.get("reply_id") if resource == "reply" else None
+				if post_id:
+					click_handler = lambda _e, pid=post_id, rid=reply_id: _focus_post_from_notification(pid, reply_id=rid)
+			elif resource == "story":
+				story_id = meta.get("story_id")
+				if story_id:
+					click_handler = lambda _e, sid=story_id: _open_story_from_notification(sid)
+			elif resource == "video":
+				video_id = meta.get("video_id")
+				if video_id:
+					click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid)
+			elif resource in {"video_comment", "video_reply"}:
+				video_id = meta.get("video_id")
+				if video_id:
+					click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid, open_comments=True)
+		elif meta_type == "post_publish":
+			post_id = meta.get("post_id")
+			if post_id:
+				click_handler = lambda _e, pid=post_id: _focus_post_from_notification(pid)
+		elif meta_type == "story_publish":
+			story_id = meta.get("story_id")
+			if story_id:
+				click_handler = lambda _e, sid=story_id: _open_story_from_notification(sid)
+		elif meta_type == "video_publish":
+			video_id = meta.get("video_id")
+			if video_id:
+				click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid)
 
 		message_lbl = ctk.CTkLabel(
 			card,
@@ -6269,14 +6455,9 @@ def _render_notifications() -> None:
 			text_color=_palette.get("text", "#e2e8f0"),
 		)
 		message_lbl.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 4))
-		if dm_sender or group_target:
+		if click_handler:
 			message_lbl.configure(text_color=_palette.get("accent", "#4c8dff"), cursor="hand2")
-			handler = (
-				(lambda _e, user=dm_sender: _open_dm_from_notification(user))
-				if dm_sender
-				else lambda _e, chat_id=group_target: _open_group_from_notification(chat_id)
-			)
-			message_lbl.bind("<Button-1>", handler)
+			message_lbl.bind("<Button-1>", click_handler)
 
 		if meta.get("type") == "follow":
 			follower = meta.get("from")
@@ -6659,23 +6840,51 @@ def _handle_submit_post() -> None:
 	for media_path in media_paths:
 		if not upload_media_asset(media_path):
 			media_sync_failed = True
-	posts.append(
-		{
-			"author": _ui_state.current_user,
-			"content": content,
-			"created_at": now_ts(),
-			"edited": False,
-			"edited_at": None,
-			"replies": [],
-			"liked_by": [],
-			"disliked_by": [],
-			"likes": 0,
-			"dislikes": 0,
-			"attachments": attachments,
-		}
+	post_id = uuid4().hex
+	post_record = {
+		"id": post_id,
+		"author": _ui_state.current_user,
+		"content": content,
+		"created_at": now_ts(),
+		"edited": False,
+		"edited_at": None,
+		"replies": [],
+		"liked_by": [],
+		"disliked_by": [],
+		"likes": 0,
+		"dislikes": 0,
+		"attachments": attachments,
+	}
+	posts.append(post_record)
+	resolved_mentions, missing_mentions = _split_mentions(content, author=_ui_state.current_user)
+	if missing_mentions:
+		messagebox.showwarning(
+			"Mentions not found",
+			"These usernames were not recognized: " + ", ".join(f"@{name}" for name in sorted(missing_mentions)),
+		)
+	mentions_sent = False
+	if resolved_mentions:
+		mentions_sent = notify_mentions(
+			_ui_state.current_user,
+			content,
+			"a post",
+			mentions=resolved_mentions,
+			meta_factory=lambda _user: {
+				"type": "mention",
+				"resource": "post",
+				"post_id": post_id,
+				"from": _ui_state.current_user,
+			},
+		)
+	followers_notified = notify_followers(
+		_ui_state.current_user,
+		message=f"@{_ui_state.current_user} shared a new post",
+		meta_factory=lambda _user: {
+			"type": "post_publish",
+			"post_id": post_id,
+			"from": _ui_state.current_user,
+		},
 	)
-	mentions_sent = notify_mentions(_ui_state.current_user, content, "a post")
-	followers_notified = notify_followers(_ui_state.current_user)
 	if mentions_sent or followers_notified:
 		trigger_immediate_sync("notifications")
 
@@ -6826,6 +7035,7 @@ def _handle_submit_reply(post_idx: int, var: tk.StringVar) -> None:
 		return
 	posts[post_idx].setdefault("replies", []).append(
 		{
+			"id": uuid4().hex,
 			"author": _ui_state.current_user,
 			"content": content,
 			"created_at": now_ts(),
@@ -6838,7 +7048,31 @@ def _handle_submit_reply(post_idx: int, var: tk.StringVar) -> None:
 			"attachments": [],
 		}
 	)
-	mentions_delivered = notify_mentions(_ui_state.current_user, content, "a reply")
+	reply_record = posts[post_idx]["replies"][-1]
+	post_record = posts[post_idx]
+	post_id = str(post_record.get("id") or "")
+	resolved_mentions, missing_mentions = _split_mentions(content, author=_ui_state.current_user)
+	if missing_mentions:
+		messagebox.showwarning(
+			"Mentions not found",
+			"These usernames were not recognized: " + ", ".join(f"@{name}" for name in sorted(missing_mentions)),
+		)
+	mentions_delivered = False
+	if resolved_mentions:
+		reply_id = reply_record.get("id") or ""
+		mentions_delivered = notify_mentions(
+			_ui_state.current_user,
+			content,
+			"a reply",
+			mentions=resolved_mentions,
+			meta_factory=lambda _user: {
+				"type": "mention",
+				"resource": "reply",
+				"post_id": post_id,
+				"reply_id": reply_id,
+				"from": _ui_state.current_user,
+			},
+		)
 	if mentions_delivered:
 		trigger_immediate_sync("notifications")
 	persist()

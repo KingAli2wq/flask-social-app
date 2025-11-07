@@ -229,6 +229,18 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 7, 2025 - Mention Deep Links & Notification Navigation**
+
+### ✅ **Completed Today:**
+1. **Metadata-Rich Mentions:** Every mention (posts, replies, stories, video captions, and threaded video comments) now emits notifications with structured resource metadata so recipients land on the exact content, not just the home tab.
+2. **Clickable Notification Routing:** Notification list items detect the resource type and open the right pane—home feed with highlighted post/reply, story viewer at the matching slide, or video gallery with the target clip focused and optional comments expanded.
+3. **Feed & Video Highlighting:** Introduced transient focus state that pulses the referenced card for ~800ms, then clears itself to avoid lingering styles while keeping the user oriented after the jump.
+4. **Duplicate Mention Guard:** Added a 30-second signature cache so repeat mentions from the same author/context do not spam alerts while continuing to log new mentions instantly.
+
+### 🧪 **Validation:**
+- Manually triggered mentions across text posts, threaded replies, stories, video captions, and video comments to confirm alerts appear once and each notification opens the precise location with the correct view selected.
+- Verified feed highlights and video focus reset after navigation without affecting subsequent renders or causing flicker when the panel refreshes.
+
 ## 🗓️ **November 7, 2025 - View Signature Caching & Zero-Flicker Rendering**
 
 ### ✅ **Completed Today:**

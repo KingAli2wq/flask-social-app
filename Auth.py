@@ -35,6 +35,8 @@ class FeedState:
     editing_post_index: Optional[int]
     editing_reply_target: Optional[tuple[int, int]]
     reply_input_target: Optional[int]
+    focus_post_id: Optional[str]
+    focus_reply_id: Optional[str]
 
 
 @dataclass
@@ -77,7 +79,8 @@ def render_post_card(
     open_image: Optional[OpenHandler] = None,
 ) -> None:
     """Render a single post card into the supplied container."""
-    card = ctk.CTkFrame(container, corner_radius=16, fg_color=palette.get("card", "#18263f"))
+    base_card_color = palette.get("card", "#18263f")
+    card = ctk.CTkFrame(container, corner_radius=16, fg_color=base_card_color)
     card.grid(sticky="we", padx=0, pady=8)
     card.grid_columnconfigure(0, weight=1)
     card._image_refs = []  # type: ignore[attr-defined]
@@ -89,6 +92,13 @@ def render_post_card(
     surface = palette.get("surface", "#111b2e")
     danger = palette.get("danger", "#ef4444")
     danger_hover = palette.get("danger_hover", "#dc2626")
+
+    is_focus_post = bool(state.focus_post_id and str(post.get("id")) == str(state.focus_post_id))
+    if is_focus_post:
+        try:
+            card.configure(border_width=2, border_color=accent)
+        except Exception:
+            card.configure(fg_color="#1d2a44")
 
     header = f"@{post.get('author', 'unknown')}  ·  {post.get('created_at', '')}"
     header_lbl = ctk.CTkLabel(
@@ -370,10 +380,17 @@ def render_post_card(
         replies_frame.grid_columnconfigure(0, weight=1)
 
         for r_idx, reply in enumerate(post.get("replies", [])):
-            r_card = ctk.CTkFrame(replies_frame, fg_color=palette.get("card", "#18263f"), corner_radius=10)
+            reply_base_color = palette.get("card", "#18263f")
+            r_card = ctk.CTkFrame(replies_frame, fg_color=reply_base_color, corner_radius=10)
             r_card.grid(sticky="we", padx=8, pady=4)
             r_card.grid_columnconfigure(0, weight=1)
             r_card._image_refs = []  # type: ignore[attr-defined]
+
+            if state.focus_reply_id and str(reply.get("id")) == str(state.focus_reply_id):
+                try:
+                    r_card.configure(border_width=2, border_color=accent)
+                except Exception:
+                    r_card.configure(fg_color="#20314f")
 
             reply_header = ctk.CTkLabel(
                 r_card,

@@ -563,6 +563,7 @@ def _normalize_badges(value: Any) -> List[Dict[str, Any]]:
 
 
 def normalize_reply(reply_dict: Dict[str, Any]) -> Dict[str, Any]:
+    reply_dict.setdefault("id", str(uuid4()))
     reply_dict.setdefault("author", "unknown")
     reply_dict.setdefault("content", "")
     reply_dict.setdefault("created_at", now_ts())
@@ -577,6 +578,7 @@ def normalize_reply(reply_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_post(post_dict: Dict[str, Any]) -> Dict[str, Any]:
+    post_dict.setdefault("id", str(uuid4()))
     post_dict.setdefault("edited", False)
     post_dict.setdefault("edited_at", None)
     post_dict.setdefault("replies", [])
