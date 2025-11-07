@@ -1,76 +1,12 @@
 {
     "Ali": [
         {
-            "message": "@Connor posted a new update",
-            "time": "2025-11-06 22:52:13"
-        },
-        {
-            "message": "@Connor sent a message in test rework2",
-            "meta": {
-                "from": "Connor",
-                "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                "type": "group_dm"
-            },
-            "time": "2025-11-06 23:24:27"
-        },
-        {
-            "message": "@Connor sent a message in test rework2",
-            "meta": {
-                "from": "Connor",
-                "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                "type": "group_dm"
-            },
-            "time": "2025-11-06 23:40:39"
-        },
-        {
-            "message": "@Ben started following you",
-            "meta": {
-                "from": "Ben",
-                "type": "follow"
-            },
-            "time": "2025-11-06 23:43:31"
-        },
-        {
-            "message": "@Ben joined test rework2",
-            "meta": {
-                "from": "Ben",
-                "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                "type": "group_dm"
-            },
-            "time": "2025-11-07 00:04:38"
-        },
-        {
-            "message": "You are now the owner of test rework2",
-            "meta": {
-                "from": "Ben",
-                "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                "type": "group_dm"
-            },
-            "time": "2025-11-07 00:05:50"
-        },
-        {
             "message": "@Ben sent you a direct message",
             "meta": {
                 "from": "Ben",
                 "type": "dm"
             },
-            "time": "2025-11-07 00:11:52"
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "meta": {
-                "from": "Ben",
-                "type": "dm"
-            },
-            "time": "2025-11-07 00:11:59"
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "meta": {
-                "from": "Ben",
-                "type": "dm"
-            },
-            "time": "2025-11-07 00:43:28"
+            "time": "2025-11-07 12:05:25"
         },
         {
             "message": "@Ben sent a message in test rework2",
@@ -79,88 +15,89 @@
                 "group": "group:17d34d4a98a041249bae2986a72c4a32",
                 "type": "group_dm"
             },
-            "time": "2025-11-07 00:43:54"
+            "time": "2025-11-07 12:07:05"
         },
         {
-            "message": "@Ben mentioned you in a post",
+            "message": "@Ben sent you a direct message",
             "meta": {
                 "from": "Ben",
-                "post_id": "1df378138a344ef4a2166ecb5926a312",
-                "resource": "post",
-                "type": "mention"
+                "type": "dm"
             },
-            "time": "2025-11-07 00:44:10"
+            "time": "2025-11-07 12:14:32"
         },
         {
             "message": "@Ben shared a new post",
             "meta": {
                 "from": "Ben",
-                "post_id": "1df378138a344ef4a2166ecb5926a312",
+                "post_id": "5e5278d89df34cd2b05242f9c247079a",
                 "type": "post_publish"
             },
-            "time": "2025-11-07 00:44:10"
+            "time": "2025-11-07 13:49:48"
         },
         {
-            "message": "@Ben shared a new post",
+            "message": "@Ben sent a message in test rework2",
+            "time": "2025-11-07 13:53:28",
             "meta": {
-                "from": "Ben",
-                "post_id": "9c9f5f19f2304d3ab870d033d66fdf57",
-                "type": "post_publish"
-            },
-            "time": "2025-11-07 09:15:04"
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "meta": {
-                "from": "Ben",
-                "type": "dm"
-            },
-            "time": "2025-11-07 09:15:11"
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "meta": {
-                "from": "Ben",
-                "type": "dm"
-            },
-            "time": "2025-11-07 09:15:15"
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "meta": {
-                "from": "Ben",
-                "type": "dm"
-            },
-            "time": "2025-11-07 09:15:19"
-        },
-        {
-            "message": "@Ben shared a new post",
-            "time": "2025-11-07 09:20:20",
-            "meta": {
-                "type": "post_publish",
-                "post_id": "1cedf5c5e21a4871b116814b98810bba",
-                "from": "Ben"
-            }
-        },
-        {
-            "message": "@Ben shared a new post",
-            "time": "2025-11-07 09:20:23",
-            "meta": {
-                "type": "post_publish",
-                "post_id": "adaabe77db984a23a04f387f9f1c66bf",
-                "from": "Ben"
-            }
-        },
-        {
-            "message": "@Ben sent you a direct message",
-            "time": "2025-11-07 09:20:36",
-            "meta": {
-                "type": "dm",
+                "type": "group_dm",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
                 "from": "Ben"
             }
         }
     ],
-    "Ben": [],
+    "Ben": [
+        {
+            "message": "@Ali sent you a direct message",
+            "meta": {
+                "from": "Ali",
+                "type": "dm"
+            },
+            "time": "2025-11-07 12:05:28"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 12:05:47"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 12:06:37"
+        },
+        {
+            "message": "@Ali sent you a direct message",
+            "meta": {
+                "from": "Ali",
+                "type": "dm"
+            },
+            "time": "2025-11-07 12:13:54"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "meta": {
+                "from": "Ali",
+                "post_id": "6c40e75b84a34ca388ad70f8426f99a1",
+                "type": "post_publish"
+            },
+            "time": "2025-11-07 13:50:00"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 13:53:01"
+        }
+    ],
     "Connor": [
         {
             "message": "@Ali added you to test rework2",
@@ -251,6 +188,60 @@
                 "type": "group_dm"
             },
             "time": "2025-11-07 00:43:54"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 12:05:47"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 12:06:37"
+        },
+        {
+            "message": "@Ben sent a message in test rework2",
+            "meta": {
+                "from": "Ben",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 12:07:05"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "meta": {
+                "from": "Ali",
+                "post_id": "6c40e75b84a34ca388ad70f8426f99a1",
+                "type": "post_publish"
+            },
+            "time": "2025-11-07 13:50:00"
+        },
+        {
+            "message": "@Ali sent a message in test rework2",
+            "meta": {
+                "from": "Ali",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 13:53:01"
+        },
+        {
+            "message": "@Ben sent a message in test rework2",
+            "time": "2025-11-07 13:53:28",
+            "meta": {
+                "type": "group_dm",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "from": "Ben"
+            }
         }
     ],
     "Jordan": [],

@@ -78,7 +78,8 @@
             "id": "66fae706d39a48eaae1c1053880c03a0",
             "reactions": {},
             "seen_by": [
-                "Ben"
+                "Ben",
+                "Ali"
             ],
             "sender": "Ben",
             "time": "2025-11-07 00:43:28"
@@ -89,7 +90,8 @@
             "id": "2dcfb26cdcc4462f9869319535834da3",
             "reactions": {},
             "seen_by": [
-                "Ben"
+                "Ben",
+                "Ali"
             ],
             "sender": "Ben",
             "time": "2025-11-07 09:15:11"
@@ -100,7 +102,8 @@
             "id": "9c760c0de4b14cdbbe8393212d5a7c42",
             "reactions": {},
             "seen_by": [
-                "Ben"
+                "Ben",
+                "Ali"
             ],
             "sender": "Ben",
             "time": "2025-11-07 09:15:15"
@@ -111,17 +114,78 @@
             "id": "eff5fece267f4741b8ccf72c6de98053",
             "reactions": {},
             "seen_by": [
-                "Ben"
+                "Ben",
+                "Ali"
             ],
             "sender": "Ben",
             "time": "2025-11-07 09:15:19"
         },
         {
-            "sender": "Ben",
-            "content": "s",
-            "time": "2025-11-07 09:20:36",
             "attachments": [],
+            "content": "s",
             "id": "a498c10069394bd8ac80b24076be6b4a",
+            "reactions": {},
+            "seen_by": [
+                "Ben",
+                "Ali"
+            ],
+            "sender": "Ben",
+            "time": "2025-11-07 09:20:36"
+        },
+        {
+            "attachments": [],
+            "content": "school test 1",
+            "id": "4c373e79394342e58dfaf8d0b69bbda3",
+            "reactions": {},
+            "seen_by": [
+                "Ben",
+                "Ali"
+            ],
+            "sender": "Ben",
+            "time": "2025-11-07 12:04:51"
+        },
+        {
+            "attachments": [],
+            "content": "test",
+            "id": "cbe10493f45548789184ae87c246dfa0",
+            "reactions": {},
+            "seen_by": [
+                "Ben",
+                "Ali"
+            ],
+            "sender": "Ben",
+            "time": "2025-11-07 12:05:25"
+        },
+        {
+            "attachments": [],
+            "content": "hey",
+            "id": "23cdbb70616f4ba8b8ce2929cac951d0",
+            "reactions": {},
+            "seen_by": [
+                "Ali",
+                "Ben"
+            ],
+            "sender": "Ali",
+            "time": "2025-11-07 12:05:28"
+        },
+        {
+            "attachments": [],
+            "content": "notfication test1",
+            "id": "130f331079a446918327e6fe87d10a47",
+            "reactions": {},
+            "seen_by": [
+                "Ali",
+                "Ben"
+            ],
+            "sender": "Ali",
+            "time": "2025-11-07 12:13:54"
+        },
+        {
+            "sender": "Ben",
+            "content": "hello",
+            "time": "2025-11-07 12:14:32",
+            "attachments": [],
+            "id": "b49dde63f08e45b98f6157125712567d",
             "reactions": {},
             "seen_by": [
                 "Ben"

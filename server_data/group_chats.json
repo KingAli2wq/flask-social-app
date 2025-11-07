@@ -19,8 +19,7 @@
                     "Ali",
                     "Connor",
                     "Ben"
-                ],
-                "reactions": {}
+                ]
             },
             {
                 "id": "be3714e296314845a84c4db54203ea93",
@@ -32,8 +31,7 @@
                     "Ali",
                     "Connor",
                     "Ben"
-                ],
-                "reactions": {}
+                ]
             },
             {
                 "id": "9b2557b6bcb84bdcb8d201e545cdf988",
@@ -45,8 +43,7 @@
                     "Connor",
                     "Ali",
                     "Ben"
-                ],
-                "reactions": {}
+                ]
             },
             {
                 "id": "52285573c81e4a09b33c48237f2b771f",
@@ -57,8 +54,7 @@
                 "seen_by": [
                     "Ali",
                     "Ben"
-                ],
-                "reactions": {}
+                ]
             },
             {
                 "id": "40d70278196d4c02aaa981351a1ef532",
@@ -69,8 +65,7 @@
                 "seen_by": [
                     "Ben",
                     "Ali"
-                ],
-                "reactions": {}
+                ]
             },
             {
                 "id": "ba949dd1c80b4c55a04aa3e209814f44",
@@ -81,23 +76,44 @@
                 "seen_by": [
                     "Ali",
                     "Ben"
-                ],
-                "reactions": {}
+                ]
             },
             {
-                "sender": "Ben",
-                "content": "s",
-                "time": "2025-11-07 00:43:54",
+                "id": "57fc261a1e0b461f85e9ec68709f5594",
+                "sender": "Ali",
+                "content": "test",
+                "time": "2025-11-07 12:05:47",
                 "attachments": [],
-                "id": "d735132779a84c41b0938a81a5743c7d",
-                "reactions": {},
                 "seen_by": [
+                    "Ali",
                     "Ben"
+                ]
+            },
+            {
+                "id": "6183566aef504b0ca7eea762ad45202b",
+                "sender": "Ali",
+                "content": "hello",
+                "time": "2025-11-07 12:06:37",
+                "attachments": [],
+                "seen_by": [
+                    "Ali",
+                    "Ben"
+                ]
+            },
+            {
+                "id": "ca781002160343868b452e909d79b927",
+                "sender": "Ben",
+                "content": "test",
+                "time": "2025-11-07 12:07:05",
+                "attachments": [],
+                "seen_by": [
+                    "Ben",
+                    "Ali"
                 ]
             }
         ],
         "created_at": "2025-11-06 22:54:10",
-        "updated_at": "2025-11-07 00:43:54",
+        "updated_at": "2025-11-07 12:06:55",
         "invite_token": "CAA96249",
         "invite_updated_at": "2025-11-06 23:14:34"
     }

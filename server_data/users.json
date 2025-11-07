@@ -4,52 +4,21 @@
         "registered_at": "2025-10-16 17:02:05",
         "notifications": [
             {
-                "message": "@Connor posted a new update",
-                "time": "2025-11-06 22:52:13"
-            },
-            {
-                "message": "@Connor sent a message in test rework2",
-                "meta": {
-                    "from": "Connor",
-                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                    "type": "group_dm"
-                },
-                "time": "2025-11-06 23:24:27"
-            },
-            {
-                "message": "@Connor sent a message in test rework2",
-                "meta": {
-                    "from": "Connor",
-                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                    "type": "group_dm"
-                },
-                "time": "2025-11-06 23:40:39"
-            },
-            {
-                "message": "@Ben started following you",
+                "message": "@Ben sent you a direct message",
                 "meta": {
                     "from": "Ben",
-                    "type": "follow"
+                    "type": "dm"
                 },
-                "time": "2025-11-06 23:43:31"
+                "time": "2025-11-07 12:05:25"
             },
             {
-                "message": "@Ben joined test rework2",
+                "message": "@Ben sent a message in test rework2",
                 "meta": {
                     "from": "Ben",
                     "group": "group:17d34d4a98a041249bae2986a72c4a32",
                     "type": "group_dm"
                 },
-                "time": "2025-11-07 00:04:38"
-            },
-            {
-                "message": "You are now the owner of test rework2",
-                "meta": {
-                    "from": "Ben",
-                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                    "type": "group_dm"
-                },
-                "time": "2025-11-07 00:05:50"
+                "time": "2025-11-07 12:07:05"
             },
             {
                 "message": "@Ben sent you a direct message",
@@ -57,15 +26,7 @@
                     "from": "Ben",
                     "type": "dm"
                 },
-                "time": "2025-11-07 00:11:52"
-            },
-            {
-                "message": "@Ben sent you a direct message",
-                "meta": {
-                    "from": "Ben",
-                    "type": "dm"
-                },
-                "time": "2025-11-07 00:11:59"
+                "time": "2025-11-07 12:14:32"
             }
         ],
         "following": [
@@ -86,7 +47,42 @@
     "Ben": {
         "password": "Ben2900",
         "registered_at": "2025-10-16 17:02:05",
-        "notifications": [],
+        "notifications": [
+            {
+                "message": "@Ali sent you a direct message",
+                "meta": {
+                    "from": "Ali",
+                    "type": "dm"
+                },
+                "time": "2025-11-07 12:05:28"
+            },
+            {
+                "message": "@Ali sent a message in test rework2",
+                "meta": {
+                    "from": "Ali",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 12:05:47"
+            },
+            {
+                "message": "@Ali sent a message in test rework2",
+                "meta": {
+                    "from": "Ali",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 12:06:37"
+            },
+            {
+                "message": "@Ali sent you a direct message",
+                "meta": {
+                    "from": "Ali",
+                    "type": "dm"
+                },
+                "time": "2025-11-07 12:13:54"
+            }
+        ],
         "following": [
             "Ali"
         ],
@@ -184,6 +180,42 @@
             {
                 "message": "@Ali posted a new update",
                 "time": "2025-11-07 00:25:01"
+            },
+            {
+                "message": "@Ben sent a message in test rework2",
+                "meta": {
+                    "from": "Ben",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 00:43:54"
+            },
+            {
+                "message": "@Ali sent a message in test rework2",
+                "meta": {
+                    "from": "Ali",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 12:05:47"
+            },
+            {
+                "message": "@Ali sent a message in test rework2",
+                "meta": {
+                    "from": "Ali",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 12:06:37"
+            },
+            {
+                "message": "@Ben sent a message in test rework2",
+                "meta": {
+                    "from": "Ben",
+                    "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                    "type": "group_dm"
+                },
+                "time": "2025-11-07 12:07:05"
             }
         ],
         "following": [
