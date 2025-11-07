@@ -229,6 +229,21 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 7, 2025 - View Signature Caching & Zero-Flicker Rendering**
+
+### ✅ **Completed Today:**
+1. **Global Signature Cache:** Each primary view now hashes its visible data and UI state before rendering; unchanged signatures skip rebuilds so content no longer flashes on background refreshes.
+2. **Feed & Notifications Stability:** Home feed, profile, search results, videos, and notification panes reuse their DOM when posts, alerts, or query state stay steady, letting new items slide in without clearing the scrolled position.
+3. **DM Sync Alignment:** The DM renderer exposes its message signature so the global cache stays aware of chat diffs while keeping the existing message-level diff skip.
+4. **Render Guardrails:** Added safe fallbacks for messy data (missing followers, bad notifications lists) to keep signature calculations robust when legacy test fixtures are loaded.
+
+### 🧪 **Validation:**
+- Toggled between home, profile, notifications, and DMs while triggering new posts/messages and confirmed the active view only updates when content actually changes.
+- Verified invite buttons, message reactions, and feed edits still surface immediately with no white flash between updates.
+- Smoke-tested startup to ensure signature helpers do not impact initial layout or dirty view detection.
+
+---
+
 ## 🗓️ **November 7, 2025 - Persistent Sign-In Experience**
 
 ### ✅ **Completed Today:**

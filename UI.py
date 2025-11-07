@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
+import json
 import math
 import os
 import re
@@ -159,6 +161,167 @@ _view_cache: dict[str, dict] = {
 	"dm": {"last_render": 0, "conversation": None},
 	"notifications": {"last_render": 0, "count": 0},
 }
+
+_view_signatures: dict[str, Any] = {}
+
+
+def _stable_signature_digest(payload: Any) -> str:
+	"""Return a short, stable digest for arbitrary payloads."""
+	try:
+		serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+	except TypeError:
+		serialized = repr(payload)
+	return hashlib.sha1(serialized.encode("utf-8", "ignore")).hexdigest()[:16]
+
+
+def _limit_iterable(items: list[Any], limit: int) -> list[Any]:
+	return items[:limit] if len(items) > limit else items
+
+
+def _compute_view_signature(view: str) -> Optional[tuple]:
+	feed_state = _ui_state.feed_state
+	feed_state_marker = (
+		tuple(sorted(feed_state.expanded_replies)),
+		feed_state.editing_post_index,
+		feed_state.editing_reply_target,
+		feed_state.reply_input_target,
+	)
+	if view == "home":
+		post_entries: list[tuple] = []
+		for post in _limit_iterable(posts, 24):
+			if not isinstance(post, dict):
+				continue
+			replies_list = post.get("replies", [])
+			if not isinstance(replies_list, list):
+				replies_list = []
+			reply_entries = []
+			for reply in _limit_iterable(replies_list, 12):
+				if not isinstance(reply, dict):
+					continue
+				reply_entries.append(
+					(
+						reply.get("id") or _stable_signature_digest((reply.get("author"), reply.get("content"))),
+						reply.get("author"),
+						reply.get("created_at"),
+						reply.get("edited"),
+						reply.get("edited_at"),
+						len(reply.get("liked_by", [])) if isinstance(reply.get("liked_by"), list) else 0,
+						len(reply.get("disliked_by", [])) if isinstance(reply.get("disliked_by"), list) else 0,
+					),
+				)
+			post_entries.append(
+				(
+					post.get("id") or _stable_signature_digest((post.get("author"), post.get("content"))),
+					post.get("author"),
+					post.get("created_at"),
+					post.get("edited"),
+					post.get("edited_at"),
+					len(replies_list),
+					post.get("likes"),
+					post.get("dislikes"),
+					_stable_signature_digest(post.get("content", "")),
+					tuple(reply_entries),
+				),
+			)
+		return (len(posts), tuple(post_entries), feed_state_marker)
+	if view == "profile":
+		user = _ui_state.current_user or ""
+		record = users.get(user, {}) if user else {}
+		if not isinstance(record, dict):
+			record = {}
+		badges_value = record.get("badges") if isinstance(record.get("badges"), list) else []
+		followers_list = record.get("followers", []) if isinstance(record.get("followers"), list) else []
+		following_list = record.get("following", []) if isinstance(record.get("following"), list) else []
+		badge_entries = tuple(
+			(sorted_badge.get("id"), sorted_badge.get("name"), bool(sorted_badge.get("highlight")))
+			for sorted_badge in sorted(
+				(b for b in badges_value if isinstance(b, dict)),
+				key=lambda item: (
+					str(item.get("name") or "").lower(),
+					str(item.get("id") or ""),
+				),
+			)
+		)
+		followers = tuple(sorted(_limit_iterable(followers_list, 20)))
+		following = tuple(sorted(_limit_iterable(following_list, 20)))
+		post_count = sum(1 for post in posts if isinstance(post, dict) and post.get("author") == user)
+		return (
+			user,
+			_stable_signature_digest((record.get("bio"), record.get("location"), record.get("website"))),
+			len(followers_list),
+			len(following_list),
+			post_count,
+			badge_entries,
+			followers,
+			following,
+			feed_state_marker,
+		)
+	if view == "notifications":
+		user = _ui_state.current_user or ""
+		if not user:
+			return ("", 0)
+		record = users.get(user, {}) if user else {}
+		if not isinstance(record, dict):
+			record = {}
+		notes = record.get("notifications", [])
+		if not isinstance(notes, list):
+			notes = []
+		note_entries = []
+		for note in _limit_iterable(list(reversed(notes)), 24):
+			if not isinstance(note, dict):
+				continue
+			note_entries.append(
+				(
+					note.get("message"),
+					note.get("time"),
+					_stable_signature_digest(note.get("meta")),
+				),
+			)
+		return (user, len(notes), tuple(note_entries))
+	if view == "inspect_profile":
+		target = _ui_state.inspected_user or ""
+		record = users.get(target, {}) if target else {}
+		if not isinstance(record, dict):
+			record = {}
+		followers_list = record.get("followers", []) if isinstance(record.get("followers"), list) else []
+		following_list = record.get("following", []) if isinstance(record.get("following"), list) else []
+		followers = tuple(sorted(_limit_iterable(followers_list, 20)))
+		following = tuple(sorted(_limit_iterable(following_list, 20)))
+		post_count = sum(1 for post in posts if isinstance(post, dict) and post.get("author") == target)
+		return (
+			target,
+			len(followers_list),
+			len(following_list),
+			post_count,
+			followers,
+			following,
+			_stable_signature_digest(record.get("bio")),
+		)
+	if view == "videos":
+		video_entries = []
+		for video in _limit_iterable(videos, 24):
+			if not isinstance(video, dict):
+				continue
+			video_entries.append(
+				(
+					video.get("id") or _stable_signature_digest((video.get("path"), video.get("author"))),
+					video.get("author"),
+					video.get("created_at"),
+					_stable_signature_digest(video.get("caption")),
+					len(video.get("comments", [])) if isinstance(video.get("comments"), list) else 0,
+					video.get("likes"),
+					video.get("dislikes"),
+				),
+			)
+		return (len(videos), tuple(video_entries))
+	if view == "search":
+		return (
+			_stable_signature_digest(_ui_state.search_query),
+			tuple(_limit_iterable(_ui_state.search_results, 20)),
+		)
+	if view == "dm":
+		return None
+	return None
 
 _nav_icon_palette: Palette = {}
 _nav_icon_bases: dict[str, "Image.Image"] = {}  # type: ignore[name-defined]
@@ -4363,6 +4526,13 @@ def _render_view(view: str) -> None:
 	if view not in _ui_state.dirty_views or not _check_render_needed(view):
 		return
 	
+	pre_signature = _compute_view_signature(view)
+	if pre_signature is not None:
+		previous = _view_signatures.get(view)
+		if previous == pre_signature and view != "dm":
+			_ui_state.dirty_views.discard(view)
+			return
+
 	# Update cache timestamp
 	_view_cache.setdefault(view, {})["last_render"] = time.time()
 		
@@ -4385,6 +4555,9 @@ def _render_view(view: str) -> None:
 		_view_cache[view]["conversation"] = _ui_state.active_dm_conversation
 		_render_dm_sidebar()
 		_render_dm()
+
+	if pre_signature is not None and view != "dm":
+		_view_signatures[view] = pre_signature
 	_ui_state.dirty_views.discard(view)
 
 
@@ -6207,6 +6380,8 @@ def _render_dm() -> None:
 		on_toggle_reaction=_handle_toggle_dm_reaction,
 		reaction_emojis=MESSAGE_REACTIONS,
 	)
+	if meta.get("signature") is not None:
+		_view_signatures["dm"] = meta["signature"]
 	conversation_id = meta.get("conversation_id")
 	can_send = bool(meta.get("can_send")) and signed_in
 	if meta.get("conversation_type") == "dm":

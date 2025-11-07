@@ -343,6 +343,7 @@ def render_dm(
         tuple(signature_entries),
         chat_marker,
     )
+    info["signature"] = signature
     previous_signature = getattr(dm_thread, "_render_signature", None)
     previous_conversation = getattr(dm_thread, "_render_conversation", None)
     rebuild_required = (
