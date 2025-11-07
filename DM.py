@@ -194,9 +194,6 @@ def render_dm(
     if sidebar_renderer:
         sidebar_renderer()
 
-    _clear_children(dm_thread)
-    dm_thread.grid_columnconfigure(0, weight=1)
-
     surface = palette.get("surface", "#111b2e")
     card = palette.get("card", "#18263f")
     accent = palette.get("accent", "#4c8dff")
@@ -310,6 +307,56 @@ def render_dm(
             if thread[idx].get("sender") == current_user:
                 last_outgoing_idx = idx
                 break
+
+    signature_entries: list[tuple] = []
+    for msg in thread:
+        mid = msg.get("id")
+        content = msg.get("content")
+        updated = msg.get("updated_at") or msg.get("time")
+        reactions_meta: tuple = ()
+        raw_reactions = msg.get("reactions") if isinstance(msg.get("reactions"), dict) else {}
+        if isinstance(raw_reactions, dict):
+            reactions_meta = tuple(
+                (emoji, tuple(sorted(r for r in reactors if isinstance(r, str))))
+                for emoji, reactors in sorted(raw_reactions.items())
+            )
+        attachments_meta: tuple = ()
+        attachments_list = msg.get("attachments")
+        if isinstance(attachments_list, list):
+            attachments_meta = tuple(
+                sorted(
+                    (att.get("path"), att.get("type"))
+                    for att in attachments_list
+                    if isinstance(att, dict)
+                )
+            )
+        signature_entries.append((mid, content, updated, reactions_meta, attachments_meta))
+
+    chat_marker: Optional[str] = None
+    if info.get("conversation_type") == "group":
+        group_chat = info.get("group_chat") or {}
+        if isinstance(group_chat, dict):
+            chat_marker = str(group_chat.get("updated_at") or group_chat.get("announcement") or "")
+
+    signature = (
+        info.get("conversation_id"),
+        tuple(signature_entries),
+        chat_marker,
+    )
+    previous_signature = getattr(dm_thread, "_render_signature", None)
+    previous_conversation = getattr(dm_thread, "_render_conversation", None)
+    rebuild_required = (
+        previous_signature != signature
+        or previous_conversation != info.get("conversation_id")
+        or info.get("assigned_message_ids")
+    )
+
+    if not rebuild_required:
+        info["render_skipped"] = True
+        return info
+
+    _clear_children(dm_thread)
+    dm_thread.grid_columnconfigure(0, weight=1)
 
     for row_idx, msg in enumerate(thread):
         sender = msg.get("sender", "")
@@ -555,5 +602,8 @@ def render_dm(
                     line_idx += 1
 
         row._image_refs.extend(bubble._image_refs)
+
+    dm_thread._render_signature = signature  # type: ignore[attr-defined]
+    dm_thread._render_conversation = info.get("conversation_id")  # type: ignore[attr-defined]
 
     return info

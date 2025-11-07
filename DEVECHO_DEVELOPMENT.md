@@ -236,11 +236,13 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 2. **Stay Signed In Toggle:** New checkbox on the auth modal lets people opt out of persistence gracefully.
 3. **Smart Cleanup:** Signing out or unchecking persistence now clears the stored session to avoid stale accounts.
 4. **Invite Join Flow:** Group invite messages now render inline “Join group” buttons that respect token expiry and add members instantly when clicked—only genuine invite codes trigger the UI to avoid clutter.
+5. **Flicker-Free Messaging:** DM threads now diff their contents before re-rendering, so new messages simply appear without the UI flashing multiple times.
 
 ### 🧪 **Validation:**
 - Verified automatic sign-in on cold start plus manual sign-out clearing saved state.
 - Smoke-tested login/register flows to ensure realtime refresh still runs after authentication.
 - Confirmed inline invite buttons enable joins, respect regenerated tokens, and notify the group while regular messages stay unchanged.
+- Observed DM sends/receives with zero flicker after incremental rendering changes.
 
 ---
 
