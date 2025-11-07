@@ -6489,17 +6489,24 @@ def _render_notifications() -> None:
 		_notification_list_component.mount(list_frame)
 		component_registry.register(_notification_list_component)
 	
+	def _clear_placeholders() -> None:
+		for child in list_frame.winfo_children():
+			if getattr(child, "_notification_placeholder", False):
+				child.destroy()
+
 	# Handle empty states
 	if not _ui_state.current_user:
 		_notification_list_component.update([])
 		# Clear components for signed-out state
 		for child in list_frame.winfo_children():
 			child.destroy()
-		ctk.CTkLabel(
+		placeholder = ctk.CTkLabel(
 			list_frame,
 			text="Please sign in to view notifications.",
 			text_color=_palette.get("muted", "#94a3b8"),
-		).grid(sticky="w", padx=20, pady=20)
+		)
+		placeholder._notification_placeholder = True
+		placeholder.pack(anchor="w", padx=20, pady=20)
 		return
 
 	notes = users.get(_ui_state.current_user, {}).get("notifications", [])
@@ -6508,13 +6515,16 @@ def _render_notifications() -> None:
 		# Clear components for empty state
 		for child in list_frame.winfo_children():
 			child.destroy()
-		ctk.CTkLabel(
+		placeholder = ctk.CTkLabel(
 			list_frame,
 			text="No notifications yet.",
 			text_color=_palette.get("muted", "#94a3b8"),
-		).grid(sticky="w", padx=20, pady=20)
+		)
+		placeholder._notification_placeholder = True
+		placeholder.pack(anchor="w", padx=20, pady=20)
 		return
 	
+	_clear_placeholders()
 	# Use component-based update - only changed notifications re-render
 	_notification_list_component.update(notes)
 
