@@ -37,7 +37,7 @@ LOGO_PATH = BASE_DIR / "media" / "dev_echo_logo.png"
 SPLASH_LOGO_PATH = BASE_DIR / "media" / "dev_echo_loading.png"
 LOGO_SIZE: tuple[int, int] = (36, 36)
 SPLASH_LOGO_SIZE: tuple[int, int] = (180, 180)
-SPLASH_DURATION_MS = 1500
+SPLASH_DURATION_MS = 500  # Reduced from 1500ms to 500ms for faster startup
 
 THEMES: dict[str, dict[str, object]] = {
     "dark": {
@@ -172,13 +172,23 @@ def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
 
 def show_frame(name: str) -> None:
     global active_frame_name
-    for frame in frames.values():
-        frame.grid_remove()
-    target = frames.get(name)
-    if target:
-        target.grid(row=0, column=0, sticky="nswe")
-        active_frame_name = name
-    set_active_nav(FRAME_TO_NAV.get(name))
+    
+    # Fast tab switching: only hide/show if different frame
+    if active_frame_name != name:
+        # Hide current frame
+        current_frame = frames.get(active_frame_name)
+        if current_frame:
+            current_frame.grid_remove()
+        
+        # Show target frame immediately
+        target = frames.get(name)
+        if target:
+            target.grid(row=0, column=0, sticky="nswe")
+            active_frame_name = name
+        
+        # Defer nav updates to avoid blocking tab switch
+        root.after_idle(lambda: set_active_nav(FRAME_TO_NAV.get(name)))
+    
     handle_frame_shown(name)
 
 
@@ -218,13 +228,16 @@ def toggle_theme() -> None:
     apply_theme("light" if current_theme == "dark" else "dark")
 
 
+print("DEBUG: Setting appearance mode...")
 ctk.set_appearance_mode(THEMES[current_theme]["appearance"])  # type: ignore[arg-type]
 
+print("DEBUG: Creating root window...")
 root = ctk.CTk()
 root.title("DevEcho")
-root.geometry("900x600")
+root.geometry("900x600+100+50")  # Set explicit position
 root.minsize(720, 520)
 root.withdraw()
+print("DEBUG: Root window created and configured")
 
 
 def _apply_fullscreen_size() -> None:
@@ -374,22 +387,38 @@ for frame in frames.values():
     frame.grid(row=0, column=0, sticky="nswe")
     frame.grid_remove()
 
+print("DEBUG: Calling initialize_ui...")
 initialize_ui(frames)
+print("DEBUG: Calling refresh_ui...")
 refresh_ui()
+print("DEBUG: Calling update_theme_button...")
 update_theme_button()
+print("DEBUG: Calling show_frame...")
 show_frame(active_frame_name)
+print("DEBUG: Scheduling complete_startup in", SPLASH_DURATION_MS, "ms")
 
 
 def complete_startup() -> None:
+    print("DEBUG: complete_startup() called")
     global splash_screen
     if splash_screen is not None:
+        print("DEBUG: Destroying splash screen")
         splash_screen.destroy()
         splash_screen = None
+    print("DEBUG: Showing main window")
+    
+    # Force window to be visible and properly positioned
     root.deiconify()
+    root.geometry("1280x800+100+50")  # Force position on screen
     root.lift()
-    _apply_fullscreen_size()
+    root.focus_force()
     root.attributes("-topmost", True)
-    root.after(200, lambda: root.attributes("-topmost", False))
+    
+    _apply_fullscreen_size()
+    
+    # Remove topmost after window is established
+    root.after(1000, lambda: root.attributes("-topmost", False))
+    print("DEBUG: Main window should now be visible")
 
 
 root.after(SPLASH_DURATION_MS, complete_startup)

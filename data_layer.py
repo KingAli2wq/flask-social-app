@@ -8,6 +8,9 @@ from uuid import uuid4
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Generate a unique client ID for this app instance
+CLIENT_ID = str(uuid4())[:8]  # Short ID for this client
+
 USERS_PATH = os.path.join(BASE_DIR, "data.json")
 POSTS_PATH = os.path.join(BASE_DIR, "posts.json")
 NOTIFICATIONS_PATH = os.path.join(BASE_DIR, "notfication.json")
@@ -165,7 +168,7 @@ def load_json(path: str, default: Any):
             resource = mapping.get(name)
             if resource:
                 headers = _server_headers()
-                resp = requests.get(f"{server_url.rstrip('/')}/api/{resource}", headers=headers, timeout=6)
+                resp = requests.get(f"{server_url.rstrip('/')}/api/{resource}", headers=headers, timeout=2)
                 if resp.status_code == 200:
                     data = resp.json().get("data")
                     if data is not None:
@@ -329,7 +332,10 @@ def download_media_asset(rel_path: Any) -> bool:
         return False
     endpoint = f"{server_url.rstrip('/')}/api/media/download"
     try:
-        resp = requests.post(endpoint, json={"path": normalized}, headers=_server_headers(), timeout=15)
+        # Shorter timeout during startup to prevent hangs
+        # Use much shorter timeout for cross-device connections
+        timeout = 1  # 1 second timeout to avoid lag
+        resp = requests.post(endpoint, json={"path": normalized}, headers=_server_headers(), timeout=timeout)
     except Exception:  # pragma: no cover - network dependency
         return False
     if resp.status_code != 200:
@@ -787,14 +793,46 @@ def normalize_scheduled_post(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-raw_users: Dict[str, Dict[str, Any]] = load_json(USERS_PATH, {})
-notifications_data: Dict[str, List[Dict[str, Any]]] = load_json(NOTIFICATIONS_PATH, {})
-raw_posts = load_json(POSTS_PATH, [])
-messages: Dict[str, List[Dict[str, Any]]] = load_json(MESSAGES_PATH, {})
-raw_stories = load_json(STORIES_PATH, [])
-raw_videos = load_json(VIDEOS_PATH, [])
-raw_group_chats = load_json(GROUP_CHATS_PATH, [])
-raw_scheduled_posts = load_json(SCHEDULED_POSTS_PATH, [])
+# Initialize data structures as empty to avoid blocking network calls during import
+# Data will be loaded on-demand when needed to prevent startup delays
+raw_users: Dict[str, Dict[str, Any]] = {}
+notifications_data: Dict[str, List[Dict[str, Any]]] = {}
+raw_posts = []
+messages: Dict[str, List[Dict[str, Any]]] = {}
+raw_stories = []
+raw_videos = []
+raw_group_chats = []
+raw_scheduled_posts = []
+
+# Flag to track if initial data has been loaded
+_initial_data_loaded = False
+
+def _ensure_initial_data_loaded():
+    """Load initial data if not already loaded. Call this before accessing data."""
+    global _initial_data_loaded, raw_users, notifications_data, raw_posts
+    global messages, raw_stories, raw_videos, raw_group_chats, raw_scheduled_posts
+    
+    if _initial_data_loaded:
+        return
+        
+    try:
+        # Load data with short timeouts to avoid blocking
+        raw_users.update(load_json(USERS_PATH, {}))
+        notifications_data.update(load_json(NOTIFICATIONS_PATH, {}))
+        raw_posts.extend(load_json(POSTS_PATH, []))
+        messages.update(load_json(MESSAGES_PATH, {}))
+        raw_stories.extend(load_json(STORIES_PATH, []))
+        raw_videos.extend(load_json(VIDEOS_PATH, []))
+        raw_group_chats.extend(load_json(GROUP_CHATS_PATH, []))
+        raw_scheduled_posts.extend(load_json(SCHEDULED_POSTS_PATH, []))
+        _initial_data_loaded = True
+    except Exception:
+        # If loading fails, continue with empty data
+        # This prevents the app from hanging on startup
+        _initial_data_loaded = True  # Mark as loaded to prevent retries
+
+# Ensure data is loaded before processing
+_ensure_initial_data_loaded()
 
 if isinstance(raw_posts, list):
     posts: List[Dict[str, Any]] = [normalize_post(p) for p in raw_posts]
@@ -922,6 +960,96 @@ def persist() -> None:
     save_json(VIDEOS_PATH, videos)
     save_json(SCHEDULED_POSTS_PATH, scheduled_posts)
     save_json(GROUP_CHATS_PATH, group_chats)
+
+
+def check_for_updates() -> Dict[str, float]:
+    """Check server for what resources have been updated since we last synced"""
+    server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+    if not server_url:
+        return {}
+        
+    try:
+        import requests
+        endpoint = f"{server_url.rstrip('/')}/api/check-updates"
+        payload = {"client_id": CLIENT_ID}
+        resp = requests.post(endpoint, json=payload, headers=_server_headers(), timeout=2)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("ok"):
+                return data.get("updates", {})
+    except Exception:
+        pass
+    return {}
+
+
+def mark_resources_synced(resources: List[str]) -> bool:
+    """Tell server that we've synced these resources"""
+    server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+    if not server_url:
+        return True
+        
+    try:
+        import requests
+        endpoint = f"{server_url.rstrip('/')}/api/mark-synced"
+        payload = {"client_id": CLIENT_ID, "resources": resources}
+        resp = requests.post(endpoint, json=payload, headers=_server_headers(), timeout=2)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def smart_sync_updates() -> Dict[str, bool]:
+    """Check for updates and sync only changed resources. Much more efficient than full refresh."""
+    updates_needed = check_for_updates()
+    if not updates_needed:
+        return {}
+    
+    changes: Dict[str, bool] = {}
+    synced_resources = []
+    
+    # Only sync resources that have actually changed
+    for resource, _timestamp in updates_needed.items():
+        try:
+            if resource == "posts":
+                raw_posts_remote = load_json(POSTS_PATH, [])
+                if isinstance(raw_posts_remote, list):
+                    normalized_posts = [normalize_post(dict(item)) for item in raw_posts_remote if isinstance(item, dict)]
+                    if normalized_posts != posts:
+                        posts[:] = normalized_posts
+                        changes["posts"] = True
+                        synced_resources.append("posts")
+            
+            elif resource == "users":
+                raw_users_remote = load_json(USERS_PATH, {})
+                notifications_remote = load_json(NOTIFICATIONS_PATH, {})
+                if isinstance(raw_users_remote, dict):
+                    normalized_users = _build_normalized_users(raw_users_remote, notifications_remote)
+                    if normalized_users != users:
+                        users.clear()
+                        users.update(normalized_users)
+                        changes["users"] = True
+                        synced_resources.extend(["users", "notifications"])
+            
+            elif resource == "messages":
+                raw_messages_remote = load_json(MESSAGES_PATH, {})
+                if isinstance(raw_messages_remote, dict):
+                    if raw_messages_remote != messages:
+                        messages.clear()
+                        messages.update(raw_messages_remote)
+                        changes["messages"] = True
+                        synced_resources.append("messages")
+            
+            # Add other resources as needed (stories, videos, etc.)
+            
+        except Exception:
+            # If sync fails for this resource, continue with others
+            continue
+    
+    # Mark successfully synced resources
+    if synced_resources:
+        mark_resources_synced(synced_resources)
+    
+    return changes
 
 
 def refresh_remote_state() -> Dict[str, bool]:

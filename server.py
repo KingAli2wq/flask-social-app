@@ -28,6 +28,42 @@ os.makedirs(PROFILE_PICS_ROOT, exist_ok=True)
 
 _lock = Lock()
 
+# Push notification system
+import time
+from collections import defaultdict
+
+# Track last update time for each resource type
+_last_updates = {
+    "users": 0,
+    "posts": 0, 
+    "messages": 0,
+    "stories": 0,
+    "videos": 0,
+    "scheduled_posts": 0,
+    "notifications": 0,
+    "group_chats": 0,
+}
+
+# Track client last seen times to know what they need
+_client_last_seen = defaultdict(lambda: defaultdict(float))
+
+def _mark_resource_updated(resource: str):
+    """Mark a resource as updated with current timestamp"""
+    _last_updates[resource] = time.time()
+
+def _get_client_updates_needed(client_id: str) -> dict:
+    """Get list of resources that have been updated since client last checked"""
+    updates_needed = {}
+    for resource, last_update in _last_updates.items():
+        client_last_seen = _client_last_seen[client_id][resource]
+        if last_update > client_last_seen:
+            updates_needed[resource] = last_update
+    return updates_needed
+
+def _mark_client_updated(client_id: str, resource: str):
+    """Mark that client has seen the latest version of this resource"""
+    _client_last_seen[client_id][resource] = _last_updates.get(resource, time.time())
+
 
 from typing import Optional
 
@@ -114,6 +150,35 @@ def ping():
     return jsonify({"ok": True, "message": "server running"})
 
 
+@app.route("/api/check-updates", methods=["POST"])
+def check_updates():
+    """Check what resources have been updated since client last checked"""
+    payload = request.get_json(silent=True) or {}
+    client_id = payload.get("client_id", "unknown")
+    
+    updates_needed = _get_client_updates_needed(client_id)
+    
+    return jsonify({
+        "ok": True, 
+        "updates": updates_needed,
+        "timestamp": time.time()
+    })
+
+
+@app.route("/api/mark-synced", methods=["POST"]) 
+def mark_synced():
+    """Mark that client has synced specific resources"""
+    payload = request.get_json(silent=True) or {}
+    client_id = payload.get("client_id", "unknown")
+    resources = payload.get("resources", [])
+    
+    for resource in resources:
+        if resource in _last_updates:
+            _mark_client_updated(client_id, resource)
+    
+    return jsonify({"ok": True})
+
+
 @app.route("/api/<resource>", methods=["GET"])
 def get_resource(resource):
     if resource not in FILES:
@@ -132,6 +197,10 @@ def put_resource(resource):
     ok = _write(resource, payload)
     if not ok:
         return jsonify({"ok": False, "error": "write failed"}), 500
+    
+    # Mark this resource as updated so other clients know to fetch it
+    _mark_resource_updated(resource)
+    
     return jsonify({"ok": True})
 
 

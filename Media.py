@@ -9,6 +9,11 @@ from tkinter import messagebox
 from data_layer import ensure_media_local
 
 try:
+    from PIL import Image, ImageTk, ImageDraw
+except ImportError:
+    Image, ImageTk, ImageDraw = None, None, None
+
+try:
     from PIL import Image, ImageTk  # type: ignore
 except ImportError:
     Image = None  # type: ignore
@@ -126,13 +131,48 @@ def copy_image_to_profile_pics(
         return None
 
 
+def _create_loading_placeholder(max_width: int) -> Optional[tk.PhotoImage]:
+    """Create a simple loading placeholder image when media is not available"""
+    if not (Image and ImageTk and ImageDraw):
+        return None
+    
+    try:
+        # Create a simple gray placeholder with loading text
+        height = min(max_width // 2, 200)  # Reasonable aspect ratio
+        img = Image.new('RGB', (max_width, height), '#f0f0f0')
+        draw = ImageDraw.Draw(img)
+        
+        # Add some simple loading indicator
+        text = "Loading..."
+        text_width = len(text) * 8  # Approximate text width
+        text_x = (max_width - text_width) // 2
+        text_y = (height - 12) // 2
+        
+        draw.text((text_x, text_y), text, fill='#888888')
+        
+        return ImageTk.PhotoImage(img)
+    except Exception:
+        return None
+
+
 def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Optional[tk.PhotoImage]:
     if os.path.isabs(rel_path):
         abs_path = rel_path
     else:
-        ensure_media_local(rel_path)
+        # Check if file exists locally first, skip download if not available during startup
         normalized = rel_path.replace("/", os.sep)
         abs_path = os.path.join(base_dir, normalized)
+        if not os.path.exists(abs_path):
+            # Try to download, but don't block startup if it fails
+            try:
+                ensure_media_local(rel_path)
+            except Exception:
+                # Return placeholder or None if media is not available
+                return _create_loading_placeholder(max_width)
+            
+            # Check again after download attempt
+            if not os.path.exists(abs_path):
+                return _create_loading_placeholder(max_width)
     if Image and ImageTk:
         try:
             resampling = getattr(Image, "Resampling", None)

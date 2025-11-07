@@ -148,6 +148,15 @@ _show_frame_cb: Optional[Callable[[str], None]] = None
 
 _nav_controls: dict[str, ctk.CTkButton] = {}
 
+# Performance optimization: cache frequently computed data
+_view_cache: dict[str, dict] = {
+	"home": {"last_render": 0, "post_count": 0},
+	"profile": {"last_render": 0, "user": None},
+	"search": {"last_render": 0, "query": ""},
+	"dm": {"last_render": 0, "conversation": None},
+	"notifications": {"last_render": 0, "count": 0},
+}
+
 _nav_icon_palette: Palette = {}
 _nav_icon_bases: dict[str, "Image.Image"] = {}  # type: ignore[name-defined]
 _nav_icon_variants: dict[str, dict[str, ctk.CTkImage]] = {}
@@ -3812,6 +3821,12 @@ def _mark_dirty(*views: str) -> None:
 		if view:
 			_ui_state.dirty_views.add(view)
 
+def _mark_smart_dirty(*views: str) -> None:
+	"""Only mark views as dirty if they're actually visible or active"""
+	for view in views:
+		if view and (view == _ui_state.active_view or view in ("notifications", "dm")):
+			_ui_state.dirty_views.add(view)
+
 
 def _mark_dm_sidebar_dirty() -> None:
 	global _dm_sidebar_dirty
@@ -3834,8 +3849,8 @@ def _get_after_anchor() -> Optional[Any]:
 # We update the in-memory `messages` dict (mutating it in-place) so other
 # modules that imported `messages` see the changes. Scheduling is via tkinter
 # `.after` anchored at a UI frame.
-_DM_POLL_BASE = int(os.environ.get("DM_POLL_SECONDS", "3"))
-_DM_POLL_MAX = int(os.environ.get("DM_POLL_MAX_SECONDS", "30"))
+_DM_POLL_BASE = int(os.environ.get("DM_POLL_SECONDS", "30"))  # Even longer since we only sync changes
+_DM_POLL_MAX = int(os.environ.get("DM_POLL_MAX_SECONDS", "120"))  # Up to 2 minutes for backoff
 
 
 def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
@@ -3865,30 +3880,31 @@ def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
 
 
 def _poll_messages_once() -> bool:
-	"""Fetch messages and update in-memory dict. Returns True on success."""
+	"""Use smart sync to check for updates and only fetch what's changed. Much more efficient."""
 	success = False
 	try:
-		new = load_json(MESSAGES_PATH, {})
-		if isinstance(new, dict):
-			if new != messages:
-				messages.clear()
-				messages.update(new)
-				_mark_dirty("dm")
-				_request_render("dm")
+		# Import here to avoid circular imports
+		from data_layer import smart_sync_updates
+		
+		# Check for updates and sync only what's changed
+		changes = smart_sync_updates()
+		
+		# Update UI for any changed resources
+		if changes.get("messages"):
+			_mark_dirty("dm")
+			_request_render("dm")
+		if changes.get("posts"):
+			_mark_dirty("home")
+			_request_render("home")
+		if changes.get("users"):
+			_mark_dirty("profile", "home")
+			_request_render("profile")
+		
 		success = True
 	except Exception:
 		success = False
 
-	try:
-		changes = refresh_remote_state()
-	except Exception:
-		changes = {}
-	_apply_remote_refresh_changes(changes)
-
-	try:
-		ensure_all_media_local()
-	except Exception:
-		pass
+	# No need for bulk media sync - handled on-demand when needed
 
 	return success
 
@@ -3965,11 +3981,19 @@ def _apply_server_status_result(text: str, color: str) -> None:
 
 	if anchor:
 		try:
-			anchor.after(0, _update)
+			# Check if the anchor widget still exists and is in a valid state
+			if getattr(anchor, "winfo_exists", lambda: False)():
+				anchor.after(0, _update)
+			# If anchor doesn't exist, skip the update silently
 		except Exception:
-			_update()
+			# If any error occurs, skip the update to avoid crashes
+			pass
 	else:
-		_update()
+		try:
+			_update()
+		except Exception:
+			# If direct update fails, skip silently
+			pass
 
 
 def _update_server_status(*, check: bool = False) -> None:
@@ -4005,7 +4029,7 @@ def _update_server_status(*, check: bool = False) -> None:
 			headers["Authorization"] = f"Bearer {token_value}"
 			headers["X-SOCIAL-TOKEN"] = token_value
 		try:
-			resp = requests.get(f"{url.rstrip('/')}/api/ping", headers=headers, timeout=5)
+			resp = requests.get(f"{url.rstrip('/')}/api/ping", headers=headers, timeout=2)
 			if resp.status_code == 200:
 				payload = resp.json()
 				if isinstance(payload, dict) and payload.get("ok"):
@@ -4065,9 +4089,20 @@ def _open_server_settings() -> None:
 
 
 def _render_view(view: str) -> None:
+	import time
+	
+	# Skip rendering if view is not dirty or doesn't need re-rendering
+	if view not in _ui_state.dirty_views or not _check_render_needed(view):
+		return
+	
+	# Update cache timestamp
+	_view_cache.setdefault(view, {})["last_render"] = time.time()
+		
 	if view == "home":
+		_view_cache[view]["post_count"] = len(posts)
 		_render_feed_section()
 	elif view == "profile":
+		_view_cache[view]["user"] = _ui_state.current_user
 		_render_profile_section()
 		_render_profile_avatar()
 	elif view == "notifications":
@@ -4079,6 +4114,7 @@ def _render_view(view: str) -> None:
 	elif view == "search":
 		_render_search()
 	elif view == "dm":
+		_view_cache[view]["conversation"] = _ui_state.active_dm_conversation
 		_render_dm_sidebar()
 		_render_dm()
 	_ui_state.dirty_views.discard(view)
@@ -4105,8 +4141,27 @@ def _request_render(view: str) -> None:
 		if _ui_state.active_view == view and view in _ui_state.dirty_views:
 			_render_view(view)
 
-	_handle = anchor.after(16, _run_render)
+	# Reduce render delay for faster tab switching (was 16ms, now 8ms)
+	_handle = anchor.after(8, _run_render)
 	_render_after_handles[view] = _handle
+
+def _check_render_needed(view: str) -> bool:
+	"""Check if a view actually needs re-rendering based on cache"""
+	import time
+	cache = _view_cache.get(view, {})
+	current_time = time.time()
+	
+	# Skip render if rendered recently (within 100ms) and data hasn't changed
+	if current_time - cache.get("last_render", 0) < 0.1:
+		# Check if data actually changed for this view
+		if view == "home" and cache.get("post_count") == len(posts):
+			return False
+		elif view == "profile" and cache.get("user") == _ui_state.current_user:
+			return False
+		elif view == "dm" and cache.get("conversation") == _ui_state.active_dm_conversation:
+			return False
+	
+	return True
 
 
 def _render_active_view() -> None:
@@ -4116,9 +4171,31 @@ def _render_active_view() -> None:
 
 
 def handle_frame_shown(name: str) -> None:
+	prev_view = _ui_state.active_view
 	_ui_state.active_view = name
-	_request_render(name)
+	
+	# Immediate render for fast tab switching
+	if name in _ui_state.dirty_views:
+		_render_view(name)
+	else:
+		# Use light render for already-clean views
+		_request_render(name)
+	
+	# Update nav controls without blocking
 	_update_nav_controls()
+	
+	# Defer marking other related views as dirty to avoid cascade re-renders
+	def _defer_related_updates():
+		if prev_view != name:
+			# Only mark closely related views as dirty, not everything
+			if name == "profile" and prev_view != "inspect_profile":
+				_mark_smart_dirty("inspect_profile")
+			elif name in ("dm", "notifications") and prev_view not in ("dm", "notifications"):
+				_mark_smart_dirty("notifications", "dm")
+	
+	anchor = _get_after_anchor()
+	if anchor:
+		anchor.after(50, _defer_related_updates)
 
 
 def build_videos_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
@@ -5086,14 +5163,26 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 		now_ts_cb=now_ts,
 	)
 
-	_mark_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search")
+	# Only mark active view as dirty during startup to reduce initial lag
+	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search")
 	_update_home_status()
-	_update_server_status(check=True)
+	# Defer server check until after startup
+	_update_server_status(check=False)
 	_update_videos_controls()
-	_render_active_view()
+	
+	# Defer rendering and server check until after startup to avoid blocking
+	def _delayed_startup_tasks():
+		_render_active_view()
+		# Now check server status after UI is rendered
+		_update_server_status(check=True)
+	
+	# Schedule tasks after a short delay to let startup complete
+	if _frames:
+		anchor = next(iter(_frames.values()))
+		anchor.after(100, _delayed_startup_tasks)
 
-	# start background poller for messages so DMs update in near-real-time when
-	# a remote server is configured. Poll interval controlled by DM_POLL_SECONDS env var.
+	# start background poller with reduced frequency to prevent lag issues
+	# Poll interval controlled by DM_POLL_SECONDS env var (now set to 15 seconds instead of 3)
 	_start_message_poller()
 
 
@@ -5143,7 +5232,8 @@ def _set_current_user(username: Optional[str]) -> None:
 		_refresh_post_attachments()
 	else:
 		_select_default_dm_conversation()
-	_mark_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos")
+	# Use smart dirty marking to avoid unnecessary re-renders when user changes
+	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos")
 	_update_videos_controls()
 
 
