@@ -3,12 +3,15 @@
         "password": "2900",
         "registered_at": "2025-10-16 17:02:05",
         "notifications": [],
-        "following": [],
+        "following": [
+            "Connor"
+        ],
         "followers": [],
         "profile_picture": "Profile Pictures/image (5).png",
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Ben": {
@@ -21,6 +24,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Connor": {
@@ -28,11 +32,14 @@
         "registered_at": "2025-10-16 17:02:05",
         "notifications": [],
         "following": [],
-        "followers": [],
+        "followers": [
+            "Ali"
+        ],
         "profile_picture": null,
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Jordan": {
@@ -45,6 +52,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Liam": {
@@ -57,6 +65,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Maya": {
@@ -69,6 +78,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Priya": {
@@ -81,6 +91,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     },
     "Sofia": {
@@ -93,6 +104,7 @@
         "bio": "",
         "location": "",
         "website": "",
+        "last_active_at": "2025-11-06 22:38:21",
         "badges": []
     }
 }

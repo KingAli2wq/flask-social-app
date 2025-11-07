@@ -1111,6 +1111,21 @@ def smart_sync_updates() -> Dict[str, bool]:
                         messages.update(raw_messages_remote)
                         changes["messages"] = True
                         synced_resources.append("messages")
+            elif resource == "stories":
+                raw_stories_remote = load_json(STORIES_PATH, [])
+                if isinstance(raw_stories_remote, list):
+                    now_value = time.time()
+                    normalized_stories: List[Dict[str, Any]] = []
+                    for entry in raw_stories_remote:
+                        if not isinstance(entry, dict):
+                            continue
+                        normalized_story = normalize_story(dict(entry))
+                        if normalized_story and normalized_story.get("expires_at", 0) > now_value:
+                            normalized_stories.append(normalized_story)
+                    if normalized_stories != stories:
+                        stories[:] = normalized_stories
+                        changes["stories"] = True
+                        synced_resources.append("stories")
             
             # Add other resources as needed (stories, videos, etc.)
             

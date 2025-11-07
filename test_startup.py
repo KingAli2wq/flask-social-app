@@ -12,11 +12,11 @@ def test_app_startup():
     print("🧪 Testing App Startup")
     print("=" * 40)
     
-    # Check if logo assets exist now
+    # Check if DevEcho logo assets exist now
     base_dir = Path(__file__).parent
     logo_files = [
-        base_dir / "media" / "dev_echo_logo.png",
-        base_dir / "media" / "dev_echo_loading.png"
+        base_dir / "media" / "Buttons" / "DevEcho_Transparent_title.png",
+        base_dir / "media" / "Buttons" / "DevEcho_Title.png"
     ]
     
     for logo_file in logo_files:
@@ -45,7 +45,7 @@ def test_app_startup():
     
     print("\n🚀 App Status:")
     print("• Loading screen should now work properly")
-    print("• Logo assets created (no more missing file errors)")
+    print("• Logo assets verified (DevEcho branding in place)")
     print("• Clean data environment for testing")
     print("• Real-time sync system ready")
     

@@ -3850,7 +3850,9 @@ def _get_after_anchor() -> Optional[Any]:
 # Instead of polling every 30 seconds, we now push changes immediately when they occur
 # and use lightweight polling only as a backup for missed updates
 _BACKUP_POLL_SECONDS = int(os.environ.get("BACKUP_POLL_SECONDS", "300"))  # 5 minutes backup check
+_REALTIME_POLL_INTERVAL_MS = int(os.environ.get("REALTIME_POLL_MS", "800"))
 _IMMEDIATE_PUSH_ENABLED = True  # Enable real-time push system
+_REALTIME_LISTENER_STARTED = False
 
 
 def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
@@ -3879,15 +3881,15 @@ def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
 		_refresh_stories_bar()
 
 
-def _poll_messages_once() -> bool:
-	"""Use smart sync to check for updates and only fetch what's changed. Much more efficient."""
-	success = False
+def _poll_messages_once() -> dict[str, bool]:
+	"""Check for remote updates and return which resources changed."""
+	changes: dict[str, bool] = {}
 	try:
 		# Import here to avoid circular imports
 		from data_layer import smart_sync_updates
 		
 		# Check for updates and sync only what's changed
-		changes = smart_sync_updates()
+		changes = smart_sync_updates() or {}
 		
 		# Update UI for any changed resources
 		if changes.get("messages"):
@@ -3899,14 +3901,10 @@ def _poll_messages_once() -> bool:
 		if changes.get("users"):
 			_mark_dirty("profile", "home")
 			_request_render("profile")
-		
-		success = True
 	except Exception:
-		success = False
+		changes = {}
 
-	# No need for bulk media sync - handled on-demand when needed
-
-	return success
+	return changes
 
 
 def _notify_remote_sync_issue(resource: str, action: str) -> None:
@@ -3939,7 +3937,9 @@ def _start_backup_sync_checker() -> None:
 		# Only check for updates if real-time push is enabled
 		if _IMMEDIATE_PUSH_ENABLED:
 			try:
-				_poll_messages_once()  # Light sync check
+				changes = _poll_messages_once()
+				if changes:
+					_apply_remote_refresh_changes(changes)
 			except Exception:
 				pass
 		
@@ -3954,6 +3954,50 @@ def _start_backup_sync_checker() -> None:
 		anchor.after(60000, _backup_check)  
 	except Exception:
 		pass
+
+
+def _start_realtime_listener() -> None:
+	"""Continuously poll the server for updates when push notifications are enabled."""
+	global _REALTIME_LISTENER_STARTED
+	if _REALTIME_LISTENER_STARTED or not _IMMEDIATE_PUSH_ENABLED:
+		return
+
+	anchor = _get_after_anchor()
+	if not anchor:
+		return
+
+	_REALTIME_LISTENER_STARTED = True
+
+	def _tick() -> None:
+		global _REALTIME_LISTENER_STARTED
+		if not _IMMEDIATE_PUSH_ENABLED:
+			return
+
+		changes = {}
+		try:
+			changes = _poll_messages_once()
+		except Exception:
+			changes = {}
+
+		if changes:
+			_apply_remote_refresh_changes(changes)
+
+		next_anchor = _get_after_anchor()
+		if not next_anchor or not getattr(next_anchor, "winfo_exists", lambda: False)():
+			# Could not reschedule; allow future restarts
+			_REALTIME_LISTENER_STARTED = False
+			return
+
+		try:
+			next_anchor.after(_REALTIME_POLL_INTERVAL_MS, _tick)
+		except Exception:
+			_REALTIME_LISTENER_STARTED = False
+			return
+
+	try:
+		anchor.after(_REALTIME_POLL_INTERVAL_MS, _tick)
+	except Exception:
+		_REALTIME_LISTENER_STARTED = False
 
 def trigger_immediate_sync(resource_type: str) -> None:
 	"""Trigger immediate synchronization when local changes occur"""
@@ -5212,6 +5256,7 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 
 	# Start lightweight backup sync checker (5-minute intervals) as failsafe
 	# Real-time updates happen immediately when changes occur
+	_start_realtime_listener()
 	_start_backup_sync_checker()
 
 
