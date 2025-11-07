@@ -27,6 +27,23 @@ def _clear_children(frame: Any) -> None:
             child.destroy()
 
 
+def _scroll_to_bottom(frame: ctk.CTkScrollableFrame, delay_ms: int = 16) -> None:
+
+    def _perform_scroll() -> None:
+        try:
+            frame.update_idletasks()
+            canvas = getattr(frame, "_parent_canvas", None)
+            if canvas:
+                canvas.yview_moveto(1.0)
+        except Exception:
+            pass
+
+    try:
+        frame.after(delay_ms, _perform_scroll)
+    except Exception:
+        _perform_scroll()
+
+
 def _ellipsize(text: str, limit: int) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
@@ -346,6 +363,7 @@ def render_dm(
     info["signature"] = signature
     previous_signature = getattr(dm_thread, "_render_signature", None)
     previous_conversation = getattr(dm_thread, "_render_conversation", None)
+    previous_count = getattr(dm_thread, "_render_message_count", 0)
     rebuild_required = (
         previous_signature != signature
         or previous_conversation != info.get("conversation_id")
@@ -606,5 +624,16 @@ def render_dm(
 
     dm_thread._render_signature = signature  # type: ignore[attr-defined]
     dm_thread._render_conversation = info.get("conversation_id")  # type: ignore[attr-defined]
+    dm_thread._render_message_count = len(thread)  # type: ignore[attr-defined]
+
+    should_scroll = False
+    if thread:
+        if info.get("conversation_id") != previous_conversation:
+            should_scroll = True
+        elif len(thread) > previous_count:
+            should_scroll = True
+
+    if should_scroll:
+        _scroll_to_bottom(dm_thread)
 
     return info
