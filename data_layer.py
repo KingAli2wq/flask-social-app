@@ -912,9 +912,12 @@ def normalize_group_chat(chat_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     messages_list = _coerce_messages(chat_dict.get("messages") or [])
     created_at = chat_dict.get("created_at") or now_ts()
     updated_at = chat_dict.get("updated_at") or created_at
+    announcement = str(chat_dict.get("announcement") or "").strip()
+    invite_token = str(chat_dict.get("invite_token") or "").strip()
+    invite_updated_at = chat_dict.get("invite_updated_at")
     if not owner and members:
         owner = members[0]
-    return {
+    payload: Dict[str, Any] = {
         "id": chat_id,
         "name": name,
         "owner": owner,
@@ -923,6 +926,13 @@ def normalize_group_chat(chat_dict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "created_at": created_at,
         "updated_at": updated_at,
     }
+    if announcement:
+        payload["announcement"] = announcement
+    if invite_token:
+        payload["invite_token"] = invite_token
+    if invite_updated_at:
+        payload["invite_updated_at"] = invite_updated_at
+    return payload
 
 
 group_chats: List[Dict[str, Any]] = []
