@@ -122,6 +122,7 @@ BADGE_PRESETS: list[tuple[str, str]] = [
 	("Early Adopter", "Joined during early access."),
 ]
 MAX_BADGES_PER_USER = 16
+_INVITE_TOKEN_CHARS = set("0123456789ABCDEF")
 @dataclass
 class _UIState:
 	current_user: Optional[str] = None
@@ -788,9 +789,15 @@ def _extract_group_invite_token(value: str) -> Optional[str]:
 	token = stripped.strip().upper()
 	if not token:
 		return None
-	if not token.isalnum():
+	if not _is_valid_invite_token(token):
 		return None
 	return token
+
+
+def _is_valid_invite_token(token: str) -> bool:
+	if len(token) != 8:
+		return False
+	return all(ch in _INVITE_TOKEN_CHARS for ch in token)
 
 
 def _discover_invite_tokens(message: str) -> list[str]:
