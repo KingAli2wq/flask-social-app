@@ -1440,16 +1440,22 @@ def _handle_upload_video() -> None:
 		video_record["caption"] = caption
 	videos.append(video_record)
 	persist()
+	followers_notified = notify_followers(_ui_state.current_user)
+	missing_mentions: list[str] = []
+	mentions_delivered = False
+	if caption:
+		resolved_mentions, missing_mentions = _split_mentions(caption, author=_ui_state.current_user)
+		if resolved_mentions:
+			mentions_delivered = notify_mentions(_ui_state.current_user, caption, "a video")
 	if caption_entry:
 		caption_entry.delete(0, tk.END)
 	_set_video_upload_path("")
 	if media_sync_failed:
 		_notify_remote_sync_issue("media", "upload the video file")
-	missing_mentions: list[str] = []
-	if caption:
-		resolved_mentions, missing_mentions = _split_mentions(caption, author=_ui_state.current_user)
-		if resolved_mentions:
-			notify_mentions(_ui_state.current_user, caption, "a video")
+	if followers_notified or mentions_delivered:
+		trigger_immediate_sync("notifications")
+	trigger_immediate_sync("videos")
+	_notify_remote_sync_issue("videos", "publish the video")
 	if missing_mentions:
 		_names = ", ".join(f"@{name}" for name in missing_mentions)
 		_set_video_status(f"Video uploaded, but these mentions were not found: {_names}", error=True)
@@ -2728,14 +2734,17 @@ def _open_story_editor(rel_path: str, story_type: str) -> None:
 		if media_sync_failed:
 			_notify_remote_sync_issue("media", "upload the story media")
 		_mark_story_author_unseen_for_all(author)
+		mentions_delivered = False
 		if text_content:
-			notify_mentions(author, text_content, "their story")
+			mentions_delivered = notify_mentions(author, text_content, "their story")
 		if missing_mentions:
 			messagebox.showwarning(
 				"Some mentions not found",
 				"The following usernames were not recognized and were ignored: "
 				+ ", ".join(sorted(set(missing_mentions))),
 			)
+		if mentions_delivered:
+			trigger_immediate_sync("notifications")
 		messagebox.showinfo("Story posted", "Your story has been added.")
 		_hide_story_overlay()
 
@@ -3043,8 +3052,9 @@ def _submit_video_comment(video_id: str) -> None:
 	}
 	video.setdefault("comments", []).append(comment)
 	resolved, missing = _split_mentions(text, author=_ui_state.current_user)
+	mentions_delivered = False
 	if resolved:
-		notify_mentions(_ui_state.current_user, text, "a video comment")
+		mentions_delivered = notify_mentions(_ui_state.current_user, text, "a video comment")
 	entry.delete(0, tk.END)
 	if missing:
 		_set_video_status(
@@ -3052,6 +3062,8 @@ def _submit_video_comment(video_id: str) -> None:
 			error=True,
 		)
 	persist()
+	if mentions_delivered:
+		trigger_immediate_sync("notifications")
 	_render_video_comments(video_id)
 
 
@@ -3080,8 +3092,9 @@ def _submit_video_comment_reply(video_id: str, comment_id: str, text_var: tk.Str
 	}
 	replies.append(reply)
 	resolved, missing = _split_mentions(text, author=_ui_state.current_user)
+	mentions_delivered = False
 	if resolved:
-		notify_mentions(_ui_state.current_user, text, "a video reply")
+		mentions_delivered = notify_mentions(_ui_state.current_user, text, "a video reply")
 	text_var.set("")
 	if missing:
 		_set_video_status(
@@ -3089,6 +3102,8 @@ def _submit_video_comment_reply(video_id: str, comment_id: str, text_var: tk.Str
 			error=True,
 		)
 	persist()
+	if mentions_delivered:
+		trigger_immediate_sync("notifications")
 	_render_video_comments(video_id)
 
 
@@ -3867,10 +3882,18 @@ def _apply_remote_refresh_changes(changes: dict[str, bool]) -> None:
 		dirty_views.add("home")
 	if changes.get("videos"):
 		dirty_views.add("videos")
+	if changes.get("messages"):
+		dirty_views.add("dm")
+		_mark_dm_sidebar_dirty()
 	if changes.get("users"):
 		dirty_views.update({"notifications", "dm"})
 		_profile_avatar_cache.clear()
 		_mark_dm_sidebar_dirty()
+	if changes.get("group_chats"):
+		dirty_views.add("dm")
+		_mark_dm_sidebar_dirty()
+	if changes.get("notifications"):
+		dirty_views.add("notifications")
 
 	if dirty_views:
 		_mark_dirty(*dirty_views)
@@ -3895,12 +3918,25 @@ def _poll_messages_once() -> dict[str, bool]:
 		if changes.get("messages"):
 			_mark_dirty("dm")
 			_request_render("dm")
+		if changes.get("group_chats"):
+			_mark_dm_sidebar_dirty()
+			_mark_dirty("dm")
+			_request_render("dm")
+		if changes.get("stories"):
+			_mark_dirty("home")
+			_request_render("home")
 		if changes.get("posts"):
 			_mark_dirty("home")
 			_request_render("home")
+		if changes.get("videos"):
+			_mark_dirty("videos")
+			_request_render("videos")
 		if changes.get("users"):
 			_mark_dirty("profile", "home")
 			_request_render("profile")
+		if changes.get("notifications"):
+			_mark_dirty("notifications")
+			_request_render("notifications")
 	except Exception:
 		changes = {}
 
@@ -6289,9 +6325,11 @@ def _handle_submit_post() -> None:
 			"attachments": attachments,
 		}
 	)
-	notify_mentions(_ui_state.current_user, content, "a post")
-	notify_followers(_ui_state.current_user)
-	
+	mentions_sent = notify_mentions(_ui_state.current_user, content, "a post")
+	followers_notified = notify_followers(_ui_state.current_user)
+	if mentions_sent or followers_notified:
+		trigger_immediate_sync("notifications")
+
 	# Immediate real-time sync for posts
 	trigger_immediate_sync("posts")
 	_notify_remote_sync_issue("posts", "publish the post")
@@ -6451,7 +6489,9 @@ def _handle_submit_reply(post_idx: int, var: tk.StringVar) -> None:
 			"attachments": [],
 		}
 	)
-	notify_mentions(_ui_state.current_user, content, "a reply")
+	mentions_delivered = notify_mentions(_ui_state.current_user, content, "a reply")
+	if mentions_delivered:
+		trigger_immediate_sync("notifications")
 	persist()
 	var.set("")
 	_ui_state.feed_state.reply_input_target = None
@@ -6692,11 +6732,13 @@ def _handle_follow(username: str) -> None:
 	followers = users.setdefault(username, {}).setdefault("followers", [])
 	if current not in followers:
 		followers.append(current)
-		push_notification(
+		notification_delivered = push_notification(
 			username,
 			f"@{current} started following you",
 			meta={"type": "follow", "from": current},
 		)
+		if notification_delivered:
+			trigger_immediate_sync("notifications")
 	
 	# Immediate real-time sync for follow changes
 	trigger_immediate_sync("users")
@@ -6757,6 +6799,7 @@ def _handle_edit_group_name() -> None:
 	chat["name"] = cleaned
 	chat["updated_at"] = now_ts()
 	persist()
+	trigger_immediate_sync("group_chats")
 	_mark_dm_sidebar_dirty()
 	_request_render("dm")
 
@@ -6799,13 +6842,16 @@ def _handle_transfer_group_owner() -> None:
 	chat["owner"] = chosen
 	chat["updated_at"] = now_ts()
 	persist()
+	trigger_immediate_sync("group_chats")
 	_mark_dm_sidebar_dirty()
 	_request_render("dm")
-	push_notification(
+	notification_delivered = push_notification(
 		chosen,
 		f"You are now the owner of {chat.get('name') or 'your group chat'}",
 		meta={"type": "group_dm", "group": chat.get("id"), "from": _ui_state.current_user},
 	)
+	if notification_delivered:
+		trigger_immediate_sync("notifications")
 	_request_render("notifications")
 
 
@@ -6834,6 +6880,7 @@ def _handle_edit_group_announcement() -> None:
 	chat["announcement"] = cleaned
 	chat["updated_at"] = now_ts()
 	persist()
+	trigger_immediate_sync("group_chats")
 	_request_render("dm")
 
 
@@ -6848,6 +6895,7 @@ def _handle_copy_group_invite() -> None:
 	invite_link = _build_group_invite_link(token)
 	if changed:
 		persist()
+		trigger_immediate_sync("group_chats")
 	anchor = _get_after_anchor()
 	if anchor:
 		try:
@@ -6878,6 +6926,7 @@ def _handle_regenerate_group_invite() -> None:
 	chat["invite_updated_at"] = now_ts()
 	chat["updated_at"] = now_ts()
 	persist()
+	trigger_immediate_sync("group_chats")
 	_request_render("dm")
 
 
@@ -6925,15 +6974,18 @@ def _handle_create_group_chat() -> None:
 		"updated_at": timestamp,
 	}
 	group_chats.append(group_chat)
+	notifications_sent = False
 	for member in selected:
-		push_notification(
+		notifications_sent = push_notification(
 			member,
 			f"@{_ui_state.current_user} added you to {group_name}",
 			meta={"type": "group_dm", "group": group_id, "from": _ui_state.current_user},
-		)
+		) or notifications_sent
 	
 	# Immediate real-time sync for group chats
 	trigger_immediate_sync("group_chats")
+	if notifications_sent:
+		trigger_immediate_sync("notifications")
 	_mark_dm_sidebar_dirty()
 	_dismiss_group_modal()
 	_set_active_dm_conversation(group_id, None)
@@ -6964,6 +7016,7 @@ def _handle_leave_group_chat() -> None:
 	if user in members:
 		members.remove(user)
 	chat_owner = chat.get("owner")
+	notifications_sent = False
 	if not members:
 		group_chats.remove(chat)
 	else:
@@ -6972,12 +7025,15 @@ def _handle_leave_group_chat() -> None:
 			chat["owner"] = members[0]
 		chat["updated_at"] = now_ts()
 		for member in members:
-			push_notification(
+			notifications_sent = push_notification(
 				member,
 				f"@{user} left {chat_name}",
 				meta={"type": "group_dm", "group": conversation_id, "from": user},
-			)
+			) or notifications_sent
 	persist()
+	trigger_immediate_sync("group_chats")
+	if notifications_sent:
+		trigger_immediate_sync("notifications")
 	_mark_dm_sidebar_dirty()
 	_set_active_dm_conversation(None, None)
 	_select_default_dm_conversation()
@@ -7083,11 +7139,13 @@ def _open_create_group_modal() -> None:
 		users.setdefault(username, {}).setdefault("followers", [])
 		if _ui_state.current_user not in users[username]["followers"]:
 			users[username]["followers"].append(_ui_state.current_user)
-			push_notification(
+			notification_delivered = push_notification(
 				username,
 				f"@{_ui_state.current_user} started following you",
 				meta={"type": "follow", "from": _ui_state.current_user},
 			)
+			if notification_delivered:
+				trigger_immediate_sync("notifications")
 		persist()
 	_request_render("dm")
 	_request_render("notifications")
@@ -7185,6 +7243,8 @@ def _handle_send_dm() -> None:
 		"reactions": {},
 		"seen_by": [current_user],
 	}
+	notifications_sent = False
+	is_group_message = False
 	if conversation_id.startswith("group:"):
 		chat = _find_group_chat(conversation_id)
 		if not chat or current_user not in chat.get("members", []):
@@ -7195,13 +7255,14 @@ def _handle_send_dm() -> None:
 		chat.setdefault("messages", []).append(message_record)
 		chat["updated_at"] = message_record["time"]
 		_mark_dm_sidebar_dirty()
+		is_group_message = True
 		for member in chat.get("members", []):
 			if member != current_user:
-				push_notification(
+				notifications_sent = push_notification(
 					member,
 					f"@{current_user} sent a message in {chat.get('name') or 'your group chat'}",
 					meta={"type": "group_dm", "group": conversation_id, "from": current_user},
-				)
+				) or notifications_sent
 	else:
 		partner = _ui_state.active_dm_user
 		if not partner and conversation_id:
@@ -7211,15 +7272,23 @@ def _handle_send_dm() -> None:
 			return
 		key = convo_id(current_user, partner)
 		messages.setdefault(key, []).append(message_record)
-		push_notification(
+		notifications_sent = push_notification(
 			partner,
 			f"@{current_user} sent you a direct message",
 			meta={"type": "dm", "from": current_user},
-		)
+		) or notifications_sent
 		_set_active_dm_conversation(key, partner)
-	
-	# Immediate real-time sync for messages
-	trigger_immediate_sync("messages")
+		_mark_dm_sidebar_dirty()
+
+	# Immediate real-time sync for the updated thread
+	if is_group_message:
+		trigger_immediate_sync("group_chats")
+		_notify_remote_sync_issue("group_chats", "deliver the group message")
+	else:
+		trigger_immediate_sync("messages")
+		_notify_remote_sync_issue("messages", "deliver the message")
+	if notifications_sent:
+		trigger_immediate_sync("notifications")
 	if media_sync_failed:
 		_notify_remote_sync_issue("media", "upload the message attachments")
 	entry.delete(0, tk.END)

@@ -1078,7 +1078,11 @@ def smart_sync_updates() -> Dict[str, bool]:
         return {}
     
     changes: Dict[str, bool] = {}
-    synced_resources = []
+    synced_resources: List[str] = []
+
+    def _mark_synced(resource_name: str) -> None:
+        if resource_name not in synced_resources:
+            synced_resources.append(resource_name)
     
     # Only sync resources that have actually changed
     for resource, _timestamp in updates_needed.items():
@@ -1090,7 +1094,7 @@ def smart_sync_updates() -> Dict[str, bool]:
                     if normalized_posts != posts:
                         posts[:] = normalized_posts
                         changes["posts"] = True
-                        synced_resources.append("posts")
+                        _mark_synced("posts")
             
             elif resource == "users":
                 raw_users_remote = load_json(USERS_PATH, {})
@@ -1101,7 +1105,8 @@ def smart_sync_updates() -> Dict[str, bool]:
                         users.clear()
                         users.update(normalized_users)
                         changes["users"] = True
-                        synced_resources.extend(["users", "notifications"])
+                        _mark_synced("users")
+                        _mark_synced("notifications")
             
             elif resource == "messages":
                 raw_messages_remote = load_json(MESSAGES_PATH, {})
@@ -1110,7 +1115,7 @@ def smart_sync_updates() -> Dict[str, bool]:
                         messages.clear()
                         messages.update(raw_messages_remote)
                         changes["messages"] = True
-                        synced_resources.append("messages")
+                        _mark_synced("messages")
             elif resource == "stories":
                 raw_stories_remote = load_json(STORIES_PATH, [])
                 if isinstance(raw_stories_remote, list):
@@ -1125,7 +1130,50 @@ def smart_sync_updates() -> Dict[str, bool]:
                     if normalized_stories != stories:
                         stories[:] = normalized_stories
                         changes["stories"] = True
-                        synced_resources.append("stories")
+                        _mark_synced("stories")
+
+            elif resource == "videos":
+                raw_videos_remote = load_json(VIDEOS_PATH, [])
+                if isinstance(raw_videos_remote, list):
+                    normalized_videos: List[Dict[str, Any]] = []
+                    for entry in raw_videos_remote:
+                        if not isinstance(entry, dict):
+                            continue
+                        normalized_video = normalize_video(dict(entry))
+                        if normalized_video:
+                            normalized_videos.append(normalized_video)
+                    if normalized_videos != videos:
+                        videos[:] = normalized_videos
+                        changes["videos"] = True
+                        _mark_synced("videos")
+
+            elif resource == "group_chats":
+                raw_group_chats_remote = load_json(GROUP_CHATS_PATH, [])
+                if isinstance(raw_group_chats_remote, list):
+                    normalized_group_chats: List[Dict[str, Any]] = []
+                    for entry in raw_group_chats_remote:
+                        if not isinstance(entry, dict):
+                            continue
+                        normalized_chat = normalize_group_chat(dict(entry))
+                        if normalized_chat:
+                            normalized_group_chats.append(normalized_chat)
+                    if normalized_group_chats != group_chats:
+                        group_chats[:] = normalized_group_chats
+                        changes["group_chats"] = True
+                        _mark_synced("group_chats")
+
+            elif resource == "notifications":
+                raw_users_remote = load_json(USERS_PATH, {})
+                notifications_remote = load_json(NOTIFICATIONS_PATH, {})
+                if isinstance(raw_users_remote, dict):
+                    normalized_users = _build_normalized_users(raw_users_remote, notifications_remote)
+                    if normalized_users != users:
+                        users.clear()
+                        users.update(normalized_users)
+                        changes["notifications"] = True
+                        changes["users"] = True
+                        _mark_synced("notifications")
+                        _mark_synced("users")
             
             # Add other resources as needed (stories, videos, etc.)
             

@@ -59,7 +59,9 @@ Real-time triggers added to:
 - **Messages**: DMs, group chats, reactions
 - **Users**: Profile updates, follow/unfollow, badges  
 - **Stories**: New stories, reactions
-- **Group Chats**: Creation, member changes
+- **Short Videos**: Uploads, comments, replies, mention pings
+- **Group Chats**: Creation, renames, member changes, announcements
+- **Notifications**: Delivered when followers or mentions receive alerts
 
 ### **Smart Debouncing:**
 ```python
@@ -235,6 +237,7 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 5. **Asset Restoration**: All original icons and media recovered
 6. **Data Cleanup**: Clean testing environment established
 7. **Code Organization**: Combined documentation, cleaned test files
+8. **Video & Notification Sync**: Short videos, group chats, and alerts now update immediately across devices
 
 ### 🎯 **Key Achievements:**
 - **Network Traffic**: 95% reduction
