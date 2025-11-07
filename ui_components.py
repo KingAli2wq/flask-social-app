@@ -202,66 +202,226 @@ class MessageListComponent(BaseComponent):
 class SingleNotificationComponent(BaseComponent):
     """Individual notification item"""
     
-    def __init__(self, notification_id: str, palette: dict[str, str], on_click: Optional[Callable] = None):
+    def __init__(
+        self,
+        notification_id: str,
+        palette: dict[str, str],
+        *,
+        on_click: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_follow_click: Optional[Callable[[str], None]] = None,
+        current_user: Optional[str] = None,
+        users: Optional[dict[str, dict]] = None,
+    ):
         super().__init__(f"notification_{notification_id}")
         self.notification_id = notification_id
         self.palette = palette
         self.on_click = on_click
+        self.on_follow_click = on_follow_click
+        self.current_user = current_user
+        self.users = users
         self.container: Optional[ctk.CTkFrame] = None
+        self._message_label: Optional[ctk.CTkLabel] = None
+        self._timestamp_label: Optional[ctk.CTkLabel] = None
+        self._follow_button: Optional[ctk.CTkButton] = None
+        self._card_frame: Optional[ctk.CTkFrame] = None
         
-    def render(self, notification_data: dict[str, Any]) -> None:
+    def _resolve_follow_context(self, notification_data: dict[str, Any]) -> tuple[bool, Optional[str], bool]:
+        meta = notification_data.get("meta", {}) if isinstance(notification_data, dict) else {}
+        is_follow = isinstance(meta, dict) and meta.get("type") == "follow"
+        follower = meta.get("from") if is_follow and isinstance(meta, dict) else None
+        already_following = False
+        if (
+            is_follow
+            and follower
+            and self.users
+            and self.current_user
+            and follower != self.current_user
+        ):
+            already_following = follower in self.users.get(self.current_user, {}).get("following", [])
+        return is_follow, follower, already_following
+
+    def update(self, notification_data: dict[str, Any]) -> None:
+        is_follow, follower, already_following = self._resolve_follow_context(notification_data)
+        signature_payload = {
+            "notification": notification_data,
+            "current_user": self.current_user,
+            "follow_state": {
+                "is_follow": is_follow,
+                "follower": follower,
+                "already_following": already_following,
+            },
+        }
+        new_signature = self.compute_signature(signature_payload)
+        if new_signature != self.state.signature or not self.state.widget:
+            self.state.signature = new_signature
+            self.render(
+                notification_data,
+                is_follow=is_follow,
+                follower=follower,
+                already_following=already_following,
+            )
+        else:
+            self._update_existing_controls(
+                notification_data,
+                is_follow=is_follow,
+                follower=follower,
+                already_following=already_following,
+            )
+
+    def render(
+        self,
+        notification_data: dict[str, Any],
+        *,
+        is_follow: bool,
+        follower: Optional[str],
+        already_following: bool,
+    ) -> None:
         """Render single notification"""
         if not self.container:
             return
-            
-        if self.state.widget:
-            self.state.widget.destroy()
-            
         message = notification_data.get("message", "")
         timestamp = notification_data.get("time", "")
-        meta = notification_data.get("meta", {})
-        is_clickable = bool(meta.get("type"))
-        
-        # Notification card
-        card = ctk.CTkFrame(
-            self.container,
-            corner_radius=12,
-            fg_color=self.palette.get("card", "#18263f")
-        )
-        card.pack(fill="x", padx=0, pady=6)
-        
-        # Message text
-        message_label = ctk.CTkLabel(
-            card,
-            text=message,
-            wraplength=580,
-            justify="left",
-            text_color=self.palette.get("accent", "#4c8dff") if is_clickable else self.palette.get("text", "#e2e8f0")
-        )
-        message_label.pack(anchor="w", padx=16, pady=(12, 4))
-        
+        meta = notification_data.get("meta", {}) if isinstance(notification_data, dict) else {}
+        is_clickable = bool(meta.get("type")) if isinstance(meta, dict) else False
+
+        if not self.state.widget or not self._card_frame:
+            card = ctk.CTkFrame(
+                self.container,
+                corner_radius=12,
+                fg_color=self.palette.get("card", "#18263f")
+            )
+            card.pack(fill="x", padx=0, pady=6)
+            self._card_frame = card
+            self.state.widget = card
+
+            self._message_label = ctk.CTkLabel(
+                card,
+                wraplength=580,
+                justify="left",
+            )
+            self._message_label.pack(anchor="w", padx=16, pady=(12, 4))
+
+            self._timestamp_label = ctk.CTkLabel(
+                card,
+                text_color=self.palette.get("muted", "#94a3b8"),
+                font=ctk.CTkFont(size=10)
+            )
+            self._timestamp_label.pack(anchor="w", padx=16, pady=(0, 12))
+
+        if not self._message_label or not self._timestamp_label or not self._card_frame:
+            return
+
+        text_color = self.palette.get("accent", "#4c8dff") if is_clickable else self.palette.get("text", "#e2e8f0")
+        self._message_label.configure(text=message, text_color=text_color)
+        self._timestamp_label.configure(text=timestamp)
+
         if is_clickable and self.on_click:
-            message_label.configure(cursor="hand2")
-            message_label.bind("<Button-1>", lambda e: self.on_click(notification_data))
-        
-        # Timestamp
-        ctk.CTkLabel(
-            card,
-            text=timestamp,
-            text_color=self.palette.get("muted", "#94a3b8"),
-            font=ctk.CTkFont(size=10)
-        ).pack(anchor="w", padx=16, pady=(0, 12))
-        
-        self.state.widget = card
+            self._message_label.configure(cursor="hand2")
+            self._message_label.bind("<Button-1>", lambda e: self.on_click(notification_data))
+        else:
+            self._message_label.configure(cursor="arrow")
+            self._message_label.unbind("<Button-1>")
+
+        self._update_follow_button(
+            notification_data,
+            is_follow=is_follow,
+            follower=follower,
+            already_following=already_following,
+        )
+
+    def _update_existing_controls(
+        self,
+        notification_data: dict[str, Any],
+        *,
+        is_follow: bool,
+        follower: Optional[str],
+        already_following: bool,
+    ) -> None:
+        """Update dynamic portions without full re-render to avoid flicker."""
+        if not self._message_label or not self._timestamp_label:
+            return
+        self._message_label.configure(text=notification_data.get("message", ""))
+        self._timestamp_label.configure(text=notification_data.get("time", ""))
+        meta = notification_data.get("meta", {}) if isinstance(notification_data, dict) else {}
+        is_clickable = isinstance(meta, dict) and bool(meta.get("type"))
+        text_color = self.palette.get("accent", "#4c8dff") if is_clickable else self.palette.get("text", "#e2e8f0")
+        self._message_label.configure(text_color=text_color)
+        if is_clickable and self.on_click:
+            self._message_label.configure(cursor="hand2")
+            self._message_label.bind("<Button-1>", lambda e: self.on_click(notification_data))
+        else:
+            self._message_label.configure(cursor="arrow")
+            self._message_label.unbind("<Button-1>")
+        self._update_follow_button(
+            notification_data,
+            is_follow=is_follow,
+            follower=follower,
+            already_following=already_following,
+        )
+
+    def _update_follow_button(
+        self,
+        notification_data: dict[str, Any],
+        *,
+        is_follow: bool,
+        follower: Optional[str],
+        already_following: bool,
+    ) -> None:
+        if not self._card_frame:
+            return
+        should_show = (
+            is_follow
+            and follower
+            and self.current_user
+            and follower != self.current_user
+        )
+        if should_show:
+            if not self._follow_button or not self._follow_button.winfo_exists():
+                self._follow_button = ctk.CTkButton(
+                    self._card_frame,
+                    width=110,
+                    hover_color=self.palette.get("accent_hover", "#3b6dd6"),
+                    command=lambda user=follower: self.on_follow_click(user) if self.on_follow_click else None,
+                )
+                self._follow_button.pack(anchor="w", padx=16, pady=(0, 6))
+            text = "Following" if already_following else "Follow back"
+            fg_color = self.palette.get("accent", "#4c8dff") if not already_following else "transparent"
+            text_color = "white" if not already_following else self.palette.get("muted", "#94a3b8")
+            border_width = 0 if not already_following else 1
+            state = "disabled" if already_following else "normal"
+            self._follow_button.configure(
+                text=text,
+                fg_color=fg_color,
+                text_color=text_color,
+                border_width=border_width,
+                border_color=self.palette.get("muted", "#94a3b8"),
+                state=state,
+                command=lambda user=follower: self.on_follow_click(user) if self.on_follow_click else None,
+            )
+        else:
+            if self._follow_button and self._follow_button.winfo_exists():
+                self._follow_button.destroy()
+            self._follow_button = None
 
 
 class NotificationListComponent(BaseComponent):
     """Notification list - only updates changed notifications"""
     
-    def __init__(self, palette: dict[str, str], on_notification_click: Optional[Callable] = None):
+    def __init__(
+        self,
+        palette: dict[str, str],
+        *,
+        on_notification_click: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_follow_click: Optional[Callable[[str], None]] = None,
+        get_current_user: Optional[Callable[[], Optional[str]]] = None,
+        users: Optional[dict[str, dict]] = None,
+    ):
         super().__init__("notification_list")
         self.palette = palette
         self.on_notification_click = on_notification_click
+        self.on_follow_click = on_follow_click
+        self.get_current_user = get_current_user or (lambda: None)
+        self.users = users
         self.notification_components: dict[str, SingleNotificationComponent] = {}
         self.container: Optional[ctk.CTkScrollableFrame] = None
         
@@ -274,6 +434,8 @@ class NotificationListComponent(BaseComponent):
         if not self.container:
             return
             
+        current_user = self.get_current_user()
+        
         # Use timestamp + message as ID since notifications might not have IDs
         notification_keys = []
         for idx, notif in enumerate(notifications):
@@ -293,12 +455,22 @@ class NotificationListComponent(BaseComponent):
         # Update or create notifications
         for key, notification in notification_keys:
             if key not in self.notification_components:
-                component = SingleNotificationComponent(key, self.palette, self.on_notification_click)
+                component = SingleNotificationComponent(
+                    key,
+                    self.palette,
+                    on_click=self.on_notification_click,
+                    on_follow_click=self.on_follow_click,
+                    current_user=current_user,
+                    users=self.users,
+                )
                 component.container = self.container
                 self.notification_components[key] = component
-                component.render(notification)
+                component.update(notification)
             else:
                 component = self.notification_components[key]
+                # Update current user reference before re-rendering
+                component.current_user = current_user
+                component.users = self.users
                 component.update(notification)
 
 

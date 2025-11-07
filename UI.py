@@ -6481,13 +6481,17 @@ def _render_notifications() -> None:
 	if _notification_list_component is None:
 		_notification_list_component = NotificationListComponent(
 			palette=_palette,
-			on_notification_click=_handle_notification_click
+			on_notification_click=_handle_notification_click,
+			on_follow_click=_handle_follow_from_notification,
+			get_current_user=lambda: _ui_state.current_user,
+			users=users,
 		)
 		_notification_list_component.mount(list_frame)
 		component_registry.register(_notification_list_component)
 	
 	# Handle empty states
 	if not _ui_state.current_user:
+		_notification_list_component.update([])
 		# Clear components for signed-out state
 		for child in list_frame.winfo_children():
 			child.destroy()
@@ -6500,6 +6504,7 @@ def _render_notifications() -> None:
 
 	notes = users.get(_ui_state.current_user, {}).get("notifications", [])
 	if not notes:
+		_notification_list_component.update([])
 		# Clear components for empty state
 		for child in list_frame.winfo_children():
 			child.destroy()
@@ -6512,94 +6517,14 @@ def _render_notifications() -> None:
 	
 	# Use component-based update - only changed notifications re-render
 	_notification_list_component.update(notes)
-		card = ctk.CTkFrame(list_frame, corner_radius=12, fg_color=_palette.get("card", "#18263f"))
-		card.grid(sticky="we", padx=0, pady=6)
-		card.grid_columnconfigure(0, weight=1)
 
-		meta = note.get("meta") if isinstance(note.get("meta"), dict) else {}
-		meta_type = meta.get("type") if isinstance(meta, dict) else None
-		click_handler: Optional[Callable[[Any], None]] = None
-		if meta_type == "dm":
-			sender = meta.get("from")
-			if sender:
-				click_handler = lambda _e, user=sender: _open_dm_from_notification(user)
-		elif meta_type == "group_dm":
-			group_target = meta.get("group")
-			if group_target:
-				click_handler = lambda _e, chat_id=group_target: _open_group_from_notification(chat_id)
-		elif meta_type == "mention":
-			resource = meta.get("resource")
-			if resource in {"post", "reply"}:
-				post_id = meta.get("post_id")
-				reply_id = meta.get("reply_id") if resource == "reply" else None
-				if post_id:
-					click_handler = lambda _e, pid=post_id, rid=reply_id: _focus_post_from_notification(pid, reply_id=rid)
-			elif resource == "story":
-				story_id = meta.get("story_id")
-				if story_id:
-					click_handler = lambda _e, sid=story_id: _open_story_from_notification(sid)
-			elif resource == "video":
-				video_id = meta.get("video_id")
-				if video_id:
-					click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid)
-			elif resource in {"video_comment", "video_reply"}:
-				video_id = meta.get("video_id")
-				if video_id:
-					click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid, open_comments=True)
-		elif meta_type == "post_publish":
-			post_id = meta.get("post_id")
-			if post_id:
-				click_handler = lambda _e, pid=post_id: _focus_post_from_notification(pid)
-		elif meta_type == "story_publish":
-			story_id = meta.get("story_id")
-			if story_id:
-				click_handler = lambda _e, sid=story_id: _open_story_from_notification(sid)
-		elif meta_type == "video_publish":
-			video_id = meta.get("video_id")
-			if video_id:
-				click_handler = lambda _e, vid=video_id: _open_video_from_notification(vid)
 
-		message_lbl = ctk.CTkLabel(
-			card,
-			text=note.get("message", ""),
-			wraplength=580,
-			justify="left",
-			text_color=_palette.get("text", "#e2e8f0"),
-		)
-		message_lbl.grid(row=0, column=0, sticky="w", padx=16, pady=(12, 4))
-		if click_handler:
-			message_lbl.configure(text_color=_palette.get("accent", "#4c8dff"), cursor="hand2")
-			message_lbl.bind("<Button-1>", click_handler)
-
-		if meta.get("type") == "follow":
-			follower = meta.get("from")
-			if follower and follower != _ui_state.current_user:
-				already_following = follower in users.get(_ui_state.current_user, {}).get("following", [])
-				btn = ctk.CTkButton(
-					card,
-					text="Follow back" if not already_following else "Following",
-					width=110,
-					fg_color=_palette.get("accent", "#4c8dff") if not already_following else "transparent",
-					hover_color=_palette.get("accent_hover", "#3b6dd6"),
-					text_color="white" if not already_following else _palette.get("muted", "#94a3b8"),
-					border_width=0 if not already_following else 1,
-					border_color=_palette.get("muted", "#94a3b8"),
-					state="disabled" if already_following else "normal",
-					command=lambda user=follower: _handle_follow(user),
-				)
-				btn.grid(row=1, column=0, sticky="w", padx=16, pady=(0, 6))
-				row_idx = 2
-			else:
-				row_idx = 1
-		else:
-			row_idx = 1
-
-		ctk.CTkLabel(
-			card,
-			text=note.get("time", ""),
-			text_color=_palette.get("muted", "#94a3b8"),
-			font=ctk.CTkFont(size=10),
-		).grid(row=row_idx, column=0, sticky="w", padx=16, pady=(0, 12))
+def _handle_follow_from_notification(username: str) -> None:
+	"""Handle follow-back button from notifications component."""
+	if not username:
+		return
+	_handle_follow(username)
+	_refresh_notifications_ui()
 
 
 def _render_dm_sidebar() -> None:

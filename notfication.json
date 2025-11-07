@@ -83,20 +83,79 @@
         },
         {
             "message": "@Ben mentioned you in a post",
-            "time": "2025-11-07 00:44:10",
             "meta": {
-                "type": "mention",
-                "resource": "post",
+                "from": "Ben",
                 "post_id": "1df378138a344ef4a2166ecb5926a312",
+                "resource": "post",
+                "type": "mention"
+            },
+            "time": "2025-11-07 00:44:10"
+        },
+        {
+            "message": "@Ben shared a new post",
+            "meta": {
+                "from": "Ben",
+                "post_id": "1df378138a344ef4a2166ecb5926a312",
+                "type": "post_publish"
+            },
+            "time": "2025-11-07 00:44:10"
+        },
+        {
+            "message": "@Ben shared a new post",
+            "meta": {
+                "from": "Ben",
+                "post_id": "9c9f5f19f2304d3ab870d033d66fdf57",
+                "type": "post_publish"
+            },
+            "time": "2025-11-07 09:15:04"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "meta": {
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 09:15:11"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "meta": {
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 09:15:15"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "meta": {
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 09:15:19"
+        },
+        {
+            "message": "@Ben shared a new post",
+            "time": "2025-11-07 09:20:20",
+            "meta": {
+                "type": "post_publish",
+                "post_id": "1cedf5c5e21a4871b116814b98810bba",
                 "from": "Ben"
             }
         },
         {
             "message": "@Ben shared a new post",
-            "time": "2025-11-07 00:44:10",
+            "time": "2025-11-07 09:20:23",
             "meta": {
                 "type": "post_publish",
-                "post_id": "1df378138a344ef4a2166ecb5926a312",
+                "post_id": "adaabe77db984a23a04f387f9f1c66bf",
+                "from": "Ben"
+            }
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "time": "2025-11-07 09:20:36",
+            "meta": {
+                "type": "dm",
                 "from": "Ben"
             }
         }
