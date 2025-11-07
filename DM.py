@@ -46,7 +46,6 @@ def render_dm_sidebar(
     open_dm_with: Callable[[str], None],
     open_group_chat: Callable[[str], None],
     create_group_chat: Callable[[], None],
-    join_group_chat_from_link: Callable[[], None],
 ) -> None:
     """Render the DM conversation list sidebar."""
     if dm_following_list is None:
@@ -72,8 +71,6 @@ def render_dm_sidebar(
     header_row = ctk.CTkFrame(dm_following_list, fg_color="transparent")
     header_row.grid(sticky="we", padx=12, pady=(12, 6))
     header_row.grid_columnconfigure(0, weight=1)
-    header_row.grid_columnconfigure(1, weight=0)
-    header_row.grid_columnconfigure(2, weight=0)
 
     ctk.CTkLabel(
         header_row,
@@ -94,19 +91,6 @@ def render_dm_sidebar(
         hover_color=surface,
     )
     new_group_btn.grid(row=0, column=1, sticky="e")
-
-    join_group_btn = ctk.CTkButton(
-        header_row,
-        text="Join via link",
-        width=120,
-        command=join_group_chat_from_link,
-        fg_color="transparent",
-        border_width=1,
-        border_color=palette.get("accent", "#4c8dff"),
-        text_color=palette.get("accent", "#4c8dff"),
-        hover_color=surface,
-    )
-    join_group_btn.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     following = users.get(current_user, {}).get("following", [])
     if following:
@@ -200,6 +184,8 @@ def render_dm(
     open_image: Optional[OpenHandler],
     open_attachment: Optional[AttachmentOpener] = None,
     render_inline_video: Optional[Callable[..., None]] = None,
+    invite_token_parser: Optional[Callable[[str], list[str]]] = None,
+    invite_widget_factory: Optional[Callable[[Any, str], Optional[Any]]] = None,
     sidebar_renderer: Optional[Callable[[], None]] = None,
     on_toggle_reaction: Optional[Callable[[str, str, str], None]] = None,
     reaction_emojis: Optional[list[str]] = None,
@@ -392,6 +378,20 @@ def render_dm(
                 font=("Segoe UI Emoji", 11),
             ).grid(row=line_idx, column=0, sticky="w", padx=10, pady=(0, 4))
             line_idx += 1
+
+        if content and invite_token_parser and invite_widget_factory:
+            try:
+                invite_tokens = invite_token_parser(content)
+            except Exception:
+                invite_tokens = []
+            for token in invite_tokens:
+                try:
+                    widget = invite_widget_factory(bubble, token)
+                except Exception:
+                    widget = None
+                if widget:
+                    widget.grid(row=line_idx, column=0, sticky="we", padx=10, pady=(0, 6))
+                    line_idx += 1
 
         attachments_list = msg.get("attachments") or []
         if attachments_list and isinstance(attachments_list, list):

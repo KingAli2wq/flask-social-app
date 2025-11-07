@@ -784,12 +784,143 @@ def _extract_group_invite_token(value: str) -> Optional[str]:
 		candidate = candidate.rsplit("/", 1)[-1]
 	if "?" in candidate:
 		candidate = candidate.split("?", 1)[0]
-	token = candidate.strip().upper()
+	stripped = candidate.strip().rstrip('.,!?:;)]}"\'')
+	token = stripped.strip().upper()
 	if not token:
 		return None
 	if not token.isalnum():
 		return None
 	return token
+
+
+def _discover_invite_tokens(message: str) -> list[str]:
+	text = message or ""
+	tokens: list[str] = []
+	pattern = re.compile(re.escape(GROUP_INVITE_LINK_PREFIX) + r"([A-Za-z0-9]+)", re.IGNORECASE)
+	for match in pattern.finditer(text):
+		token = _extract_group_invite_token(match.group(0))
+		if token and token not in tokens:
+			tokens.append(token)
+	if not tokens:
+		for part in re.split(r"[\s,]+", text):
+			token = _extract_group_invite_token(part)
+			if token and token not in tokens:
+				tokens.append(token)
+	return tokens
+
+
+def _resolve_invite_token_state(token: str) -> tuple[str, Optional[dict[str, Any]]]:
+	normalized = (token or "").strip().upper()
+	if not normalized:
+		return "invalid", None
+	for chat in group_chats:
+		existing = str(chat.get("invite_token") or "").strip().upper()
+		if existing == normalized:
+			current_user = _ui_state.current_user or ""
+			members = chat.get("members", []) or []
+			if current_user and current_user in members:
+				return "joined", chat
+			return "available", chat
+	return "invalid", None
+
+
+def _create_invite_widget(container: ctk.CTkFrame, token: str) -> Optional[ctk.CTkButton]:
+	state, chat = _resolve_invite_token_state(token)
+	accent = _palette.get("accent", "#4c8dff")
+	accent_hover = _palette.get("accent_hover", "#3b6dd6")
+	muted = _palette.get("muted", "#94a3b8")
+	danger = _palette.get("danger", "#ef4444")
+	if state == "available" and chat:
+		label = f"Join {chat.get('name') or 'group chat'}"
+		return ctk.CTkButton(
+			container,
+			text=label,
+			width=220,
+			fg_color=accent,
+			hover_color=accent_hover,
+			command=lambda invite_token=token: _handle_join_group_invite(invite_token),
+		)
+	if state == "joined" and chat:
+		label = f"Already in {chat.get('name') or 'this group'}"
+		return ctk.CTkButton(
+			container,
+			text=label,
+			width=220,
+			fg_color="transparent",
+			border_width=1,
+			border_color=muted,
+			text_color=muted,
+			state="disabled",
+		)
+	label = "Invite expired"
+	return ctk.CTkButton(
+		container,
+		text=label,
+		width=220,
+		fg_color="transparent",
+		border_width=1,
+		border_color=danger,
+		text_color=danger,
+		state="disabled",
+	)
+
+
+def _handle_join_group_invite(token: str) -> None:
+	if not require_login("join group chats"):
+		return
+	state, chat = _resolve_invite_token_state(token)
+	if state == "invalid" or not chat:
+		messagebox.showerror("Invite expired", "That invite link is no longer valid.")
+		_request_render("dm")
+		return
+	if state == "joined":
+		messagebox.showinfo("Group chat", "You are already a member of that group chat.")
+		if chat.get("id"):
+			_open_group_chat(chat.get("id") or "")
+		return
+	current_user = _ui_state.current_user or ""
+	if not current_user:
+		return
+	members = chat.setdefault("members", [])
+	if current_user in members:
+		_open_group_chat(chat.get("id") or "")
+		_request_render("dm")
+		return
+	members.append(current_user)
+	timestamp = now_ts()
+	chat["updated_at"] = timestamp
+	messages_list = chat.setdefault("messages", [])
+	join_message = {
+		"id": uuid4().hex,
+		"sender": current_user,
+		"content": f"@{current_user} joined the group",
+		"time": timestamp,
+		"attachments": [],
+		"reactions": {},
+		"seen_by": [current_user],
+	}
+	messages_list.append(join_message)
+	persist()
+	trigger_immediate_sync("group_chats")
+	notifications_sent = False
+	for member in members:
+		if member == current_user:
+			continue
+		notifications_sent = (
+			push_notification(
+				member,
+				f"@{current_user} joined {chat.get('name') or 'your group chat'}",
+				meta={"type": "group_dm", "group": chat.get("id"), "from": current_user},
+			)
+			or notifications_sent
+		)
+	if notifications_sent:
+		trigger_immediate_sync("notifications")
+	_mark_dm_sidebar_dirty()
+	_open_group_chat(chat.get("id") or "")
+	_request_render("dm")
+	_request_render("notifications")
+	messagebox.showinfo("Group chat", "You joined the group chat!")
 
 
 def _get_active_group_chat() -> Optional[dict[str, Any]]:
@@ -6015,7 +6146,6 @@ def _render_dm_sidebar() -> None:
 		open_dm_with=_open_dm_with,
 		open_group_chat=_open_group_chat,
 		create_group_chat=_open_create_group_modal,
-		join_group_chat_from_link=_prompt_join_group_with_link,
 	)
 	_dm_sidebar_dirty = False
 
@@ -6064,6 +6194,8 @@ def _render_dm() -> None:
 		open_image=_open_image,
 		open_attachment=_open_attachment,
 		render_inline_video=_render_inline_video,
+		invite_token_parser=_discover_invite_tokens,
+		invite_widget_factory=_create_invite_widget,
 		sidebar_renderer=None,
 		on_toggle_reaction=_handle_toggle_dm_reaction,
 		reaction_emojis=MESSAGE_REACTIONS,
@@ -6941,72 +7073,6 @@ def _handle_copy_group_invite() -> None:
 			pass
 	messagebox.showinfo("Invite link", f"Invite link copied to clipboard:\n{invite_link}")
 	_request_render("dm")
-
-
-def _prompt_join_group_with_link() -> None:
-	if not require_login("join group chats"):
-		return
-	anchor = _get_after_anchor()
-	link = simpledialog.askstring(
-		"Join group chat",
-		"Paste the invite link or code to join:",
-		parent=anchor,
-	)
-	if link is None:
-		return
-	token = _extract_group_invite_token(link)
-	if not token:
-		messagebox.showerror("Invalid invite", "That doesn’t look like a valid DevEcho invite link.")
-		return
-	match: Optional[dict[str, Any]] = None
-	for chat in group_chats:
-		existing = str(chat.get("invite_token") or "").strip()
-		if existing.upper() == token:
-			match = chat
-			break
-	if not match:
-		messagebox.showerror("Invite expired", "We couldn’t find a group chat for that invite. Ask for a new link.")
-		return
-	current_user = _ui_state.current_user or ""
-	members = match.setdefault("members", [])
-	if current_user in members:
-		messagebox.showinfo("Group chat", "You’re already a member of that group chat.")
-		_open_group_chat(match.get("id") or "")
-		return
-	members.append(current_user)
-	timestamp = now_ts()
-	match["updated_at"] = timestamp
-	messages_list = match.setdefault("messages", [])
-	join_message = {
-		"id": uuid4().hex,
-		"sender": current_user,
-		"content": f"@{current_user} joined the group",
-		"time": timestamp,
-		"attachments": [],
-		"reactions": {},
-		"seen_by": [current_user],
-	}
-	messages_list.append(join_message)
-	persist()
-	trigger_immediate_sync("group_chats")
-	notifications_sent = False
-	for member in members:
-		if member == current_user:
-			continue
-		notifications_sent = (
-			push_notification(
-				member,
-				f"@{current_user} joined {match.get('name') or 'your group chat'}",
-				meta={"type": "group_dm", "group": match.get("id"), "from": current_user},
-			)
-			or notifications_sent
-		)
-	if notifications_sent:
-		trigger_immediate_sync("notifications")
-	_mark_dm_sidebar_dirty()
-	_open_group_chat(match.get("id") or "")
-	_request_render("dm")
-	messagebox.showinfo("Group chat", "You joined the group chat!")
 
 
 def _handle_regenerate_group_invite() -> None:
