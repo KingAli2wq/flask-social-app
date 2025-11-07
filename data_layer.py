@@ -886,15 +886,46 @@ def _coerce_members(raw_members: Any) -> List[str]:
 def _coerce_messages(raw_messages: Any) -> List[Dict[str, Any]]:
     if isinstance(raw_messages, list):
         result: List[Dict[str, Any]] = []
+        now_value = now_ts()
         for msg in raw_messages:
             if not isinstance(msg, dict):
                 continue
+            sender = str(msg.get("sender") or "")
+            content = str(msg.get("content") or "")
+            time_value = msg.get("time") or now_value
+
+            attachments_raw = msg.get("attachments")
+            attachments = attachments_raw if isinstance(attachments_raw, list) else []
+
+            message_id = str(msg.get("id") or uuid4().hex)
+
+            reactions_raw = msg.get("reactions") if isinstance(msg.get("reactions"), dict) else {}
+            reactions: Dict[str, List[str]] = {}
+            for emoji, users_list in reactions_raw.items():
+                if not isinstance(emoji, str) or not emoji:
+                    continue
+                cleaned_users = [
+                    str(handle).strip()
+                    for handle in users_list
+                    if isinstance(handle, str) and handle.strip()
+                ]
+                if cleaned_users:
+                    reactions[emoji] = cleaned_users
+
+            seen_raw = msg.get("seen_by") if isinstance(msg.get("seen_by"), list) else []
+            seen_by = [str(handle).strip() for handle in seen_raw if isinstance(handle, str) and handle.strip()]
+
             payload = {
-                "sender": msg.get("sender"),
-                "content": msg.get("content", ""),
-                "time": msg.get("time", now_ts()),
-                "attachments": msg.get("attachments", []),
+                "id": message_id,
+                "sender": sender,
+                "content": content,
+                "time": time_value,
+                "attachments": attachments,
             }
+            if reactions:
+                payload["reactions"] = reactions
+            if seen_by:
+                payload["seen_by"] = seen_by
             result.append(payload)
         return result
     return []

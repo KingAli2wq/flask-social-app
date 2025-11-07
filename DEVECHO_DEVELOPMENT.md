@@ -1,4 +1,5 @@
 - **Group Chats**: Creation, renames, member changes, announcements, and invite tokens
+- **Group Chats**: Creation, renames, member changes, announcements, invite tokens, and live message delivery
 # DevEcho Development Notebook
 *Comprehensive documentation of all improvements, optimizations, and changes*
 
@@ -239,7 +240,7 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 6. **Data Cleanup**: Clean testing environment established
 7. **Code Organization**: Combined documentation, cleaned test files
 8. **Video & Notification Sync**: Short videos, group chats, and alerts now update immediately across devices
-9. **Stable Group Invites**: Remote sync now preserves invite tokens and announcements so links stay steady across clients
+9. **Stable Group Invites**: Remote sync now preserves invite tokens, announcements, and message metadata so links stay steady and chats stop flickering
 
 ### 🎯 **Key Achievements:**
 - **Network Traffic**: 95% reduction
