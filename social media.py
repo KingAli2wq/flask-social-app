@@ -172,23 +172,23 @@ def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
 
 def show_frame(name: str) -> None:
     global active_frame_name
-    
-    # Fast tab switching: only hide/show if different frame
-    if active_frame_name != name:
-        # Hide current frame
+
+    target = frames.get(name)
+    if target is None:
+        return
+
+    needs_show = active_frame_name != name or not target.winfo_ismapped()
+
+    if needs_show:
         current_frame = frames.get(active_frame_name)
-        if current_frame:
+        if current_frame and current_frame is not target:
             current_frame.grid_remove()
-        
-        # Show target frame immediately
-        target = frames.get(name)
-        if target:
-            target.grid(row=0, column=0, sticky="nswe")
-            active_frame_name = name
-        
-        # Defer nav updates to avoid blocking tab switch
+
+        target.grid(row=0, column=0, sticky="nswe")
+        active_frame_name = name
+
         root.after_idle(lambda: set_active_nav(FRAME_TO_NAV.get(name)))
-    
+
     handle_frame_shown(name)
 
 
@@ -454,9 +454,7 @@ def initialize_app_components():
         # Fallback to immediate startup
         root.after(1000, complete_startup)
 
-# Start the initialization sequence
-print("🚀 Starting DevEcho initialization...")
-initialize_app_components()
+# Start the initialization sequence is deferred until helpers are defined
 
 
 def update_loading_progress(message: str, progress: float = None):
@@ -473,6 +471,10 @@ def update_loading_progress(message: str, progress: float = None):
                 break
     
     splash_screen.update()
+
+
+print("🚀 Starting DevEcho initialization...")
+initialize_app_components()
 
 def check_loading_complete() -> bool:
     """Check if all critical components are loaded"""
