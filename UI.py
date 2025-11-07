@@ -89,6 +89,16 @@ from Profile import (
 )
 from Auth import FeedCallbacks, FeedState, render_feed, render_post_card, render_profile
 
+# Import component-based architecture
+from ui_components import (
+    component_registry,
+    MessageListComponent,
+    NotificationListComponent,
+    FeedComponent,
+    FollowButtonComponent,
+    NotificationBadgeComponent,
+)
+
 
 Palette = dict[str, str]
 
@@ -165,6 +175,12 @@ _view_cache: dict[str, dict] = {
 }
 
 _view_signatures: dict[str, Any] = {}
+
+# Component-based architecture instances
+_notification_list_component: Optional[NotificationListComponent] = None
+_notification_badge_component: Optional[NotificationBadgeComponent] = None
+_message_list_component: Optional[MessageListComponent] = None
+_feed_component: Optional[FeedComponent] = None
 
 
 def _stable_signature_digest(payload: Any) -> str:
@@ -5834,6 +5850,9 @@ def _auto_sign_in_if_remembered() -> None:
 
 
 def _update_nav_controls() -> None:
+	"""Component-based nav control updates - only changes what's needed"""
+	global _notification_badge_component
+	
 	signin = _nav_controls.get("signin")
 	profile = _nav_controls.get("profile")
 	notifications_btn = _nav_controls.get("notifications")
@@ -5848,11 +5867,27 @@ def _update_nav_controls() -> None:
 		profile.configure(state=state)
 	if notifications_btn:
 		notifications_btn.configure(state=state)
+		
+	# Initialize badge component on first use
+	if _notification_badge_component is None and notifications_btn:
+		_notification_badge_component = NotificationBadgeComponent(palette=_palette)
+		_notification_badge_component.set_button(notifications_btn)
+		component_registry.register(_notification_badge_component)
+	
+	# Update badge using component (avoids full nav re-render)
 	if signed_in:
 		user_notes = users.get(_ui_state.current_user or "", {}).get("notifications", [])
 		has_alert = bool(user_notes) and _ui_state.active_view != "notifications"
+		notification_count = len(user_notes) if has_alert else 0
+		
+		# Component only updates if count changed
+		if _notification_badge_component:
+			_notification_badge_component.update(notification_count)
 	else:
 		has_alert = False
+		if _notification_badge_component:
+			_notification_badge_component.update(0)
+			
 	set_nav_notifications_alert(has_alert)
 	if messages_btn:
 		messages_btn.configure(state=state)
@@ -5864,6 +5899,55 @@ def _refresh_notifications_ui() -> None:
 	"""Ensure the notifications view and nav badge reflect current state."""
 	_request_render("notifications")
 	_update_nav_controls()
+
+
+def _handle_notification_click(notification_data: dict[str, Any]) -> None:
+	"""Handle clicks on notifications - navigate to the appropriate content"""
+	meta = notification_data.get("meta", {})
+	if not isinstance(meta, dict):
+		return
+		
+	meta_type = meta.get("type")
+	
+	if meta_type == "dm":
+		sender = meta.get("from")
+		if sender:
+			_open_dm_from_notification(sender)
+	elif meta_type == "group_dm":
+		group_target = meta.get("group")
+		if group_target:
+			_open_group_from_notification(group_target)
+	elif meta_type == "mention":
+		resource = meta.get("resource")
+		if resource in {"post", "reply"}:
+			post_id = meta.get("post_id")
+			reply_id = meta.get("reply_id") if resource == "reply" else None
+			if post_id:
+				_focus_post_from_notification(post_id, reply_id=reply_id)
+		elif resource == "story":
+			story_id = meta.get("story_id")
+			if story_id:
+				_open_story_from_notification(story_id)
+		elif resource == "video":
+			video_id = meta.get("video_id")
+			if video_id:
+				_open_video_from_notification(video_id)
+		elif resource in {"video_comment", "video_reply"}:
+			video_id = meta.get("video_id")
+			if video_id:
+				_open_video_from_notification(video_id, open_comments=True)
+	elif meta_type == "post_publish":
+		post_id = meta.get("post_id")
+		if post_id:
+			_focus_post_from_notification(post_id)
+	elif meta_type == "story_publish":
+		story_id = meta.get("story_id")
+		if story_id:
+			_open_story_from_notification(story_id)
+	elif meta_type == "video_publish":
+		video_id = meta.get("video_id")
+		if video_id:
+			_open_video_from_notification(video_id)
 
 
 def _update_home_status() -> None:
@@ -6386,13 +6470,27 @@ def _render_profile_avatar() -> None:
 
 
 def _render_notifications() -> None:
+	"""Component-based notification rendering - only updates changed notifications"""
+	global _notification_list_component
+	
 	list_frame: ctk.CTkScrollableFrame = _notifications_widgets.get("list")
 	if not list_frame:
 		return
-	for child in list_frame.winfo_children():
-		child.destroy()
-
+		
+	# Initialize component on first render
+	if _notification_list_component is None:
+		_notification_list_component = NotificationListComponent(
+			palette=_palette,
+			on_notification_click=_handle_notification_click
+		)
+		_notification_list_component.mount(list_frame)
+		component_registry.register(_notification_list_component)
+	
+	# Handle empty states
 	if not _ui_state.current_user:
+		# Clear components for signed-out state
+		for child in list_frame.winfo_children():
+			child.destroy()
 		ctk.CTkLabel(
 			list_frame,
 			text="Please sign in to view notifications.",
@@ -6402,14 +6500,18 @@ def _render_notifications() -> None:
 
 	notes = users.get(_ui_state.current_user, {}).get("notifications", [])
 	if not notes:
+		# Clear components for empty state
+		for child in list_frame.winfo_children():
+			child.destroy()
 		ctk.CTkLabel(
 			list_frame,
 			text="No notifications yet.",
 			text_color=_palette.get("muted", "#94a3b8"),
 		).grid(sticky="w", padx=20, pady=20)
 		return
-
-	for note in reversed(notes):
+	
+	# Use component-based update - only changed notifications re-render
+	_notification_list_component.update(notes)
 		card = ctk.CTkFrame(list_frame, corner_radius=12, fg_color=_palette.get("card", "#18263f"))
 		card.grid(sticky="we", padx=0, pady=6)
 		card.grid_columnconfigure(0, weight=1)
