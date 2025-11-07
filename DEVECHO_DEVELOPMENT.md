@@ -229,6 +229,19 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 7, 2025 - Persistent Sign-In Experience**
+
+### ✅ **Completed Today:**
+1. **Remembered Login:** Added local `auth_state.json` so returning users land in their feeds without re-entering credentials.
+2. **Stay Signed In Toggle:** New checkbox on the auth modal lets people opt out of persistence gracefully.
+3. **Smart Cleanup:** Signing out or unchecking persistence now clears the stored session to avoid stale accounts.
+
+### 🧪 **Validation:**
+- Verified automatic sign-in on cold start plus manual sign-out clearing saved state.
+- Smoke-tested login/register flows to ensure realtime refresh still runs after authentication.
+
+---
+
 ## 🗓️ **November 6, 2025 - DevEcho Branding & Optimization Complete**
 
 ### ✅ **Completed Today:**

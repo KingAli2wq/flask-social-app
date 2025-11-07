@@ -30,6 +30,7 @@ os.makedirs(PROFILE_PICS_DIR, exist_ok=True)
 STORY_TTL_SECONDS = 24 * 60 * 60
 
 SERVER_CONFIG_PATH = os.path.join(BASE_DIR, "server_config.json")
+AUTH_STATE_PATH = os.path.join(BASE_DIR, "auth_state.json")
 
 _REMOTE_SYNC_STATUS: Dict[str, Dict[str, Any]] = {}
 _MEDIA_STATUS_KEY = "media"
@@ -184,6 +185,12 @@ def load_json(path: str, default: Any):
         return default
     except Exception:
         return default
+
+
+_auth_state: Dict[str, Any] = {}
+_raw_auth_state = load_json(AUTH_STATE_PATH, {})
+if isinstance(_raw_auth_state, dict):
+    _auth_state.update(_raw_auth_state)
 
 
 def save_json(path: str, payload: Any) -> None:
@@ -448,6 +455,29 @@ def ensure_all_media_local() -> int:
 
 def now_ts() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def get_remembered_user() -> Optional[str]:
+    username = str(_auth_state.get("remembered_user") or "").strip()
+    return username or None
+
+
+def remember_user(username: Optional[str]) -> None:
+    cleaned = (username or "").strip()
+    if cleaned:
+        _auth_state["remembered_user"] = cleaned
+        _auth_state["remembered_at"] = now_ts()
+        save_json(AUTH_STATE_PATH, _auth_state)
+        return
+
+    if _auth_state:
+        _auth_state.clear()
+    try:
+        os.remove(AUTH_STATE_PATH)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        save_json(AUTH_STATE_PATH, _auth_state)
 
 
 def _safe_list(value: Any) -> List[Any]:

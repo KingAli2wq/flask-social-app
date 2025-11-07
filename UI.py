@@ -63,6 +63,8 @@ from data_layer import (
 	upload_media_asset,
 	ensure_all_media_local,
 	ensure_media_local,
+	get_remembered_user,
+	remember_user,
 )
 from global_state.helpers import (
     configure_helpers,
@@ -5272,6 +5274,8 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 		now_ts_cb=now_ts,
 	)
 
+	_auto_sign_in_if_remembered()
+
 	# Only mark active view as dirty during startup to reduce initial lag
 	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search")
 	_update_home_status()
@@ -5307,6 +5311,7 @@ def refresh_views(_frames_unused: dict[str, ctk.CTkFrame]) -> None:
 def handle_sign_in() -> None:
 	if _ui_state.current_user:
 		if messagebox.askyesno("Sign out", "Do you really want to sign out?"):
+			remember_user(None)
 			_set_current_user(None)
 			refresh_views(_frames)
 	else:
@@ -5345,6 +5350,16 @@ def _set_current_user(username: Optional[str]) -> None:
 	# Use smart dirty marking to avoid unnecessary re-renders when user changes
 	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos")
 	_update_videos_controls()
+
+
+def _auto_sign_in_if_remembered() -> None:
+	remembered = get_remembered_user()
+	if not remembered:
+		return
+	if remembered not in users:
+		remember_user(None)
+		return
+	_set_current_user(remembered)
 
 
 def _update_nav_controls() -> None:
@@ -7885,7 +7900,7 @@ def _create_auth_window(master: tk.Misc) -> None:
 	window = ctk.CTkToplevel(master)
 	window.withdraw()
 	window.title("Sign in / Register")
-	window.geometry("360x260")
+	window.geometry("360x300")
 	window.resizable(False, False)
 
 	mode_var = tk.StringVar(value="login")
@@ -7899,7 +7914,11 @@ def _create_auth_window(master: tk.Misc) -> None:
 
 	ctk.CTkLabel(window, text="Password").pack(anchor="w", padx=24)
 	password_entry = ctk.CTkEntry(window, width=300, show="*")
-	password_entry.pack(padx=24, pady=(0, 16))
+	password_entry.pack(padx=24, pady=(0, 8))
+
+	remember_var = tk.BooleanVar(value=True)
+	remember_check = ctk.CTkCheckBox(window, text="Stay signed in", variable=remember_var)
+	remember_check.pack(anchor="w", padx=24, pady=(0, 16))
 
 	def submit_handler() -> None:
 		username = username_entry.get().strip()
@@ -7929,17 +7948,12 @@ def _create_auth_window(master: tk.Misc) -> None:
 			}
 			persist()
 			_set_current_user(username)
+		if remember_var.get():
+			remember_user(username)
+		else:
+			remember_user(None)
 		hide_handler()
 		refresh_views(_frames)
-
-		def _submit_auth_event(_event) -> str:
-			submit_handler()
-			return "break"
-
-		username_entry.bind("<Return>", _submit_auth_event)
-		username_entry.bind("<KP_Enter>", _submit_auth_event)
-		password_entry.bind("<Return>", _submit_auth_event)
-		password_entry.bind("<KP_Enter>", _submit_auth_event)
 
 	submit_btn = ctk.CTkButton(window, text="Login", width=200, command=submit_handler)
 	submit_btn.pack(pady=(0, 8))
@@ -7972,6 +7986,8 @@ def _create_auth_window(master: tk.Misc) -> None:
 			"title": title_lbl,
 			"username": username_entry,
 			"password": password_entry,
+			"remember_var": remember_var,
+			"remember_check": remember_check,
 			"submit_button": submit_btn,
 			"switch_button": switch_btn,
 			"submit_fn": submit_handler,
@@ -7983,6 +7999,15 @@ def _create_auth_window(master: tk.Misc) -> None:
 
 	window.protocol("WM_DELETE_WINDOW", hide_handler)
 
+	def _submit_auth_event(_event) -> str:
+		submit_handler()
+		return "break"
+
+	username_entry.bind("<Return>", _submit_auth_event)
+	username_entry.bind("<KP_Enter>", _submit_auth_event)
+	password_entry.bind("<Return>", _submit_auth_event)
+	password_entry.bind("<KP_Enter>", _submit_auth_event)
+
 
 def _set_auth_mode(mode: str) -> None:
 	set_mode: Callable[[str], None] = _auth_widgets.get("set_mode_fn")
@@ -7990,10 +8015,13 @@ def _set_auth_mode(mode: str) -> None:
 		set_mode(mode)
 	username: ctk.CTkEntry = _auth_widgets.get("username")
 	password: ctk.CTkEntry = _auth_widgets.get("password")
+	remember_var: tk.BooleanVar = _auth_widgets.get("remember_var")
 	if username:
 		username.delete(0, tk.END)
 	if password:
 		password.delete(0, tk.END)
+	if remember_var:
+		remember_var.set(True)
 
 
 def _handle_auth_submit() -> None:
