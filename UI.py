@@ -57,6 +57,8 @@ from data_layer import (
 	STORY_TTL_SECONDS,
 	set_server_config,
 	refresh_remote_state,
+	was_last_remote_sync_successful,
+	last_remote_sync_error,
 )
 from global_state.helpers import (
     configure_helpers,
@@ -170,6 +172,8 @@ _BUTTON_ICON_FILES = {
 _COMMENT_ICON_PATH = Path(BASE_DIR) / "media" / "Buttons" / "Comment_button.png"
 _LIKE_ICON_PATH = Path(BASE_DIR) / "media" / "Buttons" / "like-icon.png"
 _DISLIKE_ICON_PATH = Path(BASE_DIR) / "media" / "Buttons" / "dislike_icon.png"
+
+_remote_sync_alerts: dict[str, str] = {}
 
 
 def _round_rect(box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
@@ -3874,6 +3878,26 @@ def _poll_messages_once() -> bool:
 	return success
 
 
+def _notify_remote_sync_issue(resource: str, action: str) -> None:
+	if not os.environ.get("SOCIAL_SERVER_URL"):
+		return
+	if was_last_remote_sync_successful(resource):
+		_remote_sync_alerts.pop(resource, None)
+		return
+	error_text = last_remote_sync_error(resource) or "unknown error"
+	if _remote_sync_alerts.get(resource) == error_text:
+		return
+	_remote_sync_alerts[resource] = error_text
+	messagebox.showerror(
+		"Server sync failed",
+		(
+			f"Could not {action} on the server.\n"
+			f"Latest error: {error_text}.\n"
+			"Changes were saved locally, but other devices may not see them until the issue is resolved."
+		),
+	)
+
+
 def _start_message_poller() -> None:
 	"""Start the recurring poll with exponential backoff on failures.
 	Anchors scheduling on the GUI widget via `.after()`.
@@ -6075,6 +6099,7 @@ def _handle_submit_post() -> None:
 	notify_mentions(_ui_state.current_user, content, "a post")
 	notify_followers(_ui_state.current_user)
 	persist()
+	_notify_remote_sync_issue("posts", "publish the post")
 	post_text.delete("1.0", "end")
 	_post_attachments.clear()
 	_refresh_post_attachments()
@@ -6095,6 +6120,7 @@ def _handle_delete_post(idx: int) -> None:
 		return
 	posts.pop(idx)
 	persist()
+	_notify_remote_sync_issue("posts", "delete the post")
 	_request_render("home")
 	_request_render("profile")
 	if _ui_state.inspected_user == _ui_state.current_user:

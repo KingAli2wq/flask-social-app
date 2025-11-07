@@ -27,6 +27,31 @@ STORY_TTL_SECONDS = 24 * 60 * 60
 
 SERVER_CONFIG_PATH = os.path.join(BASE_DIR, "server_config.json")
 
+_REMOTE_SYNC_STATUS: Dict[str, Dict[str, Any]] = {}
+
+
+def _record_remote_sync(resource: str, success: bool, error: Optional[str] = None) -> None:
+    _REMOTE_SYNC_STATUS[resource] = {
+        "ok": bool(success),
+        "error": (error or "").strip(),
+        "timestamp": time.time(),
+    }
+
+
+def was_last_remote_sync_successful(resource: str) -> bool:
+    entry = _REMOTE_SYNC_STATUS.get(resource)
+    if not entry:
+        return True
+    return bool(entry.get("ok"))
+
+
+def last_remote_sync_error(resource: str) -> Optional[str]:
+    entry = _REMOTE_SYNC_STATUS.get(resource)
+    if not entry or entry.get("ok"):
+        return None
+    message = str(entry.get("error") or "").strip()
+    return message or None
+
 
 def _hydrate_server_config() -> None:
     """Load persisted server settings into environment, if present."""
@@ -128,44 +153,73 @@ def load_json(path: str, default: Any):
 
 
 def save_json(path: str, payload: Any) -> None:
-    # If a server is configured, attempt to push payload to server resource
     server_url = os.environ.get("SOCIAL_SERVER_URL")
-    if server_url:
+    name = os.path.basename(path)
+    mapping = {
+        "data.json": "users",
+        "posts.json": "posts",
+        "messages.json": "messages",
+        "stories.json": "stories",
+        "videos.json": "videos",
+        "scheduled_posts.json": "scheduled_posts",
+        "notfication.json": "notifications",
+        "group_chats.json": "group_chats",
+    }
+    resource = mapping.get(name)
+
+    if server_url and resource:
+        remote_ok = False
+        error_detail = "remote request failed"
         try:
             import requests
 
-            name = os.path.basename(path)
-            mapping = {
-                "data.json": "users",
-                "posts.json": "posts",
-                "messages.json": "messages",
-                "stories.json": "stories",
-                "videos.json": "videos",
-                "scheduled_posts.json": "scheduled_posts",
-                "notfication.json": "notifications",
-                "group_chats.json": "group_chats",
-            }
-            resource = mapping.get(name)
-            if resource:
-                headers = {}
-                token = os.environ.get("SOCIAL_SERVER_TOKEN")
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
-                    headers["X-SOCIAL-TOKEN"] = token
-                # prefer PUT for idempotent update
-                resp = requests.put(f"{server_url.rstrip('/')}/api/{resource}", json=payload, headers=headers, timeout=10)
-                if resp.status_code in (200, 204):
-                    return
-                # some servers may accept POST
+            headers: Dict[str, str] = {}
+            token = os.environ.get("SOCIAL_SERVER_TOKEN")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                headers["X-SOCIAL-TOKEN"] = token
+
+            endpoint = f"{server_url.rstrip('/')}/api/{resource}"
+            resp = requests.put(endpoint, json=payload, headers=headers, timeout=10)
+            if resp.status_code in (200, 204):
+                remote_ok = True
+            else:
+                error_detail = f"HTTP {resp.status_code}"
+                try:
+                    body = resp.json()
+                    if isinstance(body, dict) and body.get("error"):
+                        error_detail += f": {body['error']}"
+                except Exception:
+                    text = (resp.text or "").strip()
+                    if text:
+                        error_detail += f": {text[:200]}"
+
                 if resp.status_code >= 400:
                     try:
-                        requests.post(f"{server_url.rstrip('/')}/api/{resource}", json=payload, headers=headers, timeout=10)
-                        return
-                    except Exception:
-                        pass
-        except Exception:
-            # on any failure, fall back to local file write
-            pass
+                        alt = requests.post(endpoint, json=payload, headers=headers, timeout=10)
+                        if alt.status_code in (200, 204):
+                            remote_ok = True
+                        else:
+                            error_detail = f"HTTP {alt.status_code}"
+                            try:
+                                body = alt.json()
+                                if isinstance(body, dict) and body.get("error"):
+                                    error_detail += f": {body['error']}"
+                            except Exception:
+                                text = (alt.text or "").strip()
+                                if text:
+                                    error_detail += f": {text[:200]}"
+                    except Exception as post_exc:
+                        error_detail = f"POST failed: {post_exc}"
+        except Exception as exc:
+            error_detail = str(exc)
+        if remote_ok:
+            _record_remote_sync(resource, True)
+        else:
+            _record_remote_sync(resource, False, error_detail)
+    elif resource:
+        _record_remote_sync(resource, True)
+
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=4, ensure_ascii=False)
@@ -731,6 +785,8 @@ __all__ = [
     "DEFAULT_PROFILE_PIC",
     "set_server_config",
     "refresh_remote_state",
+    "was_last_remote_sync_successful",
+    "last_remote_sync_error",
     "load_json",
     "save_json",
     "now_ts",
