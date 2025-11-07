@@ -1,8 +1,9 @@
+import base64
 import json
 import os
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
 from uuid import uuid4
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +29,7 @@ STORY_TTL_SECONDS = 24 * 60 * 60
 SERVER_CONFIG_PATH = os.path.join(BASE_DIR, "server_config.json")
 
 _REMOTE_SYNC_STATUS: Dict[str, Dict[str, Any]] = {}
+_MEDIA_STATUS_KEY = "media"
 
 
 def _record_remote_sync(resource: str, success: bool, error: Optional[str] = None) -> None:
@@ -36,6 +38,31 @@ def _record_remote_sync(resource: str, success: bool, error: Optional[str] = Non
         "error": (error or "").strip(),
         "timestamp": time.time(),
     }
+
+
+def _normalize_media_rel_path(rel_path: Any) -> Optional[str]:
+    if not isinstance(rel_path, str):
+        return None
+    cleaned = rel_path.replace("\\", "/").strip()
+    if not cleaned:
+        return None
+    if cleaned.startswith("../") or "/../" in cleaned or cleaned.startswith(".."):
+        return None
+    return cleaned
+
+
+def _media_abs_path(rel_path: Any) -> Optional[str]:
+    normalized = _normalize_media_rel_path(rel_path)
+    if not normalized:
+        return None
+    candidate = os.path.normpath(os.path.join(BASE_DIR, normalized.replace("/", os.sep)))
+    try:
+        common = os.path.commonpath([candidate, BASE_DIR])
+    except ValueError:
+        return None
+    if common != BASE_DIR:
+        return None
+    return candidate
 
 
 def was_last_remote_sync_successful(resource: str) -> bool:
@@ -108,6 +135,15 @@ def set_server_config(url: Optional[str], token: Optional[str]) -> None:
 _hydrate_server_config()
 
 
+def _server_headers() -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    token = os.environ.get("SOCIAL_SERVER_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-SOCIAL-TOKEN"] = token
+    return headers
+
+
 def load_json(path: str, default: Any):
     # If a server is configured via env, attempt to fetch resource from server
     server_url = os.environ.get("SOCIAL_SERVER_URL")
@@ -128,12 +164,7 @@ def load_json(path: str, default: Any):
             }
             resource = mapping.get(name)
             if resource:
-                headers = {}
-                token = os.environ.get("SOCIAL_SERVER_TOKEN")
-                if token:
-                    # prefer Authorization header but accept X-SOCIAL-TOKEN too
-                    headers["Authorization"] = f"Bearer {token}"
-                    headers["X-SOCIAL-TOKEN"] = token
+                headers = _server_headers()
                 resp = requests.get(f"{server_url.rstrip('/')}/api/{resource}", headers=headers, timeout=6)
                 if resp.status_code == 200:
                     data = resp.json().get("data")
@@ -173,11 +204,7 @@ def save_json(path: str, payload: Any) -> None:
         try:
             import requests
 
-            headers: Dict[str, str] = {}
-            token = os.environ.get("SOCIAL_SERVER_TOKEN")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-                headers["X-SOCIAL-TOKEN"] = token
+            headers = _server_headers()
 
             endpoint = f"{server_url.rstrip('/')}/api/{resource}"
             resp = requests.put(endpoint, json=payload, headers=headers, timeout=10)
@@ -223,6 +250,194 @@ def save_json(path: str, payload: Any) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=4, ensure_ascii=False)
+
+
+def upload_media_asset(rel_path: Any) -> bool:
+    server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+    if not server_url:
+        return True
+    normalized = _normalize_media_rel_path(rel_path)
+    abs_path = _media_abs_path(normalized)
+    if not normalized or not abs_path or not os.path.exists(abs_path):
+        _record_remote_sync(_MEDIA_STATUS_KEY, False, "file missing" if abs_path else "invalid path")
+        return False
+    try:
+        import requests
+    except Exception as exc:  # pragma: no cover - network dependency
+        _record_remote_sync(_MEDIA_STATUS_KEY, False, f"requests unavailable: {exc}")
+        return False
+    try:
+        with open(abs_path, "rb") as fh:
+            binary = fh.read()
+    except OSError as exc:
+        _record_remote_sync(_MEDIA_STATUS_KEY, False, str(exc))
+        return False
+    payload = {
+        "path": normalized,
+        "content": base64.b64encode(binary).decode("ascii"),
+    }
+    endpoint = f"{server_url.rstrip('/')}/api/media/upload"
+    error_detail = "unknown error"
+    try:
+        resp = requests.post(endpoint, json=payload, headers=_server_headers(), timeout=15)
+        ok = False
+        body: Dict[str, Any] = {}
+        if resp.status_code == 200:
+            try:
+                maybe_body = resp.json()
+                if isinstance(maybe_body, dict):
+                    body = maybe_body
+            except Exception:
+                body = {}
+            ok = body.get("ok") is True
+        if ok:
+            _record_remote_sync(_MEDIA_STATUS_KEY, True)
+            return True
+        error_detail = f"HTTP {resp.status_code}"
+        if not body:
+            try:
+                maybe_body = resp.json()
+                if isinstance(maybe_body, dict):
+                    body = maybe_body
+            except Exception:
+                body = {}
+        if isinstance(body, dict) and body.get("error"):
+            error_detail += f": {body['error']}"
+        else:
+            text = (resp.text or "").strip()
+            if text:
+                error_detail += f": {text[:200]}"
+    except Exception as exc:  # pragma: no cover - network dependency
+        error_detail = str(exc)
+    _record_remote_sync(_MEDIA_STATUS_KEY, False, error_detail)
+    return False
+
+
+def download_media_asset(rel_path: Any) -> bool:
+    normalized = _normalize_media_rel_path(rel_path)
+    if not normalized:
+        return False
+    abs_path = _media_abs_path(normalized)
+    if abs_path and os.path.exists(abs_path):
+        return True
+    server_url = (os.environ.get("SOCIAL_SERVER_URL") or "").strip()
+    if not server_url:
+        return False
+    try:
+        import requests
+    except Exception:  # pragma: no cover - network dependency
+        return False
+    endpoint = f"{server_url.rstrip('/')}/api/media/download"
+    try:
+        resp = requests.post(endpoint, json={"path": normalized}, headers=_server_headers(), timeout=15)
+    except Exception:  # pragma: no cover - network dependency
+        return False
+    if resp.status_code != 200:
+        return False
+    try:
+        body = resp.json()
+    except Exception:
+        return False
+    if not isinstance(body, dict) or body.get("ok") is not True:
+        return False
+    content = body.get("content")
+    if not isinstance(content, str):
+        return False
+    try:
+        data = base64.b64decode(content)
+    except Exception:
+        return False
+    abs_path = _media_abs_path(normalized)
+    if not abs_path:
+        return False
+    try:
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "wb") as fh:
+            fh.write(data)
+        return True
+    except Exception:
+        return False
+
+
+def ensure_media_local(rel_path: Any) -> bool:
+    abs_path = _media_abs_path(rel_path)
+    if abs_path and os.path.exists(abs_path):
+        return True
+    return download_media_asset(rel_path)
+
+
+def ensure_media_paths(paths: Iterable[Any]) -> int:
+    normalized_paths = {
+        norm for norm in (_normalize_media_rel_path(item) for item in paths) if norm
+    }
+    ensured = 0
+    for norm in normalized_paths:
+        if ensure_media_local(norm):
+            ensured += 1
+    return ensured
+
+
+def gather_all_media_paths() -> Set[str]:
+    paths: Set[str] = set()
+
+    def _add(value: Any) -> None:
+        normalized = _normalize_media_rel_path(value)
+        if normalized:
+            paths.add(normalized)
+
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        for attachment in post.get("attachments", []) or []:
+            if isinstance(attachment, dict):
+                _add(attachment.get("path"))
+                _add(attachment.get("thumbnail"))
+    for entry in scheduled_posts:
+        if not isinstance(entry, dict):
+            continue
+        for attachment in entry.get("attachments", []) or []:
+            if isinstance(attachment, dict):
+                _add(attachment.get("path"))
+                _add(attachment.get("thumbnail"))
+    for story in stories:
+        if not isinstance(story, dict):
+            continue
+        _add(story.get("path"))
+        _add(story.get("thumbnail"))
+    for video in videos:
+        if not isinstance(video, dict):
+            continue
+        _add(video.get("path"))
+        _add(video.get("thumbnail"))
+    for convo in messages.values():
+        if not isinstance(convo, list):
+            continue
+        for message in convo:
+            if not isinstance(message, dict):
+                continue
+            for attachment in message.get("attachments", []) or []:
+                if isinstance(attachment, dict):
+                    _add(attachment.get("path"))
+                    _add(attachment.get("thumbnail"))
+    for chat in group_chats:
+        if not isinstance(chat, dict):
+            continue
+        for message in chat.get("messages", []) or []:
+            if not isinstance(message, dict):
+                continue
+            for attachment in message.get("attachments", []) or []:
+                if isinstance(attachment, dict):
+                    _add(attachment.get("path"))
+                    _add(attachment.get("thumbnail"))
+    for record in users.values():
+        if not isinstance(record, dict):
+            continue
+        _add(record.get("profile_picture"))
+    return paths
+
+
+def ensure_all_media_local() -> int:
+    return ensure_media_paths(gather_all_media_paths())
 
 
 def now_ts() -> str:
@@ -767,6 +982,12 @@ def refresh_remote_state() -> Dict[str, bool]:
     except Exception:
         pass
 
+    if os.environ.get("SOCIAL_SERVER_URL"):
+        try:
+            ensure_all_media_local()
+        except Exception:
+            pass
+
     return changes
 
 
@@ -807,4 +1028,10 @@ __all__ = [
     "notifications_data",
     "purge_expired_stories",
     "STORY_TTL_SECONDS",
+    "upload_media_asset",
+    "download_media_asset",
+    "ensure_media_local",
+    "ensure_media_paths",
+    "gather_all_media_paths",
+    "ensure_all_media_local",
 ]

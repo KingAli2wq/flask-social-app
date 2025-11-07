@@ -5,6 +5,8 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+from data_layer import ensure_media_local
+
 try:
     from PIL import Image, ImageDraw, ImageTk  # type: ignore
 except ImportError:
@@ -36,6 +38,8 @@ def profile_image_path(
 ) -> Optional[str]:
     path = users.get(username, {}).get("profile_picture")
     if path:
+        if not os.path.isabs(path):
+            ensure_media_local(path)
         abs_path = path if os.path.isabs(path) else os.path.join(base_dir, path)
         if os.path.exists(abs_path):
             return abs_path

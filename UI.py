@@ -60,6 +60,9 @@ from data_layer import (
 	refresh_remote_state,
 	was_last_remote_sync_successful,
 	last_remote_sync_error,
+	upload_media_asset,
+	ensure_all_media_local,
+	ensure_media_local,
 )
 from global_state.helpers import (
     configure_helpers,
@@ -1414,6 +1417,7 @@ def _handle_upload_video() -> None:
 	if not rel_path:
 		_set_video_status("Failed to copy video", error=True)
 		return
+	media_sync_failed = not upload_media_asset(rel_path)
 	caption_entry: ctk.CTkEntry = _videos_widgets.get("caption_entry")
 	caption = caption_entry.get().strip() if caption_entry else ""
 	video_record: dict[str, Any] = {
@@ -1430,6 +1434,8 @@ def _handle_upload_video() -> None:
 	if caption_entry:
 		caption_entry.delete(0, tk.END)
 	_set_video_upload_path("")
+	if media_sync_failed:
+		_notify_remote_sync_issue("media", "upload the video file")
 	missing_mentions: list[str] = []
 	if caption:
 		resolved_mentions, missing_mentions = _split_mentions(caption, author=_ui_state.current_user)
@@ -2704,9 +2710,12 @@ def _open_story_editor(rel_path: str, story_type: str) -> None:
 			story_entry["text"] = text_content
 		if resolved_mentions:
 			story_entry["mentions"] = resolved_mentions
+		media_sync_failed = not upload_media_asset(rel_path)
 		stories.append(story_entry)
 		stories.sort(key=lambda s: s.get("created_at_epoch", 0))
 		persist()
+		if media_sync_failed:
+			_notify_remote_sync_issue("media", "upload the story media")
 		_mark_story_author_unseen_for_all(author)
 		if text_content:
 			notify_mentions(author, text_content, "their story")
@@ -3875,6 +3884,11 @@ def _poll_messages_once() -> bool:
 	except Exception:
 		changes = {}
 	_apply_remote_refresh_changes(changes)
+
+	try:
+		ensure_all_media_local()
+	except Exception:
+		pass
 
 	return success
 
@@ -6082,6 +6096,20 @@ def _handle_submit_post() -> None:
 		messagebox.showwarning("Empty post", "Your post cannot be empty!")
 		return
 	attachments = [dict(att) for att in _post_attachments]
+	media_paths: set[str] = set()
+	for att in attachments:
+		if not isinstance(att, dict):
+			continue
+		path_value = att.get("path")
+		if isinstance(path_value, str):
+			media_paths.add(path_value)
+		thumb_value = att.get("thumbnail")
+		if isinstance(thumb_value, str):
+			media_paths.add(thumb_value)
+	media_sync_failed = False
+	for media_path in media_paths:
+		if not upload_media_asset(media_path):
+			media_sync_failed = True
 	posts.append(
 		{
 			"author": _ui_state.current_user,
@@ -6101,6 +6129,8 @@ def _handle_submit_post() -> None:
 	notify_followers(_ui_state.current_user)
 	persist()
 	_notify_remote_sync_issue("posts", "publish the post")
+	if media_sync_failed:
+		_notify_remote_sync_issue("media", "upload the post attachments")
 	post_text.delete("1.0", "end")
 	_post_attachments.clear()
 	_refresh_post_attachments()
@@ -6285,14 +6315,20 @@ def _handle_change_profile_picture() -> None:
 		_request_render("profile")
 		_request_render("home")
 
-	change_profile_picture(
-		current_user=_ui_state.current_user,
-		require_login=require_login,
-		copy_image_to_profile_pics=lambda path: copy_image_to_profile_pics(
+	def _copy_profile_pic_and_sync(path: Optional[str]) -> Optional[str]:
+		rel = copy_image_to_profile_pics(
 			path,
 			base_dir=BASE_DIR,
 			profile_pics_dir=PROFILE_PICS_DIR,
-		),
+		)
+		if rel and not upload_media_asset(rel):
+			_notify_remote_sync_issue("media", "upload the profile picture")
+		return rel
+
+	change_profile_picture(
+		current_user=_ui_state.current_user,
+		require_login=require_login,
+		copy_image_to_profile_pics=_copy_profile_pic_and_sync,
 		users=users,
 		base_dir=BASE_DIR,
 		profile_pics_dir=PROFILE_PICS_DIR,
@@ -6949,6 +6985,20 @@ def _handle_send_dm() -> None:
 		return
 	content = entry.get().strip()
 	attachments = [dict(att) for att in _dm_draft_attachments]
+	media_paths: set[str] = set()
+	for att in attachments:
+		if not isinstance(att, dict):
+			continue
+		path_value = att.get("path")
+		if isinstance(path_value, str):
+			media_paths.add(path_value)
+		thumb_value = att.get("thumbnail")
+		if isinstance(thumb_value, str):
+			media_paths.add(thumb_value)
+	media_sync_failed = False
+	for media_path in media_paths:
+		if not upload_media_asset(media_path):
+			media_sync_failed = True
 	if not content and not attachments:
 		messagebox.showwarning("Empty message", "Write something or attach files before sending.")
 		return
@@ -6996,6 +7046,8 @@ def _handle_send_dm() -> None:
 		)
 		_set_active_dm_conversation(key, partner)
 	persist()
+	if media_sync_failed:
+		_notify_remote_sync_issue("media", "upload the message attachments")
 	entry.delete(0, tk.END)
 	_dm_draft_attachments.clear()
 	_refresh_dm_attachments()
@@ -7028,6 +7080,7 @@ def _resolve_media_path(rel_path: str) -> str:
 		return ""
 	if os.path.isabs(rel_path):
 		return os.path.normpath(rel_path)
+	ensure_media_local(rel_path)
 	normalized = rel_path.replace("\\", "/")
 	relative = normalized.replace("/", os.sep)
 	return os.path.normpath(os.path.join(BASE_DIR, relative))

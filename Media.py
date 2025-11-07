@@ -6,6 +6,8 @@ from typing import Optional
 import tkinter as tk
 from tkinter import messagebox
 
+from data_layer import ensure_media_local
+
 try:
     from PIL import Image, ImageTk  # type: ignore
 except ImportError:
@@ -125,7 +127,12 @@ def copy_image_to_profile_pics(
 
 
 def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Optional[tk.PhotoImage]:
-    abs_path = os.path.join(base_dir, rel_path)
+    if os.path.isabs(rel_path):
+        abs_path = rel_path
+    else:
+        ensure_media_local(rel_path)
+        normalized = rel_path.replace("/", os.sep)
+        abs_path = os.path.join(base_dir, normalized)
     if Image and ImageTk:
         try:
             resampling = getattr(Image, "Resampling", None)
@@ -155,7 +162,12 @@ def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Option
 
 
 def open_image(rel_path: str, *, base_dir: str) -> None:
-    abs_path = os.path.join(base_dir, rel_path)
+    if not os.path.isabs(rel_path):
+        ensure_media_local(rel_path)
+        rel_path = rel_path.replace("/", os.sep)
+        abs_path = os.path.join(base_dir, rel_path)
+    else:
+        abs_path = rel_path
     try:
         if os.name == "nt":
             os.startfile(abs_path)  # type: ignore[attr-defined]
