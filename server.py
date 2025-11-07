@@ -2,7 +2,9 @@ from flask import Flask, jsonify, request, send_from_directory, abort
 from flask_cors import CORS
 import os
 import json
+import base64
 from threading import Lock
+from typing import Optional
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "server_data")
@@ -19,7 +21,32 @@ FILES = {
     "group_chats": os.path.join(DATA_DIR, "group_chats.json"),
 }
 
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+PROFILE_PICS_ROOT = os.path.join(BASE_DIR, "Profile Pictures")
+os.makedirs(MEDIA_ROOT, exist_ok=True)
+os.makedirs(PROFILE_PICS_ROOT, exist_ok=True)
+
 _lock = Lock()
+
+
+from typing import Optional
+
+
+def _safe_media_path(rel_path: str) -> Optional[str]:
+    rel_path = (rel_path or "").replace("\\", "/").strip()
+    if not rel_path:
+        return None
+    if rel_path.startswith("..") or "../" in rel_path or "..\\" in rel_path:
+        return None
+    abs_path = os.path.normpath(os.path.join(BASE_DIR, rel_path))
+    try:
+        common = os.path.commonpath([abs_path, BASE_DIR])
+    except ValueError:
+        return None
+    if common != BASE_DIR:
+        return None
+    return abs_path
+
 
 def _read(name):
     path = FILES.get(name)
@@ -128,6 +155,49 @@ def send_message():
     if not ok:
         return jsonify({"ok": False, "error": "write failed"}), 500
     return jsonify({"ok": True})
+
+
+@app.route("/api/media/upload", methods=["POST"])
+def upload_media():
+    payload = request.get_json(silent=True) or {}
+    rel_path = payload.get("path")
+    content = payload.get("content")
+    if not isinstance(rel_path, str) or not isinstance(content, str):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+    abs_path = _safe_media_path(rel_path)
+    if not abs_path:
+        return jsonify({"ok": False, "error": "invalid path"}), 400
+    try:
+        data = base64.b64decode(content)
+    except Exception:
+        return jsonify({"ok": False, "error": "invalid base64"}), 400
+    try:
+        with _lock:
+            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+            with open(abs_path, "wb") as fh:
+                fh.write(data)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@app.route("/api/media/download", methods=["POST"])
+def download_media():
+    payload = request.get_json(silent=True) or {}
+    rel_path = payload.get("path")
+    if not isinstance(rel_path, str):
+        return jsonify({"ok": False, "error": "invalid payload"}), 400
+    abs_path = _safe_media_path(rel_path)
+    if not abs_path or not os.path.exists(abs_path):
+        return jsonify({"ok": False, "error": "not found"}), 404
+    try:
+        with _lock:
+            with open(abs_path, "rb") as fh:
+                data = fh.read()
+        encoded = base64.b64encode(data).decode("ascii")
+        return jsonify({"ok": True, "content": encoded})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/media/<path:filename>")
