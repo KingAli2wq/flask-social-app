@@ -235,10 +235,12 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 1. **Remembered Login:** Added local `auth_state.json` so returning users land in their feeds without re-entering credentials.
 2. **Stay Signed In Toggle:** New checkbox on the auth modal lets people opt out of persistence gracefully.
 3. **Smart Cleanup:** Signing out or unchecking persistence now clears the stored session to avoid stale accounts.
+4. **Invite Join Flow:** DM sidebar now offers a “Join via link” action that accepts invite URLs/codes and drops members straight into the group.
 
 ### 🧪 **Validation:**
 - Verified automatic sign-in on cold start plus manual sign-out clearing saved state.
 - Smoke-tested login/register flows to ensure realtime refresh still runs after authentication.
+- Confirmed invite links add new members, notify the group, and surface the chat immediately.
 
 ---
 

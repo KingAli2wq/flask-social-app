@@ -773,6 +773,25 @@ def _build_group_invite_link(token: str) -> str:
 	return f"{GROUP_INVITE_LINK_PREFIX}{token}" if token else GROUP_INVITE_LINK_PREFIX.rstrip("/")
 
 
+def _extract_group_invite_token(value: str) -> Optional[str]:
+	candidate = (value or "").strip()
+	if not candidate:
+		return None
+	lower_prefix = GROUP_INVITE_LINK_PREFIX.lower()
+	if candidate.lower().startswith(lower_prefix):
+		candidate = candidate[len(GROUP_INVITE_LINK_PREFIX) :]
+	if "/" in candidate:
+		candidate = candidate.rsplit("/", 1)[-1]
+	if "?" in candidate:
+		candidate = candidate.split("?", 1)[0]
+	token = candidate.strip().upper()
+	if not token:
+		return None
+	if not token.isalnum():
+		return None
+	return token
+
+
 def _get_active_group_chat() -> Optional[dict[str, Any]]:
 	conversation_id = _ui_state.active_dm_conversation or ""
 	if not conversation_id.startswith("group:"):
@@ -5996,6 +6015,7 @@ def _render_dm_sidebar() -> None:
 		open_dm_with=_open_dm_with,
 		open_group_chat=_open_group_chat,
 		create_group_chat=_open_create_group_modal,
+		join_group_chat_from_link=_prompt_join_group_with_link,
 	)
 	_dm_sidebar_dirty = False
 
@@ -6921,6 +6941,72 @@ def _handle_copy_group_invite() -> None:
 			pass
 	messagebox.showinfo("Invite link", f"Invite link copied to clipboard:\n{invite_link}")
 	_request_render("dm")
+
+
+def _prompt_join_group_with_link() -> None:
+	if not require_login("join group chats"):
+		return
+	anchor = _get_after_anchor()
+	link = simpledialog.askstring(
+		"Join group chat",
+		"Paste the invite link or code to join:",
+		parent=anchor,
+	)
+	if link is None:
+		return
+	token = _extract_group_invite_token(link)
+	if not token:
+		messagebox.showerror("Invalid invite", "That doesn’t look like a valid DevEcho invite link.")
+		return
+	match: Optional[dict[str, Any]] = None
+	for chat in group_chats:
+		existing = str(chat.get("invite_token") or "").strip()
+		if existing.upper() == token:
+			match = chat
+			break
+	if not match:
+		messagebox.showerror("Invite expired", "We couldn’t find a group chat for that invite. Ask for a new link.")
+		return
+	current_user = _ui_state.current_user or ""
+	members = match.setdefault("members", [])
+	if current_user in members:
+		messagebox.showinfo("Group chat", "You’re already a member of that group chat.")
+		_open_group_chat(match.get("id") or "")
+		return
+	members.append(current_user)
+	timestamp = now_ts()
+	match["updated_at"] = timestamp
+	messages_list = match.setdefault("messages", [])
+	join_message = {
+		"id": uuid4().hex,
+		"sender": current_user,
+		"content": f"@{current_user} joined the group",
+		"time": timestamp,
+		"attachments": [],
+		"reactions": {},
+		"seen_by": [current_user],
+	}
+	messages_list.append(join_message)
+	persist()
+	trigger_immediate_sync("group_chats")
+	notifications_sent = False
+	for member in members:
+		if member == current_user:
+			continue
+		notifications_sent = (
+			push_notification(
+				member,
+				f"@{current_user} joined {match.get('name') or 'your group chat'}",
+				meta={"type": "group_dm", "group": match.get("id"), "from": current_user},
+			)
+			or notifications_sent
+		)
+	if notifications_sent:
+		trigger_immediate_sync("notifications")
+	_mark_dm_sidebar_dirty()
+	_open_group_chat(match.get("id") or "")
+	_request_render("dm")
+	messagebox.showinfo("Group chat", "You joined the group chat!")
 
 
 def _handle_regenerate_group_invite() -> None:

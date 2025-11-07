@@ -46,6 +46,7 @@ def render_dm_sidebar(
     open_dm_with: Callable[[str], None],
     open_group_chat: Callable[[str], None],
     create_group_chat: Callable[[], None],
+    join_group_chat_from_link: Callable[[], None],
 ) -> None:
     """Render the DM conversation list sidebar."""
     if dm_following_list is None:
@@ -71,6 +72,8 @@ def render_dm_sidebar(
     header_row = ctk.CTkFrame(dm_following_list, fg_color="transparent")
     header_row.grid(sticky="we", padx=12, pady=(12, 6))
     header_row.grid_columnconfigure(0, weight=1)
+    header_row.grid_columnconfigure(1, weight=0)
+    header_row.grid_columnconfigure(2, weight=0)
 
     ctk.CTkLabel(
         header_row,
@@ -91,6 +94,19 @@ def render_dm_sidebar(
         hover_color=surface,
     )
     new_group_btn.grid(row=0, column=1, sticky="e")
+
+    join_group_btn = ctk.CTkButton(
+        header_row,
+        text="Join via link",
+        width=120,
+        command=join_group_chat_from_link,
+        fg_color="transparent",
+        border_width=1,
+        border_color=palette.get("accent", "#4c8dff"),
+        text_color=palette.get("accent", "#4c8dff"),
+        hover_color=surface,
+    )
+    join_group_btn.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
     following = users.get(current_user, {}).get("following", [])
     if following:
