@@ -267,6 +267,7 @@ def render_inspected_profile(
     inspect_posts: ctk.CTkScrollableFrame,
     inspect_follow_btn: ctk.CTkButton,
     inspect_message_btn: ctk.CTkButton,
+    inspect_stats_labels: Optional[dict[str, ctk.CTkLabel]] = None,
     post_renderer: Optional[PostRenderer],
     open_dm_with: Optional[Callable[[str], None]] = None,
     follow_callback: Optional[Callable[[str], None]] = None,
@@ -311,18 +312,31 @@ def render_inspected_profile(
         badge_preview = f"Badges: {top_badges or len(badges)}"
 
     inspect_header.configure(text=f"@{inspected_user}", text_color=text)
-    inspect_info.configure(
-        text=(
-            f"Username: @{inspected_user}\n"
-            f"Registered: {info.get('registered_at', 'Unknown')}\n"
-            f"Followers: {followers}  ·  Following: {following}\n"
-            f"Total posts: {len(user_posts)}\n"
-            f"Total likes received: {likes}\n"
-            f"{badge_preview}"
-        ),
-        text_color=muted,
-        justify="left",
-    )
+    details: list[str] = []
+    registered = info.get("registered_at", "Unknown")
+    details.append(f"Registered: {registered}")
+    bio = info.get("bio")
+    if bio:
+        details.append(f"Bio: {bio}")
+    location = info.get("location")
+    if location:
+        details.append(f"Location: {location}")
+    website = info.get("website")
+    if website:
+        details.append(f"Website: {website}")
+    details.append(badge_preview)
+    inspect_info.configure(text="\n".join(details), text_color=muted, justify="left", anchor="w")
+
+    if inspect_stats_labels:
+        stats_payload = {
+            "followers": followers,
+            "following": following,
+            "posts": len(user_posts),
+            "likes": likes,
+        }
+        for key, label in inspect_stats_labels.items():
+            if isinstance(label, ctk.CTkLabel):
+                label.configure(text=str(stats_payload.get(key, 0)))
 
     if current_user and inspected_user != current_user:
         is_following = inspected_user in users.get(current_user, {}).get("following", [])

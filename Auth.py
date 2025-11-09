@@ -709,17 +709,24 @@ def render_profile(
         if top_badges:
             badge_summary += f"  ·  {top_badges}"
 
+    details: list[str] = []
+    details.append(f"Registered: {info.get('registered_at', 'Unknown')}")
+    bio = info.get("bio")
+    if bio:
+        details.append(f"Bio: {bio}")
+    location = info.get("location")
+    if location:
+        details.append(f"Location: {location}")
+    website = info.get("website")
+    if website:
+        details.append(f"Website: {website}")
+    details.append(badge_summary)
+
     profile_info_label.configure(
-        text=(
-            f"Username: @{state.current_user}\n"
-            f"Registered: {info.get('registered_at', 'Unknown')}\n"
-            f"Followers: {followers}  ·  Following: {following}\n"
-            f"Total posts: {total_posts}\n"
-            f"Total likes received: {total_likes}\n"
-            f"{badge_summary}"
-        ),
+        text="\n".join(details),
         text_color=palette.get("muted", "#94a3b8"),
         justify="left",
+        anchor="w",
     )
 
     user_posts = [(idx, post) for idx, post in enumerate(posts) if post.get("author") == state.current_user]

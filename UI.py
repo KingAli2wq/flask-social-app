@@ -2161,38 +2161,66 @@ def _story_thumbnail_key(story: dict[str, Any], size: int) -> str:
 	return f"{story_id}:{size}"
 
 def _refresh_stories_bar() -> None:
-	bar: Optional[ctk.CTkFrame] = _stories_widgets.get("bar")
-	placeholder_lbl: Optional[ctk.CTkLabel] = _stories_widgets.get("placeholder")
-	if not bar:
-		return
+	entries: list[dict[str, Any]] = _stories_widgets.get("entries", [])
+	entries = [entry for entry in entries if entry.get("bar") and entry.get("bar").winfo_exists()]  # type: ignore[union-attr]
+	if not entries:
+		bar = _stories_widgets.get("bar")
+		if not bar or not bar.winfo_exists():
+			return
+		entries = [{"bar": bar, "placeholder": _stories_widgets.get("placeholder")}]  # type: ignore[arg-type]
+	else:
+		_stories_widgets["entries"] = entries
 	_purge_story_cache_if_needed()
-	for child in list(bar.winfo_children()):
-		if placeholder_lbl and child is placeholder_lbl:
-			continue
-		child.destroy()
 	_story_thumbnail_cache.clear()
 	story_by_author: dict[str, list[dict[str, Any]]] = {}
 	for entry in stories:
 		author = entry.get("author") or "unknown"
 		story_by_author.setdefault(author, []).append(entry)
-	if not story_by_author:
-		if placeholder_lbl is None or not placeholder_lbl.winfo_exists():
-			placeholder_lbl = ctk.CTkLabel(
-				bar,
-				text="No stories yet",
-				text_color=_palette.get("muted", "#94a3b8"),
-			)
-			_stories_widgets["placeholder"] = placeholder_lbl
-		placeholder_lbl.grid(row=0, column=0, padx=12, pady=12, sticky="w")
-		return
-	if placeholder_lbl and placeholder_lbl.winfo_exists():
-		placeholder_lbl.grid_remove()
 	authors = sorted(
 		story_by_author.items(),
 		key=lambda pair: max(s.get("created_at_epoch", 0) for s in pair[1]),
 		reverse=True,
 	)
+	for entry in entries:
+		bar: Optional[ctk.CTkFrame] = entry.get("bar")  # type: ignore[assignment]
+		if not bar:
+			continue
+		placeholder: Optional[ctk.CTkLabel] = entry.get("placeholder")
+		placeholder = _render_story_bar_instance(bar, placeholder, authors)
+		entry["placeholder"] = placeholder
+	if entries:
+		primary = entries[0]
+		_stories_widgets["bar"] = primary.get("bar")
+		if primary.get("placeholder"):
+			_stories_widgets["placeholder"] = primary.get("placeholder")
+
+
+def _render_story_bar_instance(
+	bar: ctk.CTkFrame,
+	placeholder: Optional[ctk.CTkLabel],
+	authors: list[tuple[str, list[dict[str, Any]]]],
+) -> Optional[ctk.CTkLabel]:
+	placeholder_lbl = placeholder if placeholder and placeholder.winfo_exists() else None
+	for child in list(bar.winfo_children()):
+		if placeholder_lbl and child is placeholder_lbl:
+			continue
+		child.destroy()
+	if not authors:
+		if placeholder_lbl is None:
+			placeholder_lbl = ctk.CTkLabel(
+				bar,
+				text="No stories yet",
+				text_color=_palette.get("muted", "#94a3b8"),
+			)
+		else:
+			placeholder_lbl.configure(text_color=_palette.get("muted", "#94a3b8"))
+		placeholder_lbl.grid(row=0, column=0, padx=12, pady=12, sticky="w")
+		return placeholder_lbl
+	if placeholder_lbl:
+		placeholder_lbl.grid_remove()
 	for column, (author, items) in enumerate(authors):
+		if not items:
+			continue
 		latest_story = max(items, key=lambda s: s.get("created_at_epoch", 0))
 		thumb = _get_story_thumbnail_image(latest_story)
 		label_text = _ellipsize(f"@{author}", 14)
@@ -2212,6 +2240,23 @@ def _refresh_stories_bar() -> None:
 		if author == _ui_state.current_user:
 			button.configure(border_width=2, border_color=_palette.get("accent", "#4c8dff"))
 		button.grid(row=0, column=column, padx=(0 if column else 0, 12), pady=8)
+	return placeholder_lbl
+
+
+def _register_story_bar(bar: ctk.CTkFrame, placeholder: Optional[ctk.CTkLabel]) -> None:
+	entries: list[dict[str, Any]] = _stories_widgets.setdefault("entries", [])
+	for entry in entries:
+		if entry.get("bar") is bar:
+			entry["placeholder"] = placeholder
+			break
+	else:
+		entries.append({"bar": bar, "placeholder": placeholder})
+	_stories_widgets["entries"] = entries
+	if entries:
+		_stories_widgets["bar"] = entries[0].get("bar")
+		first_placeholder = entries[0].get("placeholder")
+		if first_placeholder:
+			_stories_widgets["placeholder"] = first_placeholder
 
 
 def _search_usernames(query: str, limit: int = 25) -> list[str]:
@@ -4122,6 +4167,7 @@ def update_theme_palette(palette: Palette) -> None:
 	stories_frame: ctk.CTkFrame = _home_widgets.get("stories_frame")
 	stories_bar: ctk.CTkFrame = _home_widgets.get("stories_bar")
 	add_story_btn: ctk.CTkButton = _home_widgets.get("add_story_button")
+	story_entries: list[dict[str, Any]] = _stories_widgets.get("entries", [])
 	stories_placeholder: ctk.CTkLabel = _stories_widgets.get("placeholder")
 	composer: ctk.CTkFrame = _home_widgets.get("composer")
 	post_text: ctk.CTkTextbox = _home_widgets.get("post_text")
@@ -4157,7 +4203,14 @@ def update_theme_palette(palette: Palette) -> None:
 		stories_frame.configure(fg_color=surface)
 	if stories_bar:
 		stories_bar.configure(fg_color="transparent")
-	if stories_placeholder:
+	for entry in story_entries:
+		bar = entry.get("bar")
+		placeholder = entry.get("placeholder")
+		if isinstance(bar, ctk.CTkFrame):
+			bar.configure(fg_color="transparent")
+		if isinstance(placeholder, ctk.CTkLabel):
+			placeholder.configure(text_color=muted)
+	if stories_placeholder and isinstance(stories_placeholder, ctk.CTkLabel):
 		stories_placeholder.configure(text_color=muted)
 	_style_primary_button(add_story_btn)
 	if composer:
@@ -4188,6 +4241,9 @@ def update_theme_palette(palette: Palette) -> None:
 	profile_change_btn: ctk.CTkButton = _profile_widgets.get("change_btn")
 	profile_avatar_label: tk.Label = _profile_widgets.get("avatar_label")
 	profile_posts: ctk.CTkScrollableFrame = _profile_widgets.get("posts")
+	profile_stories_card: ctk.CTkFrame = _profile_widgets.get("stories_card")
+	profile_stories_bar: ctk.CTkFrame = _profile_widgets.get("stories_bar")
+	profile_stories_placeholder: ctk.CTkLabel = _profile_widgets.get("stories_placeholder")
 	if profile_name:
 		profile_name.configure(text_color=text_color)
 	if profile_info:
@@ -4197,6 +4253,22 @@ def update_theme_palette(palette: Palette) -> None:
 		profile_avatar_label.configure(bg=surface)
 	if profile_posts:
 		profile_posts.configure(fg_color="transparent")
+	if profile_stories_card:
+		profile_stories_card.configure(fg_color=surface)
+	if profile_stories_bar:
+		profile_stories_bar.configure(fg_color="transparent")
+	if profile_stories_placeholder:
+		profile_stories_placeholder.configure(text_color=muted)
+
+	inspect_stories_card: ctk.CTkFrame = _inspect_widgets.get("stories_card")
+	inspect_stories_bar: ctk.CTkFrame = _inspect_widgets.get("stories_bar")
+	inspect_stories_placeholder: ctk.CTkLabel = _inspect_widgets.get("stories_placeholder")
+	if inspect_stories_card:
+		inspect_stories_card.configure(fg_color=surface)
+	if inspect_stories_bar:
+		inspect_stories_bar.configure(fg_color="transparent")
+	if inspect_stories_placeholder:
+		inspect_stories_placeholder.configure(text_color=muted)
 
 	# Inspect profile components
 	inspect_header: ctk.CTkLabel = _inspect_widgets.get("header")
@@ -5105,11 +5177,10 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	_stories_widgets.update(
 		{
 			"container": stories_card,
-			"bar": stories_bar,
 			"add_button": add_story_btn,
-			"placeholder": placeholder_lbl,
 		}
 	)
+	_register_story_bar(stories_bar, placeholder_lbl)
 
 	_refresh_stories_bar()
 	_refresh_post_attachments()
@@ -5120,7 +5191,7 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	_set_palette(palette)
 	frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")
-	frame.grid_rowconfigure(2, weight=1)
+	frame.grid_rowconfigure(3, weight=1)
 	frame.grid_columnconfigure(0, weight=1)
 
 	header = ctk.CTkLabel(
@@ -5131,107 +5202,50 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 	)
 	header.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 6))
 
-	summary = ctk.CTkFrame(frame, fg_color="transparent")
-	summary.grid(row=1, column=0, sticky="n", padx=16, pady=(0, 16))
-	summary.grid_columnconfigure(0, weight=1)
+	hero = ctk.CTkFrame(frame, fg_color="transparent")
+	hero.grid(row=1, column=0, sticky="nwe", padx=16, pady=(0, 16))
+	hero.grid_columnconfigure(0, weight=0)
+	hero.grid_columnconfigure(1, weight=1)
 
-	avatar_panel = ctk.CTkFrame(summary, fg_color="transparent")
-	avatar_panel.grid(row=0, column=0, sticky="n")
+	left_col = ctk.CTkFrame(hero, fg_color="transparent")
+	left_col.grid(row=0, column=0, sticky="nw")
+	left_col.grid_columnconfigure(0, weight=1)
+
+	avatar_panel = ctk.CTkFrame(left_col, fg_color="transparent")
+	avatar_panel.grid(row=0, column=0, sticky="nw")
 	avatar_panel.grid_columnconfigure(0, weight=1)
 
 	avatar_label = tk.Label(avatar_panel, bg=palette.get("surface", "#111b2e"), bd=0)
 	avatar_label.grid(row=0, column=0, sticky="n", pady=(0, 12))
 
 	name_lbl = ctk.CTkLabel(
-		summary,
+		left_col,
 		text="",
 		font=ctk.CTkFont(size=18, weight="bold"),
 		text_color=palette.get("text", "#e2e8f0"),
 	)
-	name_lbl.grid(row=1, column=0, sticky="n", pady=(0, 8))
+	name_lbl.grid(row=1, column=0, sticky="w", pady=(0, 6))
+
+	info_lbl = ctk.CTkLabel(
+		left_col,
+		text="",
+		justify="left",
+		anchor="w",
+		wraplength=260,
+		text_color=palette.get("muted", "#94a3b8"),
+	)
+	info_lbl.grid(row=2, column=0, sticky="we")
 
 	change_btn = ctk.CTkButton(
-		summary,
+		left_col,
 		text="Change picture",
 		width=140,
 		command=_handle_change_profile_picture,
 	)
-	change_btn.grid(row=2, column=0, sticky="n", pady=(0, 12))
+	change_btn.grid(row=3, column=0, sticky="w", pady=(8, 12))
 
-	info_lbl = ctk.CTkLabel(summary, text="", justify="left", text_color=palette.get("muted", "#94a3b8"))
-	info_lbl.grid(row=3, column=0, sticky="n", pady=(0, 4))
-
-	stats_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	stats_card.grid(row=4, column=0, sticky="we", pady=(8, 4))
-	for col in range(4):
-		stats_card.grid_columnconfigure(col, weight=1)
-	metrics = [
-		("Followers", "followers"),
-		("Following", "following"),
-		("Posts", "posts"),
-		("Likes received", "likes"),
-	]
-	stats_labels: dict[str, ctk.CTkLabel] = {}
-	for col, (title, key) in enumerate(metrics):
-		slot = ctk.CTkFrame(stats_card, fg_color="transparent")
-		slot.grid(row=0, column=col, sticky="we", padx=10, pady=10)
-		slot.grid_columnconfigure(0, weight=1)
-		value_lbl = ctk.CTkLabel(
-			slot,
-			text="0",
-			font=ctk.CTkFont(size=18, weight="bold"),
-			text_color=palette.get("text", "#e2e8f0"),
-		)
-		value_lbl.grid(row=0, column=0, sticky="w")
-		title_lbl = ctk.CTkLabel(
-			slot,
-			text=title,
-			font=ctk.CTkFont(size=11),
-			text_color=palette.get("muted", "#94a3b8"),
-		)
-		title_lbl.grid(row=1, column=0, sticky="w", pady=(2, 0))
-		stats_labels[key] = value_lbl
-
-	badges_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	badges_card.grid(row=5, column=0, sticky="we", pady=(4, 4))
-	badges_card.grid_columnconfigure(0, weight=1)
-
-	badges_header = ctk.CTkFrame(badges_card, fg_color="transparent")
-	badges_header.grid(row=0, column=0, sticky="we", padx=12, pady=(10, 4))
-	badges_header.grid_columnconfigure(0, weight=1)
-
-	ctk.CTkLabel(
-		badges_header,
-		text="Badges",
-		text_color=palette.get("text", "#e2e8f0"),
-		font=ctk.CTkFont(size=13, weight="bold"),
-	).grid(row=0, column=0, sticky="w")
-
-	add_badge_btn = ctk.CTkButton(
-		badges_header,
-		text="Add badge",
-		width=110,
-		fg_color=palette.get("accent", "#4c8dff"),
-		hover_color=palette.get("accent_hover", "#3b6dd6"),
-		command=_handle_add_badge,
-	)
-	add_badge_btn.grid(row=0, column=1, padx=(8, 0))
-
-	badges_status = ctk.CTkLabel(
-		badges_card,
-		text="",
-		text_color=palette.get("muted", "#94a3b8"),
-		font=ctk.CTkFont(size=11, slant="italic"),
-		justify="left",
-	)
-	badges_status.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
-
-	badges_list = ctk.CTkFrame(badges_card, fg_color="transparent")
-	badges_list.grid(row=2, column=0, sticky="we", padx=12, pady=(0, 12))
-	badges_list.grid_columnconfigure(0, weight=1)
-
-	details_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	details_card.grid(row=6, column=0, sticky="we", pady=(8, 4))
+	details_card = ctk.CTkFrame(left_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	details_card.grid(row=4, column=0, sticky="we")
 	details_card.grid_columnconfigure(0, weight=1)
 
 	bio_label = ctk.CTkLabel(
@@ -5299,8 +5313,81 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 	)
 	status_lbl.grid(row=7, column=0, sticky="w", padx=12, pady=(0, 10))
 
-	timeline_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	timeline_card.grid(row=7, column=0, sticky="we", pady=(4, 4))
+	right_col = ctk.CTkFrame(hero, fg_color="transparent")
+	right_col.grid(row=0, column=1, sticky="nwe", padx=(24, 0))
+	right_col.grid_columnconfigure(0, weight=1)
+
+	stats_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	stats_card.grid(row=0, column=0, sticky="we")
+	for col in range(4):
+		stats_card.grid_columnconfigure(col, weight=1)
+	metrics = [
+		("Followers", "followers"),
+		("Following", "following"),
+		("Posts", "posts"),
+		("Likes received", "likes"),
+	]
+	stats_labels: dict[str, ctk.CTkLabel] = {}
+	for col, (title, key) in enumerate(metrics):
+		slot = ctk.CTkFrame(stats_card, fg_color="transparent")
+		slot.grid(row=0, column=col, sticky="we", padx=10, pady=10)
+		slot.grid_columnconfigure(0, weight=1)
+		value_lbl = ctk.CTkLabel(
+			slot,
+			text="0",
+			font=ctk.CTkFont(size=18, weight="bold"),
+			text_color=palette.get("text", "#e2e8f0"),
+		)
+		value_lbl.grid(row=0, column=0, sticky="w")
+		title_lbl = ctk.CTkLabel(
+			slot,
+			text=title,
+			font=ctk.CTkFont(size=11),
+			text_color=palette.get("muted", "#94a3b8"),
+		)
+		title_lbl.grid(row=1, column=0, sticky="w", pady=(2, 0))
+		stats_labels[key] = value_lbl
+
+	badges_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	badges_card.grid(row=1, column=0, sticky="we", pady=(12, 0))
+	badges_card.grid_columnconfigure(0, weight=1)
+
+	badges_header = ctk.CTkFrame(badges_card, fg_color="transparent")
+	badges_header.grid(row=0, column=0, sticky="we", padx=12, pady=(10, 4))
+	badges_header.grid_columnconfigure(0, weight=1)
+
+	ctk.CTkLabel(
+		badges_header,
+		text="Badges",
+		text_color=palette.get("text", "#e2e8f0"),
+		font=ctk.CTkFont(size=13, weight="bold"),
+	).grid(row=0, column=0, sticky="w")
+
+	add_badge_btn = ctk.CTkButton(
+		badges_header,
+		text="Add badge",
+		width=110,
+		fg_color=palette.get("accent", "#4c8dff"),
+		hover_color=palette.get("accent_hover", "#3b6dd6"),
+		command=_handle_add_badge,
+	)
+	add_badge_btn.grid(row=0, column=1, padx=(8, 0))
+
+	badges_status = ctk.CTkLabel(
+		badges_card,
+		text="",
+		text_color=palette.get("muted", "#94a3b8"),
+		font=ctk.CTkFont(size=11, slant="italic"),
+		justify="left",
+	)
+	badges_status.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
+
+	badges_list = ctk.CTkFrame(badges_card, fg_color="transparent")
+	badges_list.grid(row=2, column=0, sticky="we", padx=12, pady=(0, 12))
+	badges_list.grid_columnconfigure(0, weight=1)
+
+	timeline_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	timeline_card.grid(row=2, column=0, sticky="we")
 	timeline_card.grid_columnconfigure(0, weight=1)
 
 	ctk.CTkLabel(
@@ -5314,8 +5401,8 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 	timeline_list.grid(row=1, column=0, sticky="we", padx=12, pady=(0, 10))
 	timeline_list.grid_columnconfigure(0, weight=1)
 
-	suggested_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	suggested_card.grid(row=8, column=0, sticky="we", pady=(4, 0))
+	suggested_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	suggested_card.grid(row=3, column=0, sticky="we", pady=(12, 0))
 	suggested_card.grid_columnconfigure(0, weight=1)
 
 	ctk.CTkLabel(
@@ -5329,14 +5416,38 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 	suggested_list.grid(row=1, column=0, sticky="we", padx=12, pady=(0, 10))
 	suggested_list.grid_columnconfigure(0, weight=1)
 
+	stories_card = ctk.CTkFrame(frame, corner_radius=16, fg_color=palette.get("surface", "#111b2e"))
+	stories_card.grid(row=2, column=0, sticky="we", padx=16, pady=(0, 16))
+	stories_card.grid_columnconfigure(0, weight=1)
+
+	ctk.CTkLabel(
+		stories_card,
+		text="Stories",
+		text_color=palette.get("text", "#e2e8f0"),
+		font=ctk.CTkFont(size=14, weight="bold"),
+	).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+
+	stories_bar = ctk.CTkFrame(stories_card, fg_color="transparent")
+	stories_bar.grid(row=1, column=0, sticky="we", padx=12, pady=(0, 12))
+
+	stories_placeholder = ctk.CTkLabel(
+		stories_bar,
+		text="No stories yet",
+		text_color=palette.get("muted", "#94a3b8"),
+	)
+	stories_placeholder.grid(row=0, column=0, padx=12, pady=12, sticky="w")
+
 	posts_frame = ctk.CTkScrollableFrame(frame, corner_radius=8)
-	posts_frame.grid(row=2, column=0, sticky="nswe", padx=16, pady=(0, 16))
+	posts_frame.grid(row=3, column=0, sticky="nswe", padx=16, pady=(0, 16))
 	posts_frame.grid_columnconfigure(0, weight=1)
+
+	_register_story_bar(stories_bar, stories_placeholder)
+	_refresh_stories_bar()
 
 	_profile_widgets.update(
 		{
 			"frame": frame,
-			"summary": summary,
+			"summary": hero,
 			"info": info_lbl,
 			"avatar_panel": avatar_panel,
 			"avatar_label": avatar_label,
@@ -5355,6 +5466,9 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 			"badges_status": badges_status,
 			"add_badge_button": add_badge_btn,
 			"badges_card": badges_card,
+			"stories_card": stories_card,
+			"stories_bar": stories_bar,
+			"stories_placeholder": stories_placeholder,
 		}
 	)
 
@@ -5405,44 +5519,91 @@ def build_notifications_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.
 def build_inspect_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	_set_palette(palette)
 	frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")
-	frame.grid_rowconfigure(1, weight=1)
+	frame.grid_rowconfigure(2, weight=1)
 	frame.grid_columnconfigure(0, weight=1)
 
-	summary = ctk.CTkFrame(frame, fg_color="transparent")
-	summary.grid(row=0, column=0, sticky="n", padx=16, pady=(16, 12))
-	summary.grid_columnconfigure(0, weight=1)
+	hero = ctk.CTkFrame(frame, fg_color="transparent")
+	hero.grid(row=0, column=0, sticky="nwe", padx=16, pady=(16, 12))
+	hero.grid_columnconfigure(0, weight=0)
+	hero.grid_columnconfigure(1, weight=1)
 
-	avatar_panel = ctk.CTkFrame(summary, fg_color="transparent")
-	avatar_panel.grid(row=0, column=0, sticky="n")
+	left_col = ctk.CTkFrame(hero, fg_color="transparent")
+	left_col.grid(row=0, column=0, sticky="nw")
+	left_col.grid_columnconfigure(0, weight=1)
+
+	avatar_panel = ctk.CTkFrame(left_col, fg_color="transparent")
+	avatar_panel.grid(row=0, column=0, sticky="nw")
 	avatar_panel.grid_columnconfigure(0, weight=1)
 
 	avatar_label = tk.Label(avatar_panel, bg=palette.get("surface", "#111b2e"), bd=0)
 	avatar_label.grid(row=0, column=0, sticky="n", pady=(0, 12))
 
 	header = ctk.CTkLabel(
-		summary,
+		left_col,
 		text="Profile",
 		font=ctk.CTkFont(size=20, weight="bold"),
 		text_color=palette.get("text", "#e2e8f0"),
 	)
-	header.grid(row=1, column=0, sticky="n", pady=(0, 8))
+	header.grid(row=1, column=0, sticky="w")
 
-	button_row = ctk.CTkFrame(summary, fg_color="transparent")
-	button_row.grid(row=2, column=0, sticky="n", pady=(0, 10))
+	info_lbl = ctk.CTkLabel(
+		left_col,
+		text="",
+		justify="left",
+		anchor="w",
+		wraplength=260,
+		text_color=palette.get("muted", "#94a3b8"),
+	)
+	info_lbl.grid(row=2, column=0, sticky="we", pady=(6, 0))
+
+	button_row = ctk.CTkFrame(left_col, fg_color="transparent")
+	button_row.grid(row=3, column=0, sticky="w", pady=(12, 0))
 	button_row.grid_columnconfigure(0, weight=1)
 	button_row.grid_columnconfigure(1, weight=1)
 
 	message_btn = ctk.CTkButton(button_row, text="Message", width=120, command=lambda: None)
-	message_btn.grid(row=0, column=0, padx=6)
+	message_btn.grid(row=0, column=0, padx=(0, 6))
 
 	follow_btn = ctk.CTkButton(button_row, text="Follow", width=120)
-	follow_btn.grid(row=0, column=1, padx=6)
+	follow_btn.grid(row=0, column=1, padx=(6, 0))
 
-	info_lbl = ctk.CTkLabel(summary, text="", justify="left", text_color=palette.get("muted", "#94a3b8"))
-	info_lbl.grid(row=3, column=0, sticky="n")
+	right_col = ctk.CTkFrame(hero, fg_color="transparent")
+	right_col.grid(row=0, column=1, sticky="nwe", padx=(24, 0))
+	right_col.grid_columnconfigure(0, weight=1)
 
-	mutual_card = ctk.CTkFrame(summary, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	mutual_card.grid(row=4, column=0, sticky="we", pady=(12, 0))
+	stats_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	stats_card.grid(row=0, column=0, sticky="we")
+	for col in range(4):
+		stats_card.grid_columnconfigure(col, weight=1)
+	metrics = [
+		("Followers", "followers"),
+		("Following", "following"),
+		("Posts", "posts"),
+		("Likes", "likes"),
+	]
+	inspect_stats_labels: dict[str, ctk.CTkLabel] = {}
+	for col, (title, key) in enumerate(metrics):
+		slot = ctk.CTkFrame(stats_card, fg_color="transparent")
+		slot.grid(row=0, column=col, sticky="we", padx=10, pady=10)
+		slot.grid_columnconfigure(0, weight=1)
+		value_lbl = ctk.CTkLabel(
+			slot,
+			text="0",
+			font=ctk.CTkFont(size=18, weight="bold"),
+			text_color=palette.get("text", "#e2e8f0"),
+		)
+		value_lbl.grid(row=0, column=0, sticky="w")
+		title_lbl = ctk.CTkLabel(
+			slot,
+			text=title,
+			font=ctk.CTkFont(size=11),
+			text_color=palette.get("muted", "#94a3b8"),
+		)
+		title_lbl.grid(row=1, column=0, sticky="w", pady=(2, 0))
+		inspect_stats_labels[key] = value_lbl
+
+	mutual_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	mutual_card.grid(row=1, column=0, sticky="we", pady=(12, 0))
 	mutual_card.grid_columnconfigure(0, weight=1)
 
 	ctk.CTkLabel(
@@ -5456,14 +5617,38 @@ def build_inspect_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ct
 	mutual_list.grid(row=1, column=0, sticky="we", padx=12, pady=(0, 10))
 	mutual_list.grid_columnconfigure(0, weight=1)
 
+	stories_card = ctk.CTkFrame(frame, corner_radius=16, fg_color=palette.get("surface", "#111b2e"))
+	stories_card.grid(row=1, column=0, sticky="we", padx=16, pady=(0, 16))
+	stories_card.grid_columnconfigure(0, weight=1)
+
+	ctk.CTkLabel(
+		stories_card,
+		text="Stories",
+		text_color=palette.get("text", "#e2e8f0"),
+		font=ctk.CTkFont(size=14, weight="bold"),
+	).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
+
+	stories_bar = ctk.CTkFrame(stories_card, fg_color="transparent")
+	stories_bar.grid(row=1, column=0, sticky="we", padx=12, pady=(0, 12))
+
+	stories_placeholder = ctk.CTkLabel(
+		stories_bar,
+		text="No stories yet",
+		text_color=palette.get("muted", "#94a3b8"),
+	)
+	stories_placeholder.grid(row=0, column=0, padx=12, pady=12, sticky="w")
+
 	posts_frame = ctk.CTkScrollableFrame(frame, corner_radius=8)
-	posts_frame.grid(row=1, column=0, sticky="nswe", padx=16, pady=(0, 16))
+	posts_frame.grid(row=2, column=0, sticky="nswe", padx=16, pady=(0, 16))
 	posts_frame.grid_columnconfigure(0, weight=1)
+
+	_register_story_bar(stories_bar, stories_placeholder)
+	_refresh_stories_bar()
 
 	_inspect_widgets.update(
 		{
 			"frame": frame,
-			"summary": summary,
+			"summary": hero,
 			"avatar_panel": avatar_panel,
 			"avatar_label": avatar_label,
 			"header": header,
@@ -5473,6 +5658,10 @@ def build_inspect_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ct
 			"follow_btn": follow_btn,
 			"message_btn": message_btn,
 			"posts": posts_frame,
+			"stats_labels": inspect_stats_labels,
+			"stories_card": stories_card,
+			"stories_bar": stories_bar,
+			"stories_placeholder": stories_placeholder,
 		}
 	)
 
@@ -6443,7 +6632,7 @@ def _render_profile_section() -> None:
 		load_image_for_tk=_load_image_for_tk,
 		open_image=_open_image,
 	)
-	info_lbl.configure(justify="center", wraplength=460)
+	info_lbl.configure(justify="left", anchor="w", wraplength=260)
 
 
 def _render_profile_avatar() -> None:
@@ -6722,6 +6911,7 @@ def _render_inspected_profile() -> None:
 	avatar_label: tk.Label = _inspect_widgets.get("avatar_label")
 	mutual_card = _inspect_widgets.get("mutual_card")
 	mutual_list = _inspect_widgets.get("mutual_list")
+	inspect_stats_labels: dict[str, ctk.CTkLabel] = _inspect_widgets.get("stats_labels") or {}
 	text_color = _palette.get("text", "#e2e8f0")
 	muted_color = _palette.get("muted", "#94a3b8")
 	if not header or not info or not posts_frame or not follow_btn or not message_btn:
@@ -6770,13 +6960,12 @@ def _render_inspected_profile() -> None:
 		inspect_posts=posts_frame,
 		inspect_follow_btn=follow_btn,
 		inspect_message_btn=message_btn,
+		inspect_stats_labels=inspect_stats_labels,
 		post_renderer=_post_renderer,
 		open_dm_with=_open_dm_with,
 		follow_callback=_handle_follow,
 		unfollow_callback=_handle_unfollow,
 	)
-	if isinstance(info, ctk.CTkLabel):
-		info.configure(justify="center", wraplength=460)
 
 	if mutual_card and mutual_list:
 		for child in mutual_list.winfo_children():

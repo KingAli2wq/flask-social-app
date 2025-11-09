@@ -229,6 +229,18 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 8, 2025 - Profile & Inspect Experience Refresh**
+
+### ✅ **Completed Today:**
+1. **Unified Profile Hero:** Introduced a responsive two-column header that pairs the avatar and bio with quick-action buttons so stats, badges, and follow controls stay visible without scrolling.
+2. **Shared Stories Rail:** Centralized story bar registration and refresh logic so home, profile, and inspect views always render the same carousel content after uploads or expirations.
+3. **Inspect View Enhancements:** Added live follower/following/post counters, richer bio metadata, and streamlined follow/message buttons for visiting other profiles.
+4. **Auth Preview Copy:** Updated profile summary copy to emphasize bio, location, and website details in the redesigned layout.
+
+### 🧪 **Validation:**
+- Confirmed profile and inspect tabs load without layout gaps, with story rails updating in sync after posting or expiring stories.
+- Verified follow/unfollow and message actions respect the new button states and update counters immediately.
+
 ## 🗓️ **November 7, 2025 - Component-Based Architecture Implementation**
 
 ### ✅ **Completed Today:**
