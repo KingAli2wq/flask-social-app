@@ -229,6 +229,17 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 
 # 📝 Recent Updates Log {#recent-updates}
 
+## 🗓️ **November 13, 2025 - Achievements View Hardening**
+
+### ✅ **Completed Today:**
+1. **Optional Achievements Frame:** Adjusted the shell (`social media.py`) to load the achievements view only when `UI.build_achievements_frame` is available, preventing startup crashes on environments that still ship the legacy UI module.
+2. **Graceful Import Guard:** Wrapped the achievements frame import in a try/except block so the DevEcho client can continue to boot even if teammates are on older branches or partial checkouts.
+3. **Shared Documentation:** Added this log entry so engineers know why achievements might be missing locally and what to update when integrating the refreshed profile experience.
+
+### 🧪 **Validation:**
+- Cold-started the desktop client from the virtual environment to confirm the fallback path boots without raising `ImportError`.
+- Smoke-tested navigation to ensure frames dictionary and nav mapping stay in sync when the achievements screen is present.
+
 ## 🗓️ **November 8, 2025 - Profile & Inspect Experience Refresh**
 
 ### ✅ **Completed Today:**

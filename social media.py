@@ -30,6 +30,11 @@ from UI import (
     update_theme_palette,
 )
 
+try:
+    from UI import build_achievements_frame
+except ImportError:
+    build_achievements_frame = None  # type: ignore[assignment]
+
 Palette = Dict[str, str]
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -92,7 +97,7 @@ logo_img: Optional[ctk.CTkImage] = None
 splash_logo_img: Optional[ctk.CTkImage] = None
 splash_screen: Optional[ctk.CTkToplevel] = None
 
-FRAME_TO_NAV = {
+FRAME_TO_NAV: dict[str, str] = {
     "home": "home",
     "videos": "videos",
     "search": "search",
@@ -101,6 +106,9 @@ FRAME_TO_NAV = {
     "inspect_profile": "profile",
     "dm": "messages",
 }
+
+if build_achievements_frame is not None:
+    FRAME_TO_NAV["achievements"] = "profile"
 
 
 def load_logo_image(path: Path, size: tuple[int, int]) -> Optional[ctk.CTkImage]:
@@ -379,6 +387,8 @@ frames["home"] = build_home_frame(content, current_palette)
 frames["videos"] = build_videos_frame(content, current_palette)
 frames["search"] = build_search_frame(content, current_palette)
 frames["profile"] = build_profile_frame(content, current_palette)
+if build_achievements_frame is not None:
+    frames["achievements"] = build_achievements_frame(content, current_palette)
 frames["notifications"] = build_notifications_frame(content, current_palette)
 frames["inspect_profile"] = build_inspect_profile_frame(content, current_palette)
 frames["dm"] = build_dm_frame(content, current_palette)
