@@ -19,6 +19,7 @@ def configure_helpers(
     render_dm_sidebar_cb: Callable[[], None],
     render_inspected_profile_cb: Callable[[], None],
     now_ts_cb: Callable[[], str],
+    render_achievements_cb: Callable[[], None] | None = None,
 ) -> None:
     _ctx.update(
         current_user_getter=current_user_getter,
@@ -32,6 +33,7 @@ def configure_helpers(
         render_dm_sidebar=render_dm_sidebar_cb,
         render_inspected_profile=render_inspected_profile_cb,
         now_ts=now_ts_cb,
+        render_achievements=render_achievements_cb,
     )
 
 
@@ -142,6 +144,7 @@ def toggle_post_reaction(post_idx: int, kind: str) -> None:
         _require("persist")()
         _call_if_present("render_feed")
         _call_if_present("render_profile")
+        _call_if_present("render_achievements")
 
 
 def toggle_reply_reaction(post_idx: int, reply_idx: int, kind: str) -> None:
@@ -156,6 +159,7 @@ def toggle_reply_reaction(post_idx: int, reply_idx: int, kind: str) -> None:
             _require("persist")()
             _call_if_present("render_feed")
             _call_if_present("render_profile")
+            _call_if_present("render_achievements")
 
 
 def total_likes_for(username: str) -> int:

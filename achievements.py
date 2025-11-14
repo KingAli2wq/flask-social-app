@@ -7,6 +7,13 @@ AchievementProgress = Dict[str, Any]
 
 ACHIEVEMENTS: List[AchievementDefinition] = [
     {
+        "id": "followers_10",
+        "name": "Rising Star",
+        "description": "Reach 10 followers.",
+        "metric": "followers",
+        "target": 10,
+    },
+    {
         "id": "followers_100",
         "name": "Community Builder",
         "description": "Reach 100 followers.",
@@ -14,11 +21,32 @@ ACHIEVEMENTS: List[AchievementDefinition] = [
         "target": 100,
     },
     {
-        "id": "likes_100",
-        "name": "Fan Favorite",
-        "description": "Collect 100 total likes across posts and replies.",
+        "id": "followers_500",
+        "name": "Trendsetter",
+        "description": "Reach 500 followers.",
+        "metric": "followers",
+        "target": 500,
+    },
+    {
+        "id": "likes_50",
+        "name": "Audience Favorite",
+        "description": "Collect 50 total likes across posts and replies.",
         "metric": "likes",
-        "target": 100,
+        "target": 50,
+    },
+    {
+        "id": "likes_250",
+        "name": "Fan Favorite",
+        "description": "Collect 250 total likes across posts and replies.",
+        "metric": "likes",
+        "target": 250,
+    },
+    {
+        "id": "posts_10",
+        "name": "Consistent Voice",
+        "description": "Publish 10 posts.",
+        "metric": "posts",
+        "target": 10,
     },
     {
         "id": "posts_50",
@@ -26,6 +54,13 @@ ACHIEVEMENTS: List[AchievementDefinition] = [
         "description": "Publish 50 posts.",
         "metric": "posts",
         "target": 50,
+    },
+    {
+        "id": "posts_200",
+        "name": "Content Powerhouse",
+        "description": "Publish 200 posts.",
+        "metric": "posts",
+        "target": 200,
     },
 ]
 

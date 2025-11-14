@@ -69,14 +69,15 @@ from data_layer import (
 	remember_user,
 )
 from global_state.helpers import (
-    configure_helpers,
-    notify_followers,
-    notify_mentions,
-    push_notification,
-    require_login,
-    toggle_post_reaction,
-    total_likes_for,
+	configure_helpers,
+	notify_followers,
+	notify_mentions,
+	push_notification,
+	require_login,
+	toggle_post_reaction,
+	total_likes_for,
 )
+from achievements import ACHIEVEMENTS, ACHIEVEMENT_INDEX, compute_achievement_progress
 from Media import copy_image_to_profile_pics, load_image_for_tk as media_load_image, open_image
 from Media import copy_file_to_media
 from Profile import (
@@ -126,14 +127,8 @@ MESSAGE_REACTIONS: list[str] = ["👍", "❤️", "😂"]
 GROUP_INVITE_LINK_PREFIX = "https://social.local/invite/"
 PROFILE_SUGGESTION_LIMIT = 5
 TIMELINE_MAX_ITEMS = 6
-BADGE_PRESETS: list[tuple[str, str]] = [
-	("Top Contributor", "Posted consistently this week."),
-	("Conversation Starter", "Encourages people to reply."),
-	("Creative Storyteller", "Shares standout stories."),
-	("Community Helper", "Regularly supports others."),
-	("Early Adopter", "Joined during early access."),
-]
-MAX_BADGES_PER_USER = 16
+ACHIEVEMENT_IDS: list[str] = [item["id"] for item in ACHIEVEMENTS]
+ACHIEVEMENT_COUNT = len(ACHIEVEMENTS)
 _INVITE_TOKEN_CHARS = set("0123456789ABCDEF")
 @dataclass
 class _UIState:
@@ -172,6 +167,7 @@ _view_cache: dict[str, dict] = {
 	"search": {"last_render": 0, "query": ""},
 	"dm": {"last_render": 0, "conversation": None},
 	"notifications": {"last_render": 0, "count": 0},
+	"achievements": {"last_render": 0, "user": None},
 }
 
 _view_signatures: dict[str, Any] = {}
@@ -194,6 +190,191 @@ def _stable_signature_digest(payload: Any) -> str:
 
 def _limit_iterable(items: list[Any], limit: int) -> list[Any]:
 	return items[:limit] if len(items) > limit else items
+
+
+def _achievement_progress_for(username: Optional[str]) -> list[dict[str, Any]]:
+	return compute_achievement_progress(
+		username,
+		users=users,
+		posts=posts,
+		like_counter=total_likes_for,
+	)
+
+
+def _achievement_signature(progress: list[dict[str, Any]]) -> tuple:
+	return tuple(
+		(
+			item.get("id"),
+			bool(item.get("complete")),
+			int(item.get("current", 0)),
+		)
+		for item in progress
+	)
+
+
+def _render_profile_achievements_preview(
+	container: Optional[ctk.CTkFrame],
+	progress: list[dict[str, Any]],
+	*,
+	text_color: str,
+	muted_color: str,
+	accent_color: str,
+) -> None:
+	if not container:
+		return
+	for child in container.winfo_children():
+		child.destroy()
+
+	if not progress:
+		ctk.CTkLabel(
+			container,
+			text="No achievements tracked yet.",
+			text_color=muted_color,
+			anchor="w",
+		).grid(sticky="we")
+		return
+
+	preview_items = progress[:3]
+	for idx, item in enumerate(preview_items):
+		tile = ctk.CTkFrame(container, fg_color="transparent")
+		tile.grid(row=idx, column=0, sticky="we", pady=(0, 8))
+		tile.grid_columnconfigure(0, weight=1)
+
+		title = ctk.CTkLabel(
+			tile,
+			text=item.get("name", "Achievement"),
+			text_color=text_color if not item.get("complete") else accent_color,
+			font=ctk.CTkFont(size=12, weight="bold"),
+			anchor="w",
+		)
+		title.grid(row=0, column=0, sticky="w")
+
+		subtext = f"{int(item.get('current', 0))}/{int(item.get('target', 0))}"
+		ctk.CTkLabel(
+			tile,
+			text=subtext,
+			text_color=muted_color,
+			font=ctk.CTkFont(size=11),
+			anchor="w",
+		).grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+		bar = ctk.CTkProgressBar(
+			tile,
+			fg_color=_palette.get("surface", "#111b2e"),
+			progress_color=accent_color,
+			height=8,
+		)
+		bar.grid(row=2, column=0, sticky="we", pady=(6, 0))
+		percent_value = max(0.0, min(1.0, float(item.get("percent", 0)) / 100))
+		bar.set(percent_value)
+
+		status_text = "Complete" if item.get("complete") else f"{int(item.get('percent', 0))}%"
+		ctk.CTkLabel(
+			tile,
+			text=status_text,
+			text_color=accent_color if item.get("complete") else muted_color,
+			font=ctk.CTkFont(size=10, slant="italic"),
+			anchor="w",
+		).grid(row=3, column=0, sticky="w", pady=(4, 0))
+
+	if len(progress) > len(preview_items):
+		ctk.CTkLabel(
+			container,
+			text="View all achievements to see more milestones.",
+			text_color=muted_color,
+			font=ctk.CTkFont(size=10, slant="italic"),
+			anchor="w",
+		).grid(row=len(preview_items), column=0, sticky="w")
+
+
+def _render_achievements_view() -> None:
+	list_frame: Optional[ctk.CTkScrollableFrame] = _achievements_widgets.get("list")
+	summary_label: Optional[ctk.CTkLabel] = _achievements_widgets.get("summary")
+	if not list_frame or not summary_label:
+		return
+	for child in list_frame.winfo_children():
+		child.destroy()
+
+	user = _ui_state.current_user
+	accent = _palette.get("accent", "#4c8dff")
+	muted = _palette.get("muted", "#94a3b8")
+	text_color = _palette.get("text", "#e2e8f0")
+	surface = _palette.get("card", "#18263f")
+
+	if not user:
+		summary_label.configure(text="Sign in to track achievements.", text_color=muted)
+		return
+
+	progress = _achievement_progress_for(user)
+	if not progress:
+		summary_label.configure(
+			text="Start creating posts and connecting to unlock your first achievement.",
+			text_color=muted,
+		)
+		return
+
+	completed = sum(1 for item in progress if item.get("complete"))
+	summary_label.configure(
+		text=f"{completed} of {ACHIEVEMENT_COUNT} achievements complete.",
+		text_color=muted,
+	)
+
+	for idx, item in enumerate(progress):
+		row = ctk.CTkFrame(list_frame, corner_radius=12, fg_color=surface)
+		row.grid(row=idx, column=0, sticky="we", padx=12, pady=(0, 8))
+		row.grid_columnconfigure(0, weight=1)
+
+		title = ctk.CTkLabel(
+			row,
+			text=item.get("name", "Achievement"),
+			text_color=text_color if not item.get("complete") else accent,
+			font=ctk.CTkFont(size=14, weight="bold"),
+			anchor="w",
+		)
+		title.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 2))
+
+		description = item.get("description") or ""
+		if description:
+			ctk.CTkLabel(
+				row,
+				text=str(description),
+				text_color=muted,
+				font=ctk.CTkFont(size=12),
+				anchor="w",
+				wraplength=520,
+			).grid(row=1, column=0, sticky="w", padx=12)
+
+		target = int(item.get("target", 0) or 0)
+		current = int(item.get("current", 0) or 0)
+		progress_label = ctk.CTkLabel(
+			row,
+			text=f"{current} / {target}",
+			text_color=text_color,
+			font=ctk.CTkFont(size=12, weight="bold"),
+			anchor="w",
+		)
+		progress_label.grid(row=2, column=0, sticky="w", padx=12, pady=(8, 0))
+
+		bar = ctk.CTkProgressBar(
+			row,
+			fg_color=_palette.get("surface", "#111b2e"),
+			progress_color=accent,
+			height=10,
+		)
+		bar.grid(row=3, column=0, sticky="we", padx=12, pady=(4, 4))
+		percent_value = max(0.0, min(1.0, float(item.get("percent", 0)) / 100))
+		bar.set(percent_value)
+
+		status = "Complete" if item.get("complete") else f"{int(item.get('percent', 0))}%"
+		ctk.CTkLabel(
+			row,
+			text=status,
+			text_color=accent if item.get("complete") else muted,
+			font=ctk.CTkFont(size=11, slant="italic"),
+			anchor="w",
+		).grid(row=4, column=0, sticky="w", padx=12, pady=(0, 10))
+
+	list_frame.grid_columnconfigure(0, weight=1)
 
 
 def _compute_view_signature(view: str) -> Optional[tuple]:
@@ -249,19 +430,10 @@ def _compute_view_signature(view: str) -> Optional[tuple]:
 		record = users.get(user, {}) if user else {}
 		if not isinstance(record, dict):
 			record = {}
-		badges_value = record.get("badges") if isinstance(record.get("badges"), list) else []
 		followers_list = record.get("followers", []) if isinstance(record.get("followers"), list) else []
 		following_list = record.get("following", []) if isinstance(record.get("following"), list) else []
-		badge_entries = tuple(
-			(sorted_badge.get("id"), sorted_badge.get("name"), bool(sorted_badge.get("highlight")))
-			for sorted_badge in sorted(
-				(b for b in badges_value if isinstance(b, dict)),
-				key=lambda item: (
-					str(item.get("name") or "").lower(),
-					str(item.get("id") or ""),
-				),
-			)
-		)
+		progress = _achievement_progress_for(user) if user else []
+		achievement_entries = _achievement_signature(progress)
 		followers = tuple(sorted(_limit_iterable(followers_list, 20)))
 		following = tuple(sorted(_limit_iterable(following_list, 20)))
 		post_count = sum(1 for post in posts if isinstance(post, dict) and post.get("author") == user)
@@ -271,7 +443,7 @@ def _compute_view_signature(view: str) -> Optional[tuple]:
 			len(followers_list),
 			len(following_list),
 			post_count,
-			badge_entries,
+			achievement_entries,
 			followers,
 			following,
 			feed_state_marker,
@@ -702,6 +874,7 @@ _inspect_widgets: dict[str, Any] = {}
 _dm_widgets: dict[str, Any] = {}
 _group_modal_widgets: dict[str, Any] = {}
 _search_widgets: dict[str, Any] = {}
+_achievements_widgets: dict[str, Any] = {}
 _dm_sidebar_dirty: bool = True
 _dm_last_rendered_conversation: Optional[str] = None
 _render_after_handles: dict[str, str] = {}
@@ -1665,14 +1838,14 @@ def _toggle_video_reaction(video_id: str, reaction: str) -> None:
 				disliked.remove(user)
 			liked.append(user)
 			changed = True
-	elif reaction == "dislike":
+	else:
 		if user in disliked:
 			disliked.remove(user)
 			changed = True
 		else:
+			disliked.append(user)
 			if user in liked:
 				liked.remove(user)
-			disliked.append(user)
 			changed = True
 	if not changed:
 		return
@@ -1686,7 +1859,6 @@ def _toggle_video_reaction(video_id: str, reaction: str) -> None:
 def _toggle_story_reaction(story_id: str, reaction: str) -> None:
 	if reaction not in {"like", "dislike"}:
 		return
-	if not require_login("react to stories"):
 		return
 	story = _find_story(story_id)
 	if not story:
@@ -4772,6 +4944,9 @@ def _render_view(view: str) -> None:
 		_view_cache[view]["user"] = _ui_state.current_user
 		_render_profile_section()
 		_render_profile_avatar()
+	elif view == "achievements":
+		_view_cache[view]["user"] = _ui_state.current_user
+		_render_achievements_view()
 	elif view == "notifications":
 		_render_notifications()
 	elif view == "inspect_profile":
@@ -4829,6 +5004,8 @@ def _check_render_needed(view: str) -> bool:
 		elif view == "profile" and cache.get("user") == _ui_state.current_user:
 			return False
 		elif view == "dm" and cache.get("conversation") == _ui_state.active_dm_conversation:
+			return False
+		elif view == "achievements" and cache.get("user") == _ui_state.current_user:
 			return False
 	
 	return True
@@ -5348,43 +5525,43 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 		title_lbl.grid(row=1, column=0, sticky="w", pady=(2, 0))
 		stats_labels[key] = value_lbl
 
-	badges_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
-	badges_card.grid(row=1, column=0, sticky="we", pady=(12, 0))
-	badges_card.grid_columnconfigure(0, weight=1)
+	achievements_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
+	achievements_card.grid(row=1, column=0, sticky="we", pady=(12, 0))
+	achievements_card.grid_columnconfigure(0, weight=1)
 
-	badges_header = ctk.CTkFrame(badges_card, fg_color="transparent")
-	badges_header.grid(row=0, column=0, sticky="we", padx=12, pady=(10, 4))
-	badges_header.grid_columnconfigure(0, weight=1)
+	achievements_header = ctk.CTkFrame(achievements_card, fg_color="transparent")
+	achievements_header.grid(row=0, column=0, sticky="we", padx=12, pady=(10, 4))
+	achievements_header.grid_columnconfigure(0, weight=1)
 
 	ctk.CTkLabel(
-		badges_header,
-		text="Badges",
+		achievements_header,
+		text="Achievements",
 		text_color=palette.get("text", "#e2e8f0"),
 		font=ctk.CTkFont(size=13, weight="bold"),
 	).grid(row=0, column=0, sticky="w")
 
-	add_badge_btn = ctk.CTkButton(
-		badges_header,
-		text="Add badge",
-		width=110,
+	achievements_btn = ctk.CTkButton(
+		achievements_header,
+		text="View progress",
+		width=130,
 		fg_color=palette.get("accent", "#4c8dff"),
 		hover_color=palette.get("accent_hover", "#3b6dd6"),
-		command=_handle_add_badge,
+		command=_open_achievements_view,
 	)
-	add_badge_btn.grid(row=0, column=1, padx=(8, 0))
+	achievements_btn.grid(row=0, column=1, padx=(8, 0))
 
-	badges_status = ctk.CTkLabel(
-		badges_card,
+	achievements_status = ctk.CTkLabel(
+		achievements_card,
 		text="",
 		text_color=palette.get("muted", "#94a3b8"),
 		font=ctk.CTkFont(size=11, slant="italic"),
 		justify="left",
 	)
-	badges_status.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
+	achievements_status.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 2))
 
-	badges_list = ctk.CTkFrame(badges_card, fg_color="transparent")
-	badges_list.grid(row=2, column=0, sticky="we", padx=12, pady=(0, 12))
-	badges_list.grid_columnconfigure(0, weight=1)
+	achievements_preview = ctk.CTkFrame(achievements_card, fg_color="transparent")
+	achievements_preview.grid(row=2, column=0, sticky="we", padx=12, pady=(0, 12))
+	achievements_preview.grid_columnconfigure(0, weight=1)
 
 	timeline_card = ctk.CTkFrame(right_col, corner_radius=12, fg_color=palette.get("surface", "#111b2e"))
 	timeline_card.grid(row=2, column=0, sticky="we")
@@ -5462,10 +5639,10 @@ def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFra
 			"timeline_frame": timeline_list,
 			"suggested_frame": suggested_list,
 			"stats_labels": stats_labels,
-			"badges_frame": badges_list,
-			"badges_status": badges_status,
-			"add_badge_button": add_badge_btn,
-			"badges_card": badges_card,
+			"achievements_preview": achievements_preview,
+			"achievements_status": achievements_status,
+			"achievements_button": achievements_btn,
+			"achievements_card": achievements_card,
 			"stories_card": stories_card,
 			"stories_bar": stories_bar,
 			"stories_placeholder": stories_placeholder,
@@ -5948,12 +6125,13 @@ def initialize_ui(frames: dict[str, ctk.CTkFrame]) -> None:
 		render_dm_sidebar_cb=lambda: _request_render("dm"),
 		render_inspected_profile_cb=lambda: _request_render("inspect_profile"),
 		now_ts_cb=now_ts,
+		render_achievements_cb=lambda: _request_render("achievements"),
 	)
 
 	_auto_sign_in_if_remembered()
 
 	# Only mark active view as dirty during startup to reduce initial lag
-	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search")
+	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "search", "achievements")
 	_update_home_status()
 	# Defer server check until after startup
 	_update_server_status(check=False)
@@ -6009,6 +6187,16 @@ def handle_open_messages() -> None:
 		_show_frame_cb("dm")
 
 
+def _open_achievements_view() -> None:
+	"""Navigate to the achievements view when triggered from profile."""
+	if not _ui_state.current_user:
+		messagebox.showinfo("Achievements", "Sign in to track your achievements.")
+		return
+	_request_render("achievements")
+	if _show_frame_cb:
+		_show_frame_cb("achievements")
+
+
 def _set_current_user(username: Optional[str]) -> None:
 	previous_user = _ui_state.current_user
 	_ui_state.current_user = username
@@ -6024,7 +6212,7 @@ def _set_current_user(username: Optional[str]) -> None:
 	else:
 		_select_default_dm_conversation()
 	# Use smart dirty marking to avoid unnecessary re-renders when user changes
-	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos")
+	_mark_smart_dirty("home", "profile", "notifications", "inspect_profile", "dm", "videos", "achievements")
 	_update_videos_controls()
 
 
@@ -6259,9 +6447,10 @@ def _render_profile_section() -> None:
 	timeline_frame = _profile_widgets.get("timeline_frame")
 	suggested_frame = _profile_widgets.get("suggested_frame")
 	stats_labels: dict[str, ctk.CTkLabel] = _profile_widgets.get("stats_labels") or {}
-	badges_frame: Optional[ctk.CTkFrame] = _profile_widgets.get("badges_frame")
-	badges_status: Optional[ctk.CTkLabel] = _profile_widgets.get("badges_status")
-	add_badge_btn: Optional[ctk.CTkButton] = _profile_widgets.get("add_badge_button")
+	achievements_preview: Optional[ctk.CTkFrame] = _profile_widgets.get("achievements_preview")
+	achievements_status: Optional[ctk.CTkLabel] = _profile_widgets.get("achievements_status")
+	achievements_button: Optional[ctk.CTkButton] = _profile_widgets.get("achievements_button")
+	achievements_card: Optional[ctk.CTkFrame] = _profile_widgets.get("achievements_card")
 	text_color = _palette.get("text", "#e2e8f0")
 	muted_color = _palette.get("muted", "#94a3b8")
 	if not info_lbl or not posts_frame:
@@ -6270,9 +6459,7 @@ def _render_profile_section() -> None:
 	signed_in = bool(_ui_state.current_user)
 	current_user = _ui_state.current_user
 	record = users.get(current_user, {}) if signed_in else {}
-	badges_list = record.get("badges", []) if signed_in else []
-	if not isinstance(badges_list, list):
-		badges_list = []
+	progress = _achievement_progress_for(current_user) if signed_in else []
 
 	if name_lbl:
 		if signed_in:
@@ -6286,16 +6473,8 @@ def _render_profile_section() -> None:
 	if not signed_in and status_lbl:
 		status_lbl.configure(text="Sign in to edit your profile.", text_color=muted_color)
 
-	if add_badge_btn:
-		if signed_in and len(badges_list) < MAX_BADGES_PER_USER:
-			add_badge_btn.configure(state="normal")
-		else:
-			add_badge_btn.configure(state="disabled")
-
-	if badges_status and not signed_in:
-		badges_status.configure(text="Sign in to earn badges.", text_color=muted_color)
-	elif badges_status and signed_in and badges_status.cget("text") == "Sign in to earn badges.":
-		badges_status.configure(text="", text_color=muted_color)
+	if achievements_button:
+		achievements_button.configure(state="normal" if signed_in else "disabled")
 
 	stats_payload = {
 		"followers": 0,
@@ -6506,98 +6685,34 @@ def _render_profile_section() -> None:
 				anchor="w",
 			).grid(sticky="w", padx=4, pady=4)
 
-	if badges_frame:
-		for child in badges_frame.winfo_children():
-			child.destroy()
-		if signed_in:
-			if badges_list:
-				def _badge_sort_key(badge: dict[str, Any]) -> tuple[int, float, str]:
-					highlight = 1 if badge.get("highlight") else 0
-					timestamp = 0.0
-					awarded = badge.get("awarded_at")
-					if awarded:
-						text = str(awarded)
-						for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-							try:
-								dt = datetime.strptime(text, fmt)
-								timestamp = dt.timestamp()
-								break
-							except ValueError:
-								continue
-					return (-highlight, -timestamp, str(badge.get("name", "")))
-				ordered_badges = sorted([b for b in badges_list if isinstance(b, dict)], key=_badge_sort_key)
-				for idx, badge in enumerate(ordered_badges):
-					tile = ctk.CTkFrame(
-						badges_frame,
-						fg_color=_palette.get("card", "#18263f"),
-						corner_radius=10,
-					)
-					tile.grid(row=idx, column=0, sticky="we", pady=4)
-					tile.grid_columnconfigure(0, weight=1)
-					tile.grid_columnconfigure(1, weight=0)
-					name = badge.get("name", "Badge")
-					name_lbl = ctk.CTkLabel(
-						tile,
-						text=name,
-						text_color=text_color,
-						font=ctk.CTkFont(size=13, weight="bold"),
-						anchor="w",
-					)
-					name_lbl.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 0))
-					if badge.get("highlight"):
-						ctk.CTkLabel(
-							tile,
-							text="Featured",
-							text_color=_palette.get("accent", "#4c8dff"),
-							font=ctk.CTkFont(size=11, weight="bold"),
-						).grid(row=0, column=1, sticky="e", padx=12, pady=(10, 0))
-					description = badge.get("description")
-					if description:
-						ctk.CTkLabel(
-							tile,
-							text=str(description),
-							text_color=muted_color,
-							justify="left",
-							wraplength=360,
-						).grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(2, 0))
-					timestamp = _format_badge_timestamp(badge.get("awarded_at"))
-					if timestamp:
-						ctk.CTkLabel(
-							tile,
-							text=f"Awarded {timestamp}",
-							text_color=muted_color,
-							font=ctk.CTkFont(size=10, slant="italic"),
-							anchor="w",
-						).grid(row=2, column=0, sticky="w", padx=12, pady=(2, 10))
-					badge_id = str(badge.get("id") or "")
-					if badge_id:
-						ctk.CTkButton(
-							tile,
-							text="Remove",
-							width=80,
-							fg_color="transparent",
-							border_width=1,
-							border_color=muted_color,
-							text_color=muted_color,
-							hover_color=_palette.get("surface", "#111b2e"),
-							command=lambda badge_id=badge_id: _handle_remove_badge(badge_id),
-						).grid(row=2, column=1, sticky="e", padx=12, pady=(2, 10))
-				else:
-					ctk.CTkLabel(
-						badges_frame,
-						text="No badges yet. Add one to celebrate your milestones.",
-						text_color=muted_color,
-						anchor="w",
-						wraplength=360,
-					).grid(sticky="w", padx=6, pady=6)
-		else:
-			ctk.CTkLabel(
-				badges_frame,
-				text="Sign in to earn badges and highlight achievements.",
+	if achievements_status:
+		if not signed_in:
+			achievements_status.configure(text="Sign in to track achievements.", text_color=muted_color)
+		elif progress:
+			completed = sum(1 for item in progress if item.get("complete"))
+			achievements_status.configure(
+				text=f"{completed} of {ACHIEVEMENT_COUNT} achievements complete.",
 				text_color=muted_color,
-				anchor="w",
-				wraplength=360,
-			).grid(sticky="w", padx=6, pady=6)
+			)
+		else:
+			achievements_status.configure(
+				text="Start creating to unlock your first achievement.",
+				text_color=muted_color,
+			)
+
+	if achievements_preview:
+		preview_data = progress if signed_in else []
+		accent = _palette.get("accent", "#4c8dff")
+		_render_profile_achievements_preview(
+			achievements_preview,
+			preview_data,
+			text_color=text_color,
+			muted_color=muted_color,
+			accent_color=accent,
+		)
+		if not signed_in:
+			for child in achievements_preview.winfo_children():
+				child.configure(text_color=muted_color) if isinstance(child, ctk.CTkLabel) else None
 
 	callbacks = FeedCallbacks(
 		open_profile=_open_profile,
@@ -7366,132 +7481,6 @@ def _handle_change_profile_picture() -> None:
 		render_dm=lambda: _request_render("dm"),
 		render_inspected_profile=lambda: _request_render("inspect_profile"),
 	)
-
-
-def _current_user_badges() -> list[dict[str, Any]]:
-	user = _ui_state.current_user
-	if not user:
-		return []
-	record = users.setdefault(user, {})
-	badges = record.get("badges")
-	if isinstance(badges, list):
-		# Filter out anything that is not a dict to keep persistence clean.
-		cleaned = [badge for badge in badges if isinstance(badge, dict)]
-		if len(cleaned) != len(badges):
-			record["badges"] = cleaned
-		return cleaned
-	record["badges"] = []
-	return record["badges"]
-
-
-def _format_badge_timestamp(value: Any) -> str:
-	if not value:
-		return ""
-	text = str(value)
-	for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-		try:
-			dt = datetime.strptime(text, fmt)
-			return dt.strftime("%b %d, %Y")
-		except ValueError:
-			continue
-	return text
-
-
-def _handle_add_badge() -> None:
-	if not require_login("add profile badges"):
-		return
-	user = _ui_state.current_user
-	if not user:
-		return
-	badges = _current_user_badges()
-	if len(badges) >= MAX_BADGES_PER_USER:
-		messagebox.showinfo("Badges", "You have reached the maximum number of badges.")
-		return
-	preset_hint = ", ".join(name for name, _ in BADGE_PRESETS[:4])
-	anchor = _get_after_anchor()
-	initial = BADGE_PRESETS[0][0] if BADGE_PRESETS else ""
-	prompt = "Badge title"
-	if preset_hint:
-		prompt = f"{prompt} (try: {preset_hint})"
-	badge_name = simpledialog.askstring("Add badge", f"{prompt}:", initialvalue=initial, parent=anchor)
-	if badge_name is None:
-		return
-	badge_name = badge_name.strip()
-	if not badge_name:
-		messagebox.showwarning("Add badge", "Badge title cannot be empty.")
-		return
-	if any(badge_name.lower() == str(item.get("name", "")).lower() for item in badges):
-		messagebox.showinfo("Add badge", "You already have that badge.")
-		return
-	default_desc = next((desc for name, desc in BADGE_PRESETS if name.lower() == badge_name.lower()), "")
-	description_prompt = simpledialog.askstring(
-		"Badge description",
-		"Describe why this badge matters (optional):",
-		initialvalue=default_desc,
-		parent=anchor,
-	)
-	description = (description_prompt or "").strip()
-	highlight = False
-	if badges:
-		highlight = messagebox.askyesno(
-			"Feature badge",
-			"Feature this badge at the top of your collection?",
-			parent=anchor,
-		)
-	new_badge: dict[str, Any] = {
-		"id": str(uuid4()),
-		"name": badge_name[:48],
-		"awarded_at": now_ts(),
-	}
-	if description:
-		new_badge["description"] = description[:160]
-	if highlight:
-		new_badge["highlight"] = True
-	if highlight:
-		for existing in badges:
-			existing.pop("highlight", None)
-		badges.insert(0, new_badge)
-	else:
-		badges.append(new_badge)
-	persist()
-	_touch_current_user_activity(force=True)
-	status_lbl: Optional[ctk.CTkLabel] = _profile_widgets.get("badges_status")
-	if status_lbl:
-		status_lbl.configure(text=f"Added badge '{badge_name}'.", text_color=_palette.get("muted", "#94a3b8"))
-	_request_render("profile")
-	if _ui_state.inspected_user == user:
-		_request_render("inspect_profile")
-
-
-def _handle_remove_badge(badge_id: str) -> None:
-	if not require_login("remove profile badges"):
-		return
-	user = _ui_state.current_user
-	if not user:
-		return
-	badges = _current_user_badges()
-	if not badges:
-		return
-	anchor = _get_after_anchor()
-	if not messagebox.askyesno("Remove badge", "Remove this badge from your profile?", parent=anchor):
-		return
-	before = len(badges)
-	filtered = [item for item in badges if str(item.get("id")) != badge_id]
-	if len(filtered) == before:
-		return
-	users.setdefault(user, {})["badges"] = filtered
-	
-	# Immediate real-time sync for user profile changes
-	trigger_immediate_sync("users")
-	_touch_current_user_activity(force=True)
-	status_lbl: Optional[ctk.CTkLabel] = _profile_widgets.get("badges_status")
-	if status_lbl:
-		status_lbl.configure(text="Badge removed.", text_color=_palette.get("muted", "#94a3b8"))
-	_request_render("profile")
-	if _ui_state.inspected_user == user:
-		_request_render("inspect_profile")
-
-
 def _handle_save_profile_details() -> None:
 	if not require_login("update your profile details"):
 		return

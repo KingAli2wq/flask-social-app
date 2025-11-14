@@ -36,10 +36,52 @@
         },
         {
             "message": "@Ben sent a message in test rework2",
-            "time": "2025-11-07 13:53:28",
             "meta": {
-                "type": "group_dm",
+                "from": "Ben",
                 "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 13:53:28"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "meta": {
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 14:22:36"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "meta": {
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 14:23:17"
+        },
+        {
+            "message": "@Ben sent a message in test rework2",
+            "meta": {
+                "from": "Ben",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 14:23:24"
+        },
+        {
+            "message": "@Ben sent you a direct message",
+            "time": "2025-11-07 14:33:08",
+            "meta": {
+                "type": "dm",
+                "from": "Ben"
+            }
+        },
+        {
+            "message": "@Ben shared a new post",
+            "time": "2025-11-09 12:25:56",
+            "meta": {
+                "type": "post_publish",
+                "post_id": "34b8606ab3ac498f9d37d75c32f1a4ac",
                 "from": "Ben"
             }
         }
@@ -236,12 +278,21 @@
         },
         {
             "message": "@Ben sent a message in test rework2",
-            "time": "2025-11-07 13:53:28",
             "meta": {
-                "type": "group_dm",
+                "from": "Ben",
                 "group": "group:17d34d4a98a041249bae2986a72c4a32",
-                "from": "Ben"
-            }
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 13:53:28"
+        },
+        {
+            "message": "@Ben sent a message in test rework2",
+            "meta": {
+                "from": "Ben",
+                "group": "group:17d34d4a98a041249bae2986a72c4a32",
+                "type": "group_dm"
+            },
+            "time": "2025-11-07 14:23:24"
         }
     ],
     "Jordan": [],

@@ -6,6 +6,8 @@ from typing import Any, Callable, Optional
 import customtkinter as ctk
 import tkinter as tk
 
+from achievements import ACHIEVEMENTS, compute_achievement_progress
+
 Palette = dict[str, str]
 PostDict = dict[str, Any]
 ReplyDict = dict[str, Any]
@@ -697,17 +699,24 @@ def render_profile(
     following = len(info.get("following", []))
     total_posts = sum(1 for post in posts if post.get("author") == state.current_user)
     total_likes = total_likes_for(state.current_user)
-    badges = info.get("badges", []) if isinstance(info.get("badges"), list) else []
-    badge_summary = "Badges earned: None yet"
-    if badges:
-        top_badges = ", ".join(
-            badge.get("name", "")
-            for badge in badges[:3]
-            if isinstance(badge, dict) and badge.get("name")
-        )
-        badge_summary = f"Badges earned: {len(badges)}"
-        if top_badges:
-            badge_summary += f"  ·  {top_badges}"
+    achievements = compute_achievement_progress(
+        state.current_user,
+        users=users,
+        posts=posts,
+        like_counter=total_likes_for,
+    )
+    achievement_count = len(ACHIEVEMENTS)
+    achievement_summary = "Achievements tracked: None yet"
+    if achievements:
+        completed = [item for item in achievements if item.get("complete")]
+        top_names = ", ".join(item.get("name", "") for item in completed[:3] if item.get("name"))
+        if completed:
+            achievement_summary = f"Achievements: {len(completed)}/{achievement_count} complete"
+            if top_names:
+                achievement_summary += f"  ·  {top_names}"
+        else:
+            next_goal = achievements[0]
+            achievement_summary = f"Next achievement: {next_goal.get('name', 'Keep going')}"
 
     details: list[str] = []
     details.append(f"Registered: {info.get('registered_at', 'Unknown')}")
@@ -720,7 +729,7 @@ def render_profile(
     website = info.get("website")
     if website:
         details.append(f"Website: {website}")
-    details.append(badge_summary)
+    details.append(achievement_summary)
 
     profile_info_label.configure(
         text="\n".join(details),

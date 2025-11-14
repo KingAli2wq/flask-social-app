@@ -3,6 +3,19 @@
 # DevEcho Development Notebook
 *Comprehensive documentation of all improvements, optimizations, and changes*
 
+
+## 🗓️ **November 14, 2025 - Achievements Overhaul**
+
+### ✅ **Completed Today:**
+1. **Profile Achievements Preview:** Replaced the old badges card with a progress-aware achievements panel that surfaces recent milestones and links to the full tracker.
+2. **Unified Achievement Summaries:** Profile, inspection, and auth panels now read from shared progress helpers so every surface shows consistent completion counts and upcoming goals.
+3. **Expanded Catalog:** Added tiered goals for followers, likes, and posts, giving creators a richer roadmap from early milestones to long-term streaks.
+
+### 🧪 **Validation:**
+- Verified profile view render signatures update when achievement progress changes while staying stable for unrelated edits.
+- Confirmed inspect profile modal, signed-in summary, and achievements tab display synchronized completion totals and milestone names.
+- Ensured legacy badge actions are fully retired without dangling menu items or callbacks.
+
 ---
 
 ## 📖 **Table of Contents**
@@ -59,7 +72,7 @@
 Real-time triggers added to:
 - **Posts**: New posts, edits, reactions, replies
 - **Messages**: DMs, group chats, reactions
-- **Users**: Profile updates, follow/unfollow, badges  
+- **Users**: Profile updates, follow/unfollow, achievements  
 - **Stories**: New stories, reactions
 - **Short Videos**: Uploads, comments, replies, mention pings
 - **Group Chats**: Creation, renames, member changes, announcements
@@ -243,7 +256,7 @@ NEW: [Progress splash] → [Fully loaded] → [Instant responsiveness]
 ## 🗓️ **November 8, 2025 - Profile & Inspect Experience Refresh**
 
 ### ✅ **Completed Today:**
-1. **Unified Profile Hero:** Introduced a responsive two-column header that pairs the avatar and bio with quick-action buttons so stats, badges, and follow controls stay visible without scrolling.
+1. **Unified Profile Hero:** Introduced a responsive two-column header that pairs the avatar and bio with quick-action buttons so stats, achievements, and follow controls stay visible without scrolling.
 2. **Shared Stories Rail:** Centralized story bar registration and refresh logic so home, profile, and inspect views always render the same carousel content after uploads or expirations.
 3. **Inspect View Enhancements:** Added live follower/following/post counters, richer bio metadata, and streamlined follow/message buttons for visiting other profiles.
 4. **Auth Preview Copy:** Updated profile summary copy to emphasize bio, location, and website details in the redesigned layout.

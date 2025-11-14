@@ -5,6 +5,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+from achievements import compute_achievement_progress
 from data_layer import ensure_media_local
 
 try:
@@ -301,15 +302,21 @@ def render_inspected_profile(
     following = len(info.get("following", []))
     user_posts = [(idx, post) for idx, post in enumerate(posts) if post.get("author") == inspected_user]
     likes = total_likes_for(inspected_user)
-    badges = info.get("badges", []) if isinstance(info.get("badges"), list) else []
-    badge_preview = "Badges: None yet"
-    if badges:
-        top_badges = ", ".join(
-            badge.get("name", "")
-            for badge in badges[:3]
-            if isinstance(badge, dict) and badge.get("name")
-        )
-        badge_preview = f"Badges: {top_badges or len(badges)}"
+    achievements = compute_achievement_progress(
+        inspected_user,
+        users=users,
+        posts=posts,
+        like_counter=total_likes_for,
+    )
+    achievements_preview = "Achievements: None yet"
+    if achievements:
+        completed = [item for item in achievements if item.get("complete")]
+        if completed:
+            top_names = ", ".join(item.get("name", "") for item in completed[:3] if item.get("name"))
+            achievements_preview = f"Achievements: {top_names or len(completed)} completed"
+        else:
+            achievement = achievements[0]
+            achievements_preview = f"Achievements: {achievement.get('name', 'In progress')}"
 
     inspect_header.configure(text=f"@{inspected_user}", text_color=text)
     details: list[str] = []
@@ -324,7 +331,7 @@ def render_inspected_profile(
     website = info.get("website")
     if website:
         details.append(f"Website: {website}")
-    details.append(badge_preview)
+    details.append(achievements_preview)
     inspect_info.configure(text="\n".join(details), text_color=muted, justify="left", anchor="w")
 
     if inspect_stats_labels:
