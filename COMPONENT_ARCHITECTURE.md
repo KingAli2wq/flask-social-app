@@ -1,5 +1,7 @@
 # Component-Based UI Architecture
 
+> Last updated: **November 14, 2025**
+
 ## Overview
 
 The UI has been refactored to use a **component-based architecture** that eliminates flickering by only updating the parts of the screen that actually changed, similar to Instagram, Twitter, and other modern social media apps.

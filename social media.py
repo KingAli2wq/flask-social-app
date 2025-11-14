@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
+import threading
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import customtkinter as ctk
 from PIL import Image
@@ -111,22 +113,34 @@ if build_achievements_frame is not None:
     FRAME_TO_NAV["achievements"] = "profile"
 
 
+logger = logging.getLogger("devecho.app")
+if not logger.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger.setLevel(logging.INFO)
+
+frame_factories: dict[str, Callable[[], ctk.CTkFrame]] = {}
+
+splash_message_label: Optional[ctk.CTkLabel] = None
+splash_progress_bar: Optional[ctk.CTkProgressBar] = None
+
 def load_logo_image(path: Path, size: tuple[int, int]) -> Optional[ctk.CTkImage]:
     """Load the DevEcho logo if the asset is available."""
     if not path.exists():
-        print(f"Logo asset missing: {path}")
+        logger.warning("Logo asset missing: %s", path)
         return None
     try:
         with Image.open(path) as source:
             pil_image = source.convert("RGBA")
     except OSError as exc:
-        print(f"Failed to load logo asset: {exc}")
+        logger.warning("Failed to load logo asset: %s", exc)
         return None
     return ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=size)
 
 
 def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
     """Render a splash screen while the main window initializes."""
+    global splash_message_label, splash_progress_bar
+
     splash = ctk.CTkToplevel(parent)
     splash.overrideredirect(True)
     splash.attributes("-topmost", True)
@@ -161,10 +175,12 @@ def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
         text_color=current_palette["text"],
     )
     message.pack(pady=(0, 24))
+    splash_message_label = message
 
     progress = ctk.CTkProgressBar(container, mode="indeterminate")
     progress.pack(fill="x", pady=(0, 12))
     progress.start()
+    splash_progress_bar = progress
 
     footer = ctk.CTkLabel(
         container,
@@ -178,12 +194,37 @@ def show_splash_screen(parent: ctk.CTk) -> ctk.CTkToplevel:
     return splash
 
 
+def register_frame_factory(name: str, builder: Callable[[], ctk.CTkFrame]) -> None:
+    frame_factories[name] = builder
+
+
+def ensure_frame(name: str) -> Optional[ctk.CTkFrame]:
+    existing = frames.get(name)
+    if existing is not None:
+        return existing
+    builder = frame_factories.get(name)
+    if builder is None:
+        return None
+    try:
+        frame = builder()
+    except Exception:
+        logger.exception("Failed to build frame '%s'", name)
+        return None
+    frames[name] = frame
+    frame.grid(row=0, column=0, sticky="nswe")
+    frame.grid_remove()
+    return frame
+
+
 def show_frame(name: str) -> None:
     global active_frame_name
 
     target = frames.get(name)
     if target is None:
-        return
+        target = ensure_frame(name)
+        if target is None:
+            logger.warning("No frame available for '%s'", name)
+            return
 
     needs_show = active_frame_name != name or not target.winfo_ismapped()
 
@@ -236,16 +277,16 @@ def toggle_theme() -> None:
     apply_theme("light" if current_theme == "dark" else "dark")
 
 
-print("DEBUG: Setting appearance mode...")
+logger.debug("Setting appearance mode")
 ctk.set_appearance_mode(THEMES[current_theme]["appearance"])  # type: ignore[arg-type]
 
-print("DEBUG: Creating root window...")
+logger.debug("Creating root window")
 root = ctk.CTk()
 root.title("DevEcho")
 root.geometry("900x600+100+50")  # Set explicit position
 root.minsize(720, 520)
 root.withdraw()
-print("DEBUG: Root window created and configured")
+logger.debug("Root window created and configured")
 
 
 def _apply_fullscreen_size() -> None:
@@ -384,106 +425,134 @@ register_nav_controls(
 )
 configure_shell_palette()
 frames["home"] = build_home_frame(content, current_palette)
-frames["videos"] = build_videos_frame(content, current_palette)
-frames["search"] = build_search_frame(content, current_palette)
-frames["profile"] = build_profile_frame(content, current_palette)
-if build_achievements_frame is not None:
-    frames["achievements"] = build_achievements_frame(content, current_palette)
-frames["notifications"] = build_notifications_frame(content, current_palette)
-frames["inspect_profile"] = build_inspect_profile_frame(content, current_palette)
-frames["dm"] = build_dm_frame(content, current_palette)
+frames["home"].grid(row=0, column=0, sticky="nswe")
+frames["home"].grid_remove()
 
-for frame in frames.values():
-    frame.grid(row=0, column=0, sticky="nswe")
-    frame.grid_remove()
+register_frame_factory("videos", lambda: build_videos_frame(content, current_palette))
+register_frame_factory("search", lambda: build_search_frame(content, current_palette))
+register_frame_factory("profile", lambda: build_profile_frame(content, current_palette))
+register_frame_factory("notifications", lambda: build_notifications_frame(content, current_palette))
+register_frame_factory("inspect_profile", lambda: build_inspect_profile_frame(content, current_palette))
+register_frame_factory("dm", lambda: build_dm_frame(content, current_palette))
+if build_achievements_frame is not None:
+    register_frame_factory(
+        "achievements",
+        lambda builder=build_achievements_frame: builder(content, current_palette),
+    )
 
 def complete_startup() -> None:
-    """Complete app initialization and hide splash screen"""
-    global splash_screen
-    
+    """Complete app initialization and transition from the splash screen."""
+    global splash_screen, splash_progress_bar, splash_message_label
+
     try:
-        # Ensure all UI components are fully loaded
-        print("✅ App fully initialized")
-        
+        logger.info("Application initialization complete")
+
         if splash_screen is not None:
-            print("🎬 Closing splash screen")
+            logger.debug("Closing splash screen")
             splash_screen.destroy()
             splash_screen = None
-        
-        # Show main window
+            splash_progress_bar = None
+            splash_message_label = None
+
         root.deiconify()
         root.geometry("1280x800+100+50")
         root.lift()
         root.focus_force()
         root.attributes("-topmost", True)
-        
+
         _apply_fullscreen_size()
-        
-        # Remove topmost after window is established
+
         root.after(500, lambda: root.attributes("-topmost", False))
-        print("🚀 DevEcho ready!")
-        
-    except Exception as e:
-        print(f"❌ Error in complete_startup: {e}")
-        # Fallback: show main window anyway
+        root.after(750, lambda: _kickoff_background_warmup())
+        logger.info("DevEcho ready")
+
+    except Exception:
+        logger.exception("Error while completing startup")
         if splash_screen:
             splash_screen.destroy()
             splash_screen = None
         root.deiconify()
 
-def initialize_app_components():
-    """Initialize all app components step by step"""
+
+def _kickoff_background_warmup() -> None:
+    """Run heavier warmup tasks off the UI thread once the shell is visible."""
+
+    def _worker() -> None:
+        try:
+            from data_layer import ensure_all_media_local, refresh_remote_state
+
+            changes = refresh_remote_state()
+            if changes and getattr(root, "winfo_exists", lambda: False)():
+                try:
+                    root.after(0, refresh_ui)
+                except Exception:
+                    logger.debug("Deferred UI refresh failed", exc_info=True)
+
+            ensure_all_media_local()
+        except Exception:
+            logger.debug("Background warmup tasks failed", exc_info=True)
+
+    threading.Thread(target=_worker, name="devecho-warmup", daemon=True).start()
+def initialize_app_components() -> None:
+    """Initialize all app components step by step without blocking the UI thread."""
+
+    steps: list[tuple[str, Callable[[], None]]] = [
+        ("UI Components", lambda: initialize_ui(frames)),
+        ("Interface", refresh_ui),
+        ("Theme", update_theme_button),
+        ("Home Feed", lambda: show_frame(active_frame_name)),
+    ]
+
+    total_steps = len(steps) + 1  # include finalizing step
+
+    def _run_step(index: int) -> None:
+        if index >= len(steps):
+            update_loading_progress("Finalizing", progress=1.0)
+            root.after(80, complete_startup)
+            return
+
+        label, action = steps[index]
+        progress_value = (index + 1) / total_steps
+        update_loading_progress(label, progress=progress_value)
+        try:
+            action()
+        except Exception:
+            logger.exception("Startup step '%s' failed", label)
+
+        root.after(40, lambda: _run_step(index + 1))
+
     try:
-        # Step 1: Initialize UI
-        update_loading_progress("UI Components")
-        root.after(100, lambda: (
-            initialize_ui(frames),
-            root.after(200, lambda: (
-                # Step 2: Refresh UI
-                update_loading_progress("Interface"),
-                refresh_ui(),
-                root.after(200, lambda: (
-                    # Step 3: Update theme
-                    update_loading_progress("Theme"),
-                    update_theme_button(),
-                    root.after(200, lambda: (
-                        # Step 4: Show home frame
-                        update_loading_progress("Home Feed"),
-                        show_frame(active_frame_name),
-                        root.after(300, lambda: (
-                            # Step 5: Complete startup
-                            update_loading_progress("Finalizing"),
-                            root.after(200, complete_startup)
-                        ))
-                    ))
-                ))
-            ))
-        ))
-    except Exception as e:
-        print(f"❌ Error during initialization: {e}")
-        # Fallback to immediate startup
-        root.after(1000, complete_startup)
+        root.after(10, lambda: _run_step(0))
+    except Exception:
+        logger.exception("Failed to schedule startup sequence")
+        root.after(0, complete_startup)
 
 # Start the initialization sequence is deferred until helpers are defined
 
 
-def update_loading_progress(message: str, progress: float = None):
-    """Update the loading screen with current progress"""
+def update_loading_progress(message: str, progress: Optional[float] = None) -> None:
+    """Update the splash screen message and optional determinate progress."""
     global splash_screen
     if splash_screen is None:
         return
-        
-    # Find the message label and update it
-    for widget in splash_screen.winfo_children():
-        for child in widget.winfo_children():
-            if isinstance(child, ctk.CTkLabel) and "Loading" in str(child.cget("text")):
-                child.configure(text=f"Loading {message}...")
-                break
-    
-    splash_screen.update()
+
+    if splash_message_label and splash_message_label.winfo_exists():
+        splash_message_label.configure(text=f"Loading {message}...")
+
+    if progress is not None and splash_progress_bar and splash_progress_bar.winfo_exists():
+        splash_progress_bar.configure(mode="determinate")
+        clamped = max(0.0, min(1.0, float(progress)))
+        splash_progress_bar.set(clamped)
+    elif splash_progress_bar and splash_progress_bar.winfo_exists():
+        # Ensure the bar keeps animating when no explicit progress provided
+        if splash_progress_bar.cget("mode") != "indeterminate":
+            splash_progress_bar.configure(mode="indeterminate")
+            splash_progress_bar.start()
+
+    splash_screen.update_idletasks()
 
 
-print("🚀 Starting DevEcho initialization...")
+logger.info("Starting DevEcho initialization")
 initialize_app_components()
 
 def check_loading_complete() -> bool:
