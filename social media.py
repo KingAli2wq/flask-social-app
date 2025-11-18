@@ -87,6 +87,11 @@ nav_panel: ctk.CTkFrame
 nav_buttons_frame: ctk.CTkFrame
 nav_footer: ctk.CTkFrame
 content: ctk.CTkFrame
+content_header: Optional[ctk.CTkFrame] = None
+content_body: Optional[ctk.CTkFrame] = None
+header_badge_label: Optional[ctk.CTkLabel] = None
+header_title_label: Optional[ctk.CTkLabel] = None
+header_subtitle_label: Optional[ctk.CTkLabel] = None
 home_btn: ctk.CTkButton
 profile_btn: ctk.CTkButton
 signin_btn: ctk.CTkButton
@@ -120,8 +125,115 @@ logger.setLevel(logging.INFO)
 
 frame_factories: dict[str, Callable[[], ctk.CTkFrame]] = {}
 
+nav_label_registry: dict[str, tuple[ctk.CTkLabel, str]] = {}
+nav_caption_labels: dict[str, ctk.CTkLabel] = {}
+nav_caption_active_key: Optional[str] = None
+
 splash_message_label: Optional[ctk.CTkLabel] = None
 splash_progress_bar: Optional[ctk.CTkProgressBar] = None
+
+FRAME_METADATA: dict[str, tuple[str, str]] = {
+    "home": ("Home", "Latest updates and stories from the people you follow"),
+    "videos": ("Videos", "Share and discover quick clips from the community"),
+    "search": ("Search", "Find people, posts, and hashtags to follow"),
+    "profile": ("My Profile", "Manage your bio, posts, and achievements"),
+    "notifications": ("Notifications", "Stay on top of mentions, follows, and invites"),
+    "inspect_profile": ("Profile Preview", "See another member's activity and connections"),
+    "dm": ("Messages", "Keep conversations going with friends and groups"),
+    "achievements": ("Achievements", "Track milestones and celebrate progress"),
+}
+
+DEFAULT_FRAME_METADATA: tuple[str, str] = (
+    "DevEcho",
+    "Stay connected with your network",
+)
+
+
+def _nav_label_base_color(style: str) -> str:
+    if style == "accent":
+        return current_palette["accent"]
+    if style == "danger":
+        return current_palette["danger"]
+    if style == "text":
+        return current_palette["text"]
+    return current_palette["muted"]
+
+
+def refresh_nav_label_colors() -> None:
+    for key, (label, style) in nav_label_registry.items():
+        if label and label.winfo_exists():
+            label.configure(text_color=_nav_label_base_color(style))
+
+
+def update_nav_caption_highlight(nav_key: Optional[str]) -> None:
+    global nav_caption_active_key
+    nav_caption_active_key = nav_key
+    refresh_nav_label_colors()
+    if nav_key and nav_key in nav_caption_labels:
+        target = nav_caption_labels[nav_key]
+        if target and target.winfo_exists():
+            target.configure(text_color=current_palette["accent"])
+
+
+def update_theme_caption() -> None:
+    entry = nav_label_registry.get("theme")
+    if not entry:
+        return
+    label, _style = entry
+    if label and label.winfo_exists():
+        label.configure(text="Light Mode" if current_theme == "light" else "Dark Mode")
+
+
+def update_shell_header(name: str) -> None:
+    if not header_title_label or not header_subtitle_label:
+        return
+    title, subtitle = FRAME_METADATA.get(name, DEFAULT_FRAME_METADATA)
+    header_title_label.configure(text=title)
+    header_subtitle_label.configure(text=subtitle)
+    if header_badge_label and header_badge_label.winfo_exists():
+        badge = "Light Mode" if current_theme == "light" else "Dark Mode"
+        header_badge_label.configure(text=f"DevEcho • {badge}")
+
+
+def _create_nav_item(
+    *,
+    parent: ctk.CTkFrame,
+    row: int,
+    key: str,
+    icon_key: str,
+    caption: str,
+    command: Optional[Callable[[], None]],
+    pady: tuple[int, int] | int = (0, 12),
+    primary: bool = False,
+    style: str = "muted",
+) -> ctk.CTkButton:
+    container = ctk.CTkFrame(parent, fg_color="transparent")
+    container.grid(row=row, column=0, sticky="n", pady=pady)
+    container.grid_columnconfigure(0, weight=1)
+
+    button = create_nav_button(
+        key,
+        icon_key,
+        parent=container,
+        row=0,
+        command=command,
+        pady=(0, 6),
+    )
+
+    label_font = ctk.CTkFont(size=11, weight="bold" if primary else "normal")
+    label = ctk.CTkLabel(
+        container,
+        text=caption,
+        font=label_font,
+        text_color=_nav_label_base_color(style),
+    )
+    label.grid(row=1, column=0, sticky="n", pady=(4, 0))
+
+    nav_label_registry[key] = (label, style)
+    if primary:
+        nav_caption_labels[key] = label
+
+    return button
 
 def load_logo_image(path: Path, size: tuple[int, int]) -> Optional[ctk.CTkImage]:
     """Load the DevEcho logo if the asset is available."""
@@ -227,6 +339,7 @@ def show_frame(name: str) -> None:
             return
 
     needs_show = active_frame_name != name or not target.winfo_ismapped()
+    nav_key = FRAME_TO_NAV.get(name)
 
     if needs_show:
         current_frame = frames.get(active_frame_name)
@@ -236,8 +349,10 @@ def show_frame(name: str) -> None:
         target.grid(row=0, column=0, sticky="nswe")
         active_frame_name = name
 
-        root.after_idle(lambda: set_active_nav(FRAME_TO_NAV.get(name)))
+        root.after_idle(lambda key=nav_key: set_active_nav(key))
 
+    update_nav_caption_highlight(nav_key)
+    update_shell_header(name)
     handle_frame_shown(name)
 
 
@@ -248,6 +363,7 @@ def refresh_ui() -> None:
 def update_theme_button() -> None:
     icon_key = "theme_sun" if current_theme == "dark" else "theme_moon"
     set_nav_icon_key("theme", icon_key)
+    update_theme_caption()
 
 
 def configure_shell_palette() -> None:
@@ -258,8 +374,28 @@ def configure_shell_palette() -> None:
         nav_buttons_frame.configure(fg_color="transparent")
     if nav_footer:
         nav_footer.configure(fg_color="transparent")
+    if content:
+        content.configure(fg_color=current_palette["bg"])
+    if content_header:
+        content_header.configure(fg_color=current_palette["surface"])
+    if header_badge_label:
+        header_badge_label.configure(
+            fg_color=current_palette["accent"],
+            text_color=current_palette["bg"],
+        )
+    if header_title_label:
+        header_title_label.configure(text_color=current_palette["text"])
+    if header_subtitle_label:
+        header_subtitle_label.configure(text_color=current_palette["muted"])
+    if content_body:
+        content_body.configure(
+            fg_color=current_palette["card"],
+            border_color=current_palette["surface"],
+        )
     set_nav_palette(current_palette)
     update_theme_button()
+    update_nav_caption_highlight(nav_caption_active_key)
+    update_shell_header(active_frame_name)
 
 
 def apply_theme(mode: str) -> None:
@@ -269,6 +405,7 @@ def apply_theme(mode: str) -> None:
     theme = THEMES[mode]
     current_theme = mode
     current_palette = dict(theme["palette"])  # type: ignore[arg-type]
+    ctk.set_appearance_mode(theme["appearance"])  # type: ignore[arg-type]
     configure_shell_palette()
     update_theme_palette(current_palette)
 
@@ -329,86 +466,152 @@ nav_buttons_frame = ctk.CTkFrame(nav_panel, fg_color="transparent")
 nav_buttons_frame.grid(row=1, column=0, sticky="n", padx=0, pady=(12, 12))
 set_nav_palette(current_palette)
 
-home_btn = create_nav_button(
-    "home",
-    "home",
+home_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=0,
+    key="home",
+    icon_key="home",
+    caption="Home",
     command=lambda: show_frame("home"),
     pady=(0, 12),
+    primary=True,
 )
-videos_btn = create_nav_button(
-    "videos",
-    "videos",
+videos_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=1,
+    key="videos",
+    icon_key="videos",
+    caption="Videos",
     command=lambda: show_frame("videos"),
     pady=10,
+    primary=True,
 )
-search_btn = create_nav_button(
-    "search",
-    "search",
+search_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=2,
+    key="search",
+    icon_key="search",
+    caption="Search",
     command=lambda: show_frame("search"),
     pady=10,
+    primary=True,
 )
-notifications_btn = create_nav_button(
-    "notifications",
-    "notifications",
+notifications_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=3,
+    key="notifications",
+    icon_key="notifications",
+    caption="Notifications",
     command=handle_show_notifications,
     pady=10,
+    primary=True,
 )
-messages_btn = create_nav_button(
-    "messages",
-    "messages",
+messages_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=4,
+    key="messages",
+    icon_key="messages",
+    caption="Messages",
     command=handle_open_messages,
     pady=10,
+    primary=True,
 )
-profile_btn = create_nav_button(
-    "profile",
-    "profile",
+profile_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=5,
+    key="profile",
+    icon_key="profile",
+    caption="Profile",
     command=lambda: show_frame("profile"),
     pady=10,
+    primary=True,
 )
-signin_btn = create_nav_button(
-    "signin",
-    "signin",
+signin_btn = _create_nav_item(
     parent=nav_buttons_frame,
     row=6,
+    key="signin",
+    icon_key="signin",
+    caption="Account",
     command=handle_sign_in,
     pady=10,
+    primary=False,
 )
 
 nav_footer = ctk.CTkFrame(nav_panel, fg_color="transparent")
 nav_footer.grid(row=2, column=0, sticky="s", padx=0, pady=(12, 24))
-theme_btn = create_nav_button(
-    "theme",
-    "theme_sun" if current_theme == "dark" else "theme_moon",
+theme_btn = _create_nav_item(
     parent=nav_footer,
     row=0,
+    key="theme",
+    icon_key="theme_sun" if current_theme == "dark" else "theme_moon",
+    caption="",
     command=toggle_theme,
     pady=(0, 12),
+    primary=False,
+    style="accent",
 )
-exit_btn = create_nav_button(
-    "exit",
-    "exit",
+exit_btn = _create_nav_item(
     parent=nav_footer,
     row=1,
+    key="exit",
+    icon_key="exit",
+    caption="Exit",
     command=root.destroy,
     pady=(0, 0),
+    primary=False,
+    style="danger",
 )
+
+update_theme_caption()
+update_shell_header(active_frame_name)
 
 content = ctk.CTkFrame(root, corner_radius=12, fg_color="transparent")
 content.grid(row=0, column=1, sticky="nswe", padx=(12, 16), pady=16)
-content.grid_rowconfigure(0, weight=1)
+content.grid_rowconfigure(1, weight=1)
 content.grid_columnconfigure(0, weight=1)
+
+content_header = ctk.CTkFrame(content, corner_radius=18, fg_color=current_palette["surface"])
+content_header.grid(row=0, column=0, sticky="we", padx=0, pady=(0, 12))
+content_header.grid_columnconfigure(0, weight=1)
+
+header_badge_label = ctk.CTkLabel(
+    content_header,
+    text="",
+    font=ctk.CTkFont(size=12, weight="bold"),
+    fg_color=current_palette["accent"],
+    text_color=current_palette["bg"],
+    corner_radius=999,
+    padx=12,
+    pady=6,
+)
+header_badge_label.grid(row=0, column=0, sticky="w", padx=24, pady=(18, 6))
+
+header_title_label = ctk.CTkLabel(
+    content_header,
+    text="",
+    font=ctk.CTkFont(size=28, weight="bold"),
+    text_color=current_palette["text"],
+)
+header_title_label.grid(row=1, column=0, sticky="w", padx=24)
+
+header_subtitle_label = ctk.CTkLabel(
+    content_header,
+    text="",
+    font=ctk.CTkFont(size=14),
+    text_color=current_palette["muted"],
+)
+header_subtitle_label.grid(row=2, column=0, sticky="w", padx=24, pady=(2, 20))
+
+content_body = ctk.CTkFrame(
+    content,
+    corner_radius=24,
+    fg_color=current_palette["card"],
+    border_width=1,
+    border_color=current_palette["surface"],
+)
+content_body.grid(row=1, column=0, sticky="nswe")
+content_body.grid_rowconfigure(0, weight=1)
+content_body.grid_columnconfigure(0, weight=1)
 
 refresh_nav_icons()
 set_active_nav("home")
@@ -424,20 +627,20 @@ register_nav_controls(
     messages_btn=messages_btn,
 )
 configure_shell_palette()
-frames["home"] = build_home_frame(content, current_palette)
+frames["home"] = build_home_frame(content_body, current_palette)
 frames["home"].grid(row=0, column=0, sticky="nswe")
 frames["home"].grid_remove()
 
-register_frame_factory("videos", lambda: build_videos_frame(content, current_palette))
-register_frame_factory("search", lambda: build_search_frame(content, current_palette))
-register_frame_factory("profile", lambda: build_profile_frame(content, current_palette))
-register_frame_factory("notifications", lambda: build_notifications_frame(content, current_palette))
-register_frame_factory("inspect_profile", lambda: build_inspect_profile_frame(content, current_palette))
-register_frame_factory("dm", lambda: build_dm_frame(content, current_palette))
+register_frame_factory("videos", lambda: build_videos_frame(content_body, current_palette))
+register_frame_factory("search", lambda: build_search_frame(content_body, current_palette))
+register_frame_factory("profile", lambda: build_profile_frame(content_body, current_palette))
+register_frame_factory("notifications", lambda: build_notifications_frame(content_body, current_palette))
+register_frame_factory("inspect_profile", lambda: build_inspect_profile_frame(content_body, current_palette))
+register_frame_factory("dm", lambda: build_dm_frame(content_body, current_palette))
 if build_achievements_frame is not None:
     register_frame_factory(
         "achievements",
-        lambda builder=build_achievements_frame: builder(content, current_palette),
+        lambda builder=build_achievements_frame: builder(content_body, current_palette),
     )
 
 def complete_startup() -> None:

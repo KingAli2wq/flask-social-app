@@ -70,20 +70,20 @@
         },
         {
             "message": "@Ben sent you a direct message",
-            "time": "2025-11-07 14:33:08",
             "meta": {
-                "type": "dm",
-                "from": "Ben"
-            }
+                "from": "Ben",
+                "type": "dm"
+            },
+            "time": "2025-11-07 14:33:08"
         },
         {
             "message": "@Ben shared a new post",
-            "time": "2025-11-09 12:25:56",
             "meta": {
-                "type": "post_publish",
+                "from": "Ben",
                 "post_id": "34b8606ab3ac498f9d37d75c32f1a4ac",
-                "from": "Ben"
-            }
+                "type": "post_publish"
+            },
+            "time": "2025-11-09 12:25:56"
         }
     ],
     "Ben": [
@@ -138,6 +138,24 @@
                 "type": "group_dm"
             },
             "time": "2025-11-07 13:53:01"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "meta": {
+                "from": "Ali",
+                "post_id": "325ce19917484f558f32c465c50f255a",
+                "type": "post_publish"
+            },
+            "time": "2025-11-14 13:32:35"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "time": "2025-11-14 13:47:20",
+            "meta": {
+                "type": "post_publish",
+                "post_id": "14168bba4fe94133a3704231f29dddf0",
+                "from": "Ali"
+            }
         }
     ],
     "Connor": [
@@ -293,6 +311,24 @@
                 "type": "group_dm"
             },
             "time": "2025-11-07 14:23:24"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "meta": {
+                "from": "Ali",
+                "post_id": "325ce19917484f558f32c465c50f255a",
+                "type": "post_publish"
+            },
+            "time": "2025-11-14 13:32:35"
+        },
+        {
+            "message": "@Ali shared a new post",
+            "time": "2025-11-14 13:47:20",
+            "meta": {
+                "type": "post_publish",
+                "post_id": "14168bba4fe94133a3704231f29dddf0",
+                "from": "Ali"
+            }
         }
     ],
     "Jordan": [],
