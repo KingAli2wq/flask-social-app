@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import customtkinter as ctk
 from PIL import Image
@@ -80,7 +80,7 @@ frames: dict[str, ctk.CTkFrame] = {}
 active_frame_name = "home"
 root: ctk.CTk
 nav_panel: ctk.CTkFrame
-nav_buttons_frame: ctk.CTkFrame
+nav_buttons_frame: ctk.CTkScrollableFrame
 nav_footer: ctk.CTkFrame
 content: ctk.CTkFrame
 content_header: Optional[ctk.CTkFrame] = None
@@ -193,7 +193,7 @@ def update_shell_header(name: str) -> None:
 
 def _create_nav_item(
     *,
-    parent: ctk.CTkFrame,
+    parent: Any,
     row: int,
     key: str,
     icon_key: str,
@@ -458,8 +458,13 @@ else:
         text_color=current_palette["text"],
     ).pack()
 
-nav_buttons_frame = ctk.CTkFrame(nav_panel, fg_color="transparent")
-nav_buttons_frame.grid(row=1, column=0, sticky="n", padx=0, pady=(12, 12))
+nav_buttons_frame = ctk.CTkScrollableFrame(
+    nav_panel,
+    fg_color="transparent",
+    orientation="vertical",
+)
+nav_buttons_frame.grid(row=1, column=0, sticky="nsew", padx=0, pady=(12, 12))
+nav_buttons_frame.grid_columnconfigure(0, weight=1)
 set_nav_palette(current_palette)
 
 home_btn = _create_nav_item(
