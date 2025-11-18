@@ -10,7 +10,6 @@ Environment variables:
   SOCIAL_SERVER_TOKEN - optional token to require for api access
 """
 import os
-import sys
 
 try:
     # Import the Flask app from server.py

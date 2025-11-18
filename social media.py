@@ -10,6 +10,7 @@ from PIL import Image
 
 from UI import (
     build_dm_frame,
+    build_achievements_frame,
     build_home_frame,
     build_search_frame,
     build_videos_frame,
@@ -31,11 +32,6 @@ from UI import (
     set_nav_palette,
     update_theme_palette,
 )
-
-try:
-    from UI import build_achievements_frame
-except ImportError:
-    build_achievements_frame = None  # type: ignore[assignment]
 
 Palette = Dict[str, str]
 
@@ -627,20 +623,25 @@ register_nav_controls(
     messages_btn=messages_btn,
 )
 configure_shell_palette()
-frames["home"] = build_home_frame(content_body, current_palette)
+if content_body is None:
+    raise RuntimeError("Content body frame failed to initialize")
+
+content_frame_container = content_body
+
+frames["home"] = build_home_frame(content_frame_container, current_palette)
 frames["home"].grid(row=0, column=0, sticky="nswe")
 frames["home"].grid_remove()
 
-register_frame_factory("videos", lambda: build_videos_frame(content_body, current_palette))
-register_frame_factory("search", lambda: build_search_frame(content_body, current_palette))
-register_frame_factory("profile", lambda: build_profile_frame(content_body, current_palette))
-register_frame_factory("notifications", lambda: build_notifications_frame(content_body, current_palette))
-register_frame_factory("inspect_profile", lambda: build_inspect_profile_frame(content_body, current_palette))
-register_frame_factory("dm", lambda: build_dm_frame(content_body, current_palette))
+register_frame_factory("videos", lambda container=content_frame_container: build_videos_frame(container, current_palette))
+register_frame_factory("search", lambda container=content_frame_container: build_search_frame(container, current_palette))
+register_frame_factory("profile", lambda container=content_frame_container: build_profile_frame(container, current_palette))
+register_frame_factory("notifications", lambda container=content_frame_container: build_notifications_frame(container, current_palette))
+register_frame_factory("inspect_profile", lambda container=content_frame_container: build_inspect_profile_frame(container, current_palette))
+register_frame_factory("dm", lambda container=content_frame_container: build_dm_frame(container, current_palette))
 if build_achievements_frame is not None:
     register_frame_factory(
         "achievements",
-        lambda builder=build_achievements_frame: builder(content_body, current_palette),
+        lambda builder=build_achievements_frame, container=content_frame_container: builder(container, current_palette),
     )
 
 def complete_startup() -> None:
@@ -765,7 +766,6 @@ def check_loading_complete() -> bool:
         from data_layer import users, posts, messages
         
         # Check if UI is initialized 
-        from UI import _ui_state
         
         # Check if basic data structures exist
         if isinstance(users, dict) and isinstance(posts, list) and isinstance(messages, dict):

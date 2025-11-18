@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Minimal version of social media app for testing"""
 
-from pathlib import Path
 import customtkinter as ctk
 
 # Set appearance mode

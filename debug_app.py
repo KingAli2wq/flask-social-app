@@ -6,34 +6,10 @@ try:
     print("1. Starting imports...")
     
     from pathlib import Path
-    from typing import Dict, Optional
+    from typing import Dict
     import customtkinter as ctk
-    from PIL import Image
     print("   Basic imports OK")
     
-    from UI import (
-        build_dm_frame,
-        build_home_frame,
-        build_search_frame,
-        build_videos_frame,
-        build_inspect_profile_frame,
-        build_notifications_frame,
-        build_profile_frame,
-        handle_frame_shown,
-        handle_open_messages,
-        handle_show_notifications,
-        handle_sign_in,
-        initialize_ui,
-        register_nav_controls,
-        register_show_frame_callback,
-        refresh_views,
-        create_nav_button,
-        refresh_nav_icons,
-        set_active_nav,
-        set_nav_icon_key,
-        set_nav_palette,
-        update_theme_palette,
-    )
     print("   UI imports OK")
 
     print("2. Setting up constants...")

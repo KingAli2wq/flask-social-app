@@ -26,19 +26,6 @@ try:
 except ImportError:  # pragma: no cover - platform specific
 	winsound = None  # type: ignore
 
-try:
-	from PIL import Image, ImageDraw, ImageOps, ImageTk  # type: ignore
-except ImportError:  # pragma: no cover - optional dependency
-	Image = None  # type: ignore
-	ImageDraw = None  # type: ignore
-	ImageOps = None  # type: ignore
-	ImageTk = None  # type: ignore
-
-try:
-	import imageio  # type: ignore
-except ImportError:  # pragma: no cover - optional dependency
-	imageio = None  # type: ignore
-
 from DM import convo_id, render_dm, render_dm_sidebar
 from data_layer import (
 	BASE_DIR,
@@ -46,8 +33,6 @@ from data_layer import (
 	MEDIA_DIR,
 	PROFILE_PICS_DIR,
 	messages,
-	load_json,
-	MESSAGES_PATH,
 	now_ts,
 	persist,
 	posts,
@@ -59,11 +44,9 @@ from data_layer import (
 	purge_expired_stories,
 	STORY_TTL_SECONDS,
 	set_server_config,
-	refresh_remote_state,
 	was_last_remote_sync_successful,
 	last_remote_sync_error,
 	upload_media_asset,
-	ensure_all_media_local,
 	ensure_media_local,
 	get_remembered_user,
 	remember_user,
@@ -77,7 +60,7 @@ from global_state.helpers import (
 	toggle_post_reaction,
 	total_likes_for,
 )
-from achievements import ACHIEVEMENTS, ACHIEVEMENT_INDEX, compute_achievement_progress
+from achievements import ACHIEVEMENTS, compute_achievement_progress
 from Media import copy_image_to_profile_pics, load_image_for_tk as media_load_image, open_image
 from Media import copy_file_to_media
 from Profile import (
@@ -96,9 +79,26 @@ from ui_components import (
     MessageListComponent,
     NotificationListComponent,
     FeedComponent,
-    FollowButtonComponent,
     NotificationBadgeComponent,
 )
+
+try:
+	from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageOps as _ImageOps, ImageTk as _ImageTk  # type: ignore[attr-defined]
+except ImportError:  # pragma: no cover - optional dependency
+	Image = None  # type: ignore
+	ImageDraw = None  # type: ignore
+	ImageOps = None  # type: ignore
+	ImageTk = None  # type: ignore
+else:
+	Image = _Image
+	ImageDraw = _ImageDraw
+	ImageOps = _ImageOps
+	ImageTk = _ImageTk
+
+try:
+	import imageio  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency
+	imageio = None  # type: ignore
 
 
 Palette = dict[str, str]
@@ -548,7 +548,13 @@ _remote_sync_alerts: dict[str, str] = {}
 
 
 def _round_rect(box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
-	return tuple(int(round(v)) for v in box)
+	x1, y1, x2, y2 = box
+	return (
+		int(round(x1)),
+		int(round(y1)),
+		int(round(x2)),
+		int(round(y2)),
+	)
 
 
 def _round_points(points: list[tuple[float, float]]) -> list[tuple[int, int]]:
@@ -705,7 +711,10 @@ def _hex_to_rgb(value: str) -> tuple[int, int, int]:
 	hex_value = value.lstrip("#")
 	if len(hex_value) == 3:
 		hex_value = "".join(ch * 2 for ch in hex_value)
-	return tuple(int(hex_value[i : i + 2], 16) for i in range(0, 6, 2))
+	r = int(hex_value[0:2], 16)
+	g = int(hex_value[2:4], 16)
+	b = int(hex_value[4:6], 16)
+	return (r, g, b)
 
 
 def _tint_icon(base: "Image.Image", color_hex: str) -> "Image.Image":  # type: ignore[name-defined]
@@ -5365,6 +5374,52 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	return frame
 
 
+	def build_achievements_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
+		"""Standalone achievements view hosted by the shell."""
+		_set_palette(palette)
+		frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")
+		frame.grid_rowconfigure(1, weight=1)
+		frame.grid_columnconfigure(0, weight=1)
+
+		header = ctk.CTkLabel(
+			frame,
+			text="Achievements",
+			font=ctk.CTkFont(size=20, weight="bold"),
+			text_color=palette.get("text", "#e2e8f0"),
+		)
+		header.grid(row=0, column=0, sticky="w", padx=16, pady=(16, 6))
+
+		summary_label = ctk.CTkLabel(
+			frame,
+			text="",
+			anchor="w",
+			justify="left",
+			wraplength=520,
+			text_color=palette.get("muted", "#94a3b8"),
+		)
+		summary_label.grid(row=1, column=0, sticky="we", padx=16, pady=(0, 12))
+
+		list_frame = ctk.CTkScrollableFrame(
+			frame,
+			corner_radius=16,
+			fg_color="transparent",
+		)
+		list_frame.grid(row=2, column=0, sticky="nswe", padx=16, pady=(0, 16))
+		list_frame.grid_columnconfigure(0, weight=1)
+
+		_achievements_widgets.update(
+			{
+				"frame": frame,
+				"header": header,
+				"summary": summary_label,
+				"list": list_frame,
+			}
+		)
+
+		_render_achievements_view()
+		return frame
+
+
 def build_profile_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	_set_palette(palette)
 	frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")
@@ -6450,7 +6505,6 @@ def _render_profile_section() -> None:
 	achievements_preview: Optional[ctk.CTkFrame] = _profile_widgets.get("achievements_preview")
 	achievements_status: Optional[ctk.CTkLabel] = _profile_widgets.get("achievements_status")
 	achievements_button: Optional[ctk.CTkButton] = _profile_widgets.get("achievements_button")
-	achievements_card: Optional[ctk.CTkFrame] = _profile_widgets.get("achievements_card")
 	text_color = _palette.get("text", "#e2e8f0")
 	muted_color = _palette.get("muted", "#94a3b8")
 	if not info_lbl or not posts_frame:
@@ -6657,7 +6711,11 @@ def _render_profile_section() -> None:
 								"hover_color": _palette.get("surface", "#111b2e"),
 							}
 						)
-						follow_cmd = lambda user=suggested: _handle_unfollow(user)
+
+						def _make_unfollow_handler() -> None:
+							_handle_unfollow(suggested)
+
+						follow_cmd = _make_unfollow_handler
 					else:
 						button_kwargs.update(
 							{
@@ -6667,7 +6725,11 @@ def _render_profile_section() -> None:
 								"hover_color": _palette.get("accentHighlight", "#0ea5e9"),
 							}
 						)
-						follow_cmd = lambda user=suggested: _handle_follow(user)
+
+						def _make_follow_handler() -> None:
+							_handle_follow(suggested)
+
+						follow_cmd = _make_follow_handler
 					action_btn = ctk.CTkButton(row, command=follow_cmd, **button_kwargs)
 					action_btn.grid(row=0, column=1, rowspan=2, padx=12, pady=12)
 			else:

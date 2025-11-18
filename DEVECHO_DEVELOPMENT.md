@@ -3,6 +3,19 @@
 *Comprehensive documentation of all improvements, optimizations, and changes*
 
 
+## 🗓️ **November 18, 2025 - Structured Startup & Background Warmup**
+
+### ✅ **Completed Today:**
+1. **Sequenced Initialization Pipeline:** Replaced the ad-hoc splash initialization with `initialize_app_components()`, allowing each startup step (UI wiring, interface refresh, theme sync, first frame render) to run on the main loop without freezing the splash screen.
+2. **Deterministic Progress Feedback:** Upgraded the splash progress helper so determinate updates clamp safely and fall back to the indeterminate animation when no progress value is provided, preventing stalled bars.
+3. **Deferred Warmup Thread:** Introduced `_kickoff_background_warmup()` that hydrates remote state and media caches on a daemon thread after the shell is interactive, scheduling `refresh_ui()` only when the root window still exists.
+
+### 🧪 **Validation:**
+- Observed splash copy stepping through each startup stage with consistent timing and no UI stalls.
+- Verified the warmup thread fetches remote updates, triggers a safe UI refresh, and exits quietly when the window is already closed.
+- Confirmed the determinate progress bar clamps input values and resumes indeterminate animation whenever explicit progress is omitted.
+
+
 ## 🗓️ **November 14, 2025 - Instant Startup & Lazy Rendering**
 
 ### ✅ **Completed Today:**

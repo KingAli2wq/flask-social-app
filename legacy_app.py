@@ -1,3 +1,7 @@
+"""Legacy standalone version of the DevEcho UI."""
+
+# ruff: noqa
+
 import os
 import json
 import customtkinter as ctk

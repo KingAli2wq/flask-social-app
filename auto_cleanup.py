@@ -3,7 +3,6 @@
 Workspace cleanup utility - automatically removes temporary test files
 """
 
-import os
 from pathlib import Path
 
 def cleanup_workspace():
@@ -49,15 +48,15 @@ def cleanup_workspace():
                     print(f"❌ Failed to remove {file_path.name}: {e}")
     
     # Show essential files that were preserved
-    print(f"\n✅ Kept essential files:")
+    print("\n✅ Kept essential files:")
     for essential in essential_files:
         if (base_dir / essential).exists():
             print(f"   📄 {essential}")
     
-    print(f"\n📊 Summary:")
+    print("\n📊 Summary:")
     print(f"   🗑️ Removed: {removed_count} temporary files")
     print(f"   📄 Kept: {len(essential_files)} essential test files")
-    print(f"   📖 Documentation: DEVECHO_DEVELOPMENT.md")
+    print("   📖 Documentation: DEVECHO_DEVELOPMENT.md")
     
     return removed_count
 

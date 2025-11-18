@@ -6,15 +6,11 @@ Each component manages its own state and only re-renders when its specific data 
 """
 
 from __future__ import annotations
-from typing import Any, Callable, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional
 from dataclasses import dataclass
 import customtkinter as ctk
 import hashlib
 import json
-
-if TYPE_CHECKING:
-    from tkinter import PhotoImage
-
 
 @dataclass
 class ComponentState:
@@ -161,12 +157,6 @@ class MessageListComponent(BaseComponent):
         if not self.container:
             return
             
-        # Create signature based on message IDs and content
-        message_signatures = [
-            (msg.get("id"), self.compute_signature(msg)) 
-            for msg in messages
-        ]
-        
         current_ids = set(comp.message_id for comp in self.message_components.values())
         new_ids = set(msg.get("id") for msg in messages if msg.get("id"))
         
@@ -666,13 +656,10 @@ class NotificationBadgeComponent(BaseComponent):
             return
             
         # Update button appearance based on count
-        has_notifications = count > 0
-        
-        # This updates just the button state, not the entire nav bar
         try:
-            if hasattr(self.button_widget, 'configure'):
-                # Could add badge indicator or change icon here
-                pass
+            if hasattr(self.button_widget, "configure"):
+                label = "Notifications" if count <= 0 else f"Notifications ({count})"
+                self.button_widget.configure(text=label)
         except Exception:
             pass
 

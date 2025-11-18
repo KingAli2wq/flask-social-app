@@ -534,9 +534,16 @@ def render_dm(
 
                     handler: Optional[Callable[[], None]] = None
                     if open_attachment:
-                        handler = lambda att=file_att: open_attachment(att)
+                        def _handle_open_attachment(att=file_att) -> None:
+                            open_attachment(att)
+
+                        handler = _handle_open_attachment
                     elif open_image and file_att.get("path"):
-                        handler = lambda path=file_att.get("path"): open_image(path)
+                        def _handle_open_image(path=file_att.get("path")) -> None:
+                            if path:
+                                open_image(path)
+
+                        handler = _handle_open_image
 
                     if handler:
                         ctk.CTkButton(

@@ -695,10 +695,10 @@ def render_profile(
         return
 
     info = users.get(state.current_user, {})
-    followers = len(info.get("followers", []))
-    following = len(info.get("following", []))
-    total_posts = sum(1 for post in posts if post.get("author") == state.current_user)
-    total_likes = total_likes_for(state.current_user)
+    followers_count = len(info.get("followers", []))
+    following_count = len(info.get("following", []))
+    total_posts_count = sum(1 for post in posts if post.get("author") == state.current_user)
+    total_likes_count = total_likes_for(state.current_user)
     achievements = compute_achievement_progress(
         state.current_user,
         users=users,
@@ -720,6 +720,8 @@ def render_profile(
 
     details: list[str] = []
     details.append(f"Registered: {info.get('registered_at', 'Unknown')}")
+    details.append(f"Followers: {followers_count} · Following: {following_count}")
+    details.append(f"Posts: {total_posts_count} · Total likes: {total_likes_count}")
     bio = info.get("bio")
     if bio:
         details.append(f"Bio: {bio}")

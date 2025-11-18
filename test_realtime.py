@@ -14,8 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 def test_immediate_push_system():
     """Test the new immediate push system"""
     try:
-        from data_layer import push_immediate_update, persist_and_push
-        from UI import trigger_immediate_sync
+        from data_layer import push_immediate_update
         
         print("🔧 Testing Real-Time Push System")
         print("=" * 50)

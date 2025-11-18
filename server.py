@@ -1,10 +1,13 @@
-from flask import Flask, jsonify, request, send_from_directory, abort
-from flask_cors import CORS
-import os
-import json
 import base64
+import json
+import os
+import time
+from collections import defaultdict
 from threading import Lock
 from typing import Optional
+
+from flask import Flask, jsonify, request, send_from_directory, abort
+from flask_cors import CORS
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "server_data")
@@ -27,10 +30,6 @@ os.makedirs(MEDIA_ROOT, exist_ok=True)
 os.makedirs(PROFILE_PICS_ROOT, exist_ok=True)
 
 _lock = Lock()
-
-# Push notification system
-import time
-from collections import defaultdict
 
 # Track last update time for each resource type
 _last_updates = {
@@ -65,7 +64,6 @@ def _mark_client_updated(client_id: str, resource: str):
     _client_last_seen[client_id][resource] = _last_updates.get(resource, time.time())
 
 
-from typing import Optional
 
 
 def _safe_media_path(rel_path: str) -> Optional[str]:

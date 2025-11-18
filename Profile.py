@@ -3,7 +3,7 @@ from typing import Any, Callable, Optional
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 
 from achievements import compute_achievement_progress
 from data_layer import ensure_media_local

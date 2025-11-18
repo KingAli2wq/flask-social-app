@@ -3,9 +3,7 @@
 Quick app test to verify the loading fixes worked
 """
 
-import sys
 from pathlib import Path
-import time
 
 def test_app_startup():
     """Test if the app can start without errors"""
