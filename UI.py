@@ -5374,7 +5374,7 @@ def build_home_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 	return frame
 
 
-	def build_achievements_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
+def build_achievements_frame(container: ctk.CTkFrame, palette: Palette) -> ctk.CTkFrame:
 		"""Standalone achievements view hosted by the shell."""
 		_set_palette(palette)
 		frame = ctk.CTkFrame(container, corner_radius=12, fg_color="transparent")

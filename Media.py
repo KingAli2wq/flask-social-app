@@ -1,7 +1,7 @@
 import os
 import shutil
 import sys
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Union
 
 import tkinter as tk
 from tkinter import messagebox
@@ -18,6 +18,11 @@ try:
 except ImportError:
     Image = None  # type: ignore
     ImageTk = None  # type: ignore
+
+if TYPE_CHECKING:
+    from PIL import ImageTk as PilImageTk  # pragma: no cover
+
+PhotoImageLike = Union[tk.PhotoImage, "PilImageTk.PhotoImage"]
 
 _ALLOWED_IMAGE_EXTENSIONS = {".png", ".gif", ".jpg", ".jpeg", ".webp"}
 _MAX_ATTACHMENT_BYTES = 200 * 1024 * 1024  # 200 MB
@@ -131,7 +136,7 @@ def copy_image_to_profile_pics(
         return None
 
 
-def _create_loading_placeholder(max_width: int) -> Optional[tk.PhotoImage]:
+def _create_loading_placeholder(max_width: int) -> Optional[PhotoImageLike]:
     """Create a simple loading placeholder image when media is not available"""
     if not (Image and ImageTk and ImageDraw):
         return None
@@ -155,7 +160,7 @@ def _create_loading_placeholder(max_width: int) -> Optional[tk.PhotoImage]:
         return None
 
 
-def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Optional[tk.PhotoImage]:
+def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Optional[PhotoImageLike]:
     if os.path.isabs(rel_path):
         abs_path = rel_path
     else:
@@ -195,7 +200,7 @@ def load_image_for_tk(rel_path: str, *, base_dir: str, max_width: int) -> Option
         width = photo.width()
         if width > max_width:
             factor = max(1, int(width / max_width))
-            photo = photo.subsample(factor, factor)
+            photo = photo.subsample(factor)
         return photo
     except Exception:
         return None
