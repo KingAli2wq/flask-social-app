@@ -8018,6 +8018,7 @@ def _open_create_group_modal() -> None:
 			)
 			if notification_delivered:
 				trigger_immediate_sync("notifications")
+				_refresh_notifications_ui()
 		persist()
 	_request_render("dm")
 	_request_render("notifications")
@@ -8161,6 +8162,7 @@ def _handle_send_dm() -> None:
 		_notify_remote_sync_issue("messages", "deliver the message")
 	if notifications_sent:
 		trigger_immediate_sync("notifications")
+		_refresh_notifications_ui()
 	if media_sync_failed:
 		_notify_remote_sync_issue("media", "upload the message attachments")
 	entry.delete(0, tk.END)
