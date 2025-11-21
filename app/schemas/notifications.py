@@ -10,7 +10,7 @@ from pydantic import BaseModel
 class NotificationResponse(BaseModel):
     id: UUID
     recipient_id: UUID
-    actor_id: UUID | None
+    sender_id: UUID
     type: str
     content: str
     created_at: datetime

@@ -38,7 +38,17 @@ class User(Base):
         foreign_keys="Message.recipient_id",
         back_populates="recipient",
     )
-    notifications = relationship("Notification", back_populates="recipient", cascade="all, delete-orphan")
+    notifications_received = relationship(
+        "Notification",
+        foreign_keys="Notification.recipient_id",
+        back_populates="recipient",
+        cascade="all, delete-orphan",
+    )
+    notifications_sent = relationship(
+        "Notification",
+        foreign_keys="Notification.sender_id",
+        back_populates="sender",
+    )
     owned_group_chats = relationship("GroupChat", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupChat", secondary=group_chat_members, back_populates="members")
     media_assets = relationship("MediaAsset", back_populates="uploader", cascade="all, delete-orphan")

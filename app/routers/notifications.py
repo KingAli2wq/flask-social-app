@@ -16,7 +16,7 @@ def _to_notification_response(record: Notification) -> NotificationResponse:
     return NotificationResponse(
         id=record.id,
         recipient_id=record.recipient_id,
-        actor_id=record.actor_id,
+        sender_id=record.sender_id,
         type=record.type,
         content=record.content,
         created_at=record.created_at,
@@ -40,7 +40,7 @@ async def create_notification(
     db: Session = Depends(get_session),
 ) -> NotificationResponse:
     try:
-        record = add_notification(db, recipient_id=current_user.id, content=content, actor_id=current_user.id)
+        record = add_notification(db, recipient_id=current_user.id, content=content, sender_id=current_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return _to_notification_response(record)

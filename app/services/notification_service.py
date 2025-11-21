@@ -25,7 +25,7 @@ def add_notification(
     *,
     recipient_id: UUID,
     content: str,
-    actor_id: UUID | None = None,
+    sender_id: UUID,
     type_: str = DEFAULT_NOTIFICATION_TYPE,
 ) -> Notification:
     """Persist a new notification for the given recipient."""
@@ -34,12 +34,12 @@ def add_notification(
     if recipient is None:
         raise ValueError("Recipient does not exist")
 
-    if actor_id is not None and db.get(User, actor_id) is None:
-        raise ValueError("Actor does not exist")
+    if db.get(User, sender_id) is None:
+        raise ValueError("Sender does not exist")
 
     notification = Notification(
         recipient_id=recipient_id,
-        actor_id=actor_id,
+        sender_id=sender_id,
         type=type_,
         content=content,
     )

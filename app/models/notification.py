@@ -21,14 +21,22 @@ class Notification(Base):
         nullable=False,
         index=True,
     )
-    actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    sender_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     type = Column(String(100), nullable=False)
     content = Column(Text, nullable=False)
     read = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    recipient = relationship("User", foreign_keys=[recipient_id], back_populates="notifications")
-    actor = relationship("User", foreign_keys=[actor_id])
+    recipient = relationship(
+        "User",
+        foreign_keys=[recipient_id],
+        back_populates="notifications_received",
+    )
+    sender = relationship(
+        "User",
+        foreign_keys=[sender_id],
+        back_populates="notifications_sent",
+    )
 
 
 __all__ = ["Notification"]
