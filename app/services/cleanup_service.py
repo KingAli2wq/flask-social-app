@@ -10,7 +10,7 @@ from sqlalchemy import delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db import Message, Notification, Post
+from ..models import Message, Notification, Post
 
 logger = logging.getLogger(__name__)
 

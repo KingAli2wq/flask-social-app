@@ -1,22 +1,29 @@
-"""Domain model for group chat metadata."""
+"""SQLAlchemy ORM model for group chats."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List
-from uuid import uuid4
+import uuid
 
-from .base import utc_now
+from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-
-@dataclass
-class GroupChatRecord:
-    name: str
-    owner: str
-    members: List[str]
-    id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: datetime = field(default_factory=utc_now)
-    updated_at: datetime = field(default_factory=utc_now)
+from app.database import Base
+from .associations import group_chat_members
 
 
-__all__ = ["GroupChatRecord"]
+class GroupChat(Base):
+    __tablename__ = "group_chats"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(120), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    owner = relationship("User", back_populates="owned_group_chats")
+    members = relationship("User", secondary=group_chat_members, back_populates="group_memberships")
+    messages = relationship("Message", back_populates="group_chat", cascade="all, delete-orphan")
+
+
+__all__ = ["GroupChat"]

@@ -4,9 +4,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from ..database import FakeDatabase, get_database, get_session
-from ..db import Message, User
-from ..models import GroupChatRecord
+from ..database import get_session
+from ..models import GroupChat, Message, User
 from ..schemas import (
     GroupChatCreate,
     GroupChatResponse,
@@ -32,12 +31,22 @@ def _to_message_response(message: Message) -> MessageResponse:
     )
 
 
-def _to_group_response(chat: GroupChatRecord) -> GroupChatResponse:
+def _to_group_response(chat: GroupChat) -> GroupChatResponse:
+    owner_username = chat.owner.username if chat.owner else ""
+    members: list[str] = []
+    for member in chat.members:
+        username = member.username
+        if username not in members:
+            members.append(username)
+    if owner_username:
+        if owner_username in members:
+            members.remove(owner_username)
+        members.insert(0, owner_username)
     return GroupChatResponse(
         id=chat.id,
         name=chat.name,
-        owner=chat.owner,
-        members=chat.members,
+        owner=owner_username,
+        members=members,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
     )
@@ -48,9 +57,8 @@ async def send_message_endpoint(
     payload: MessageSendRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
-    legacy_store: FakeDatabase = Depends(get_database),
 ) -> MessageResponse:
-    record = send_message(db, sender=current_user, payload=payload, legacy_store=legacy_store)
+    record = send_message(db, sender=current_user, payload=payload)
     return _to_message_response(record)
 
 
@@ -68,7 +76,7 @@ async def thread_endpoint(
 async def create_group_endpoint(
     payload: GroupChatCreate,
     current_user: User = Depends(get_current_user),
-    db: FakeDatabase = Depends(get_database),
+    db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = create_group_chat(db, current_user, payload)
     return _to_group_response(chat)

@@ -40,7 +40,7 @@ class GroupChatCreate(BaseModel):
 
 
 class GroupChatResponse(BaseModel):
-    id: str
+    id: UUID
     name: str
     owner: str
     members: List[str]

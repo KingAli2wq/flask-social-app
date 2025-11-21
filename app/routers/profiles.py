@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..db import User
+from ..models import User
 from ..schemas import ProfileResponse, ProfileUpdateRequest
 from ..services import get_current_user, get_profile, update_profile
 

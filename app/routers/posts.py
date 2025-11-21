@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..db import User
+from ..models import User
 from ..schemas import PostFeedResponse, PostResponse
 from ..services import (
     SpacesUploadError,
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/posts", tags=["posts"])
 
 @router.post("/", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
 async def create_post_endpoint(
-    content: str = Form(..., min_length=1),
+    caption: str = Form(..., min_length=1),
     media_asset_id: UUID | None = Form(None),
     file: UploadFile | None = File(None),
     db: Session = Depends(get_session),
@@ -33,7 +33,7 @@ async def create_post_endpoint(
 
     The endpoint expects ``multipart/form-data`` when a file is supplied. If no
     file accompanies the request, the client may still submit a form payload
-    containing only ``content`` and ``user_id``.
+    containing only ``caption`` and ``user_id``.
     """
 
     media_url: str | None = None
@@ -58,7 +58,7 @@ async def create_post_endpoint(
     post = create_post_record(
         db,
         user_id=current_user.id,
-        content=content,
+        caption=caption,
         media_url=media_url,
         media_asset_id=resolved_media_asset_id,
     )

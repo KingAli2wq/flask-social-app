@@ -1,12 +1,15 @@
-"""Shared utilities for model definitions."""
+"""Utility mixins shared across ORM models."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from sqlalchemy import Column, DateTime
+from sqlalchemy.sql import func
 
 
-def utc_now() -> datetime:
-    """Return a timezone-aware UTC timestamp."""
-    return datetime.now(tz=timezone.utc)
+class TimestampMixin:
+    """Reusable timestamp columns with timezone-aware defaults."""
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
-__all__ = ["utc_now"]
+__all__ = ["TimestampMixin"]

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..db import Notification, User
+from ..models import Notification, User
 from ..schemas import NotificationListResponse, NotificationResponse
 from ..services import add_notification, get_current_user, list_notifications, mark_all_read
 

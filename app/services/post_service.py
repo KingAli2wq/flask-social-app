@@ -9,14 +9,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db import MediaAsset, Post, User
+from ..models import MediaAsset, Post, User
 
 
 def create_post_record(
     db: Session,
     *,
     user_id: UUID,
-    content: str,
+    caption: str,
     media_url: str | None,
     media_asset_id: UUID | None = None,
 ) -> Post:
@@ -33,7 +33,7 @@ def create_post_record(
         if media_url is None:
             media_url = asset.url
 
-    post = Post(user_id=user_id, content=content, media_url=media_url, media_asset_id=media_asset_id)
+    post = Post(user_id=user_id, caption=caption, media_url=media_url, media_asset_id=media_asset_id)
     db.add(post)
     db.commit()
     db.refresh(post)

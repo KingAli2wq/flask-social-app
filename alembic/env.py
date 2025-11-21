@@ -14,6 +14,7 @@ sys.path.append(str(BASE_DIR))
 # Load settings + SQLAlchemy Base
 from app.config import get_settings
 from app.database import Base
+import app.models  # noqa: F401
 
 config = context.config
 
@@ -23,7 +24,7 @@ if config.config_file_name is not None:
 
 # Load database URL from .env via Settings()
 settings = get_settings()
-database_url = settings.database_url
+database_url: str = settings.database_url
 
 # Inject DB URL into Alembic config
 config.set_main_option("sqlalchemy.url", database_url)
@@ -46,7 +47,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        config.get_section(config.config_ini_section) or {},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -66,3 +67,4 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+    

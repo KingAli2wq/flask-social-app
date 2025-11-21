@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db import User
+from ..models import User
 from ..schemas import ProfileUpdateRequest
 
 

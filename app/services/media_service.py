@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db import MediaAsset
+from ..models import MediaAsset
 
 
 def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:

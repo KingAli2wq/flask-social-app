@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..db import User
+from ..models import User
 from ..schemas import MediaUploadResponse
 from ..services import SpacesUploadError, get_current_user, upload_file_to_spaces
 

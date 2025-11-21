@@ -1,24 +1,28 @@
-"""Domain model for posts."""
+"""SQLAlchemy ORM model for posts."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Set
-from uuid import uuid4
+import uuid
 
-from .base import utc_now
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-
-@dataclass
-class PostRecord:
-    author: str
-    content: str
-    attachments: List[str] = field(default_factory=list)
-    id: str = field(default_factory=lambda: uuid4().hex)
-    created_at: datetime = field(default_factory=utc_now)
-    updated_at: datetime | None = None
-    likes: Set[str] = field(default_factory=set)
-    dislikes: Set[str] = field(default_factory=set)
+from app.database import Base
 
 
-__all__ = ["PostRecord"]
+class Post(Base):
+    __tablename__ = "posts"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    caption = Column(Text, nullable=False)
+    media_url = Column(String(1024), nullable=True)
+    media_asset_id = Column(UUID(as_uuid=True), ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    author = relationship("User", back_populates="posts")
+    media_asset = relationship("MediaAsset", back_populates="posts")
+
+
+__all__ = ["Post"]

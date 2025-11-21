@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class PostCreate(BaseModel):
     """Payload used by API clients when constructing a post."""
 
-    content: str = Field(..., min_length=1, max_length=280)
+    caption: str = Field(..., min_length=1, max_length=280)
     user_id: UUID
     media_url: str | None = None
     media_asset_id: UUID | None = None
@@ -23,7 +23,7 @@ class PostResponse(BaseModel):
 
     id: UUID
     user_id: UUID
-    content: str
+    caption: str
     media_url: str | None = None
     media_asset_id: UUID | None = None
     created_at: datetime

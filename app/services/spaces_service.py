@@ -20,7 +20,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
-from ..db import MediaAsset
+from ..models import MediaAsset
 
 load_dotenv()
 

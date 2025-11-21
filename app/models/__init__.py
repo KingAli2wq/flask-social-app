@@ -1,14 +1,18 @@
-"""Convenience exports for model layer."""
-from .group_chat import GroupChatRecord
-from .message import MessageRecord
-from .notification import NotificationRecord
-from .post import PostRecord
-from .user import UserRecord
+"""Convenience exports for ORM models."""
+from .associations import group_chat_members
+from .group_chat import GroupChat
+from .media import MediaAsset
+from .message import Message
+from .notification import Notification
+from .post import Post
+from .user import User
 
 __all__ = [
-    "GroupChatRecord",
-    "MessageRecord",
-    "NotificationRecord",
-    "PostRecord",
-    "UserRecord",
+    "group_chat_members",
+    "GroupChat",
+    "MediaAsset",
+    "Message",
+    "Notification",
+    "Post",
+    "User",
 ]

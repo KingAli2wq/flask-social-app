@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..db import Notification, User
+from ..models import Notification, User
 
 DEFAULT_NOTIFICATION_TYPE = "generic"
 

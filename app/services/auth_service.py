@@ -16,7 +16,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..db import User
+from ..models import User
 from ..schemas import RegisterRequest
 
 logger = logging.getLogger(__name__)
