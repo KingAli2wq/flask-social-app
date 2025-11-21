@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
 
-from ..database import FakeDatabase, get_database
-from ..models import GroupChatRecord, MessageRecord, UserRecord
+from ..database import FakeDatabase, get_database, get_session
+from ..db import Message, User
+from ..models import GroupChatRecord
 from ..schemas import (
     GroupChatCreate,
     GroupChatResponse,
@@ -17,13 +19,15 @@ from ..services import create_group_chat, get_current_user, list_messages, send_
 router = APIRouter(prefix="/messages", tags=["messages"])
 
 
-def _to_message_response(message: MessageRecord) -> MessageResponse:
+def _to_message_response(message: Message) -> MessageResponse:
+    attachments = message.attachments or []
     return MessageResponse(
         id=message.id,
         chat_id=message.chat_id,
-        sender=message.sender,
+        sender_id=message.sender_id,
+        recipient_id=message.recipient_id,
         content=message.content,
-        attachments=message.attachments,
+        attachments=attachments,
         created_at=message.created_at,
     )
 
@@ -42,27 +46,28 @@ def _to_group_response(chat: GroupChatRecord) -> GroupChatResponse:
 @router.post("/send", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def send_message_endpoint(
     payload: MessageSendRequest,
-    current_user: UserRecord = Depends(get_current_user),
-    db: FakeDatabase = Depends(get_database),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+    legacy_store: FakeDatabase = Depends(get_database),
 ) -> MessageResponse:
-    record = send_message(db, current_user, payload)
+    record = send_message(db, sender=current_user, payload=payload, legacy_store=legacy_store)
     return _to_message_response(record)
 
 
 @router.get("/{chat_id}", response_model=MessageThreadResponse)
 async def thread_endpoint(
     chat_id: str,
-    current_user: UserRecord = Depends(get_current_user),
-    db: FakeDatabase = Depends(get_database),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
 ) -> MessageThreadResponse:
-    messages = list_messages(db, chat_id)
+    messages = list_messages(db, chat_id=chat_id)
     return MessageThreadResponse(chat_id=chat_id, messages=[_to_message_response(item) for item in messages])
 
 
 @router.post("/groups", response_model=GroupChatResponse, status_code=status.HTTP_201_CREATED)
 async def create_group_endpoint(
     payload: GroupChatCreate,
-    current_user: UserRecord = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: FakeDatabase = Depends(get_database),
 ) -> GroupChatResponse:
     chat = create_group_chat(db, current_user, payload)

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ app_name }}{% if page_title %} • {{ page_title }}{% endif %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,line-clamp"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', system-ui, sans-serif; }
+        body.light-theme { background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%); color: #0f172a; }
+        body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.92) !important; color: #0f172a; box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.35); border-color: rgba(148, 163, 184, 0.25) !important; }
+        body.light-theme .text-slate-400 { color: #475569 !important; }
+        body.light-theme .text-slate-500 { color: #64748b !important; }
+        ::selection { background-color: rgba(129,140,248,0.4); }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: rgba(148,163,184,0.4); border-radius: 9999px; }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
+    {{ components.feedback.toast_container() | safe }}
+    {{ components.layout.navbar(active=active_nav) | safe }}
+    <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
+        {% block content %}{% endblock %}
+    </main>
+    <script src="/assets/js/app.js" defer></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

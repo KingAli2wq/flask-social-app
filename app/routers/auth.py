@@ -1,48 +1,51 @@
-"""Authentication related API routes."""
+"""Authentication related API routes backed by PostgreSQL."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from ..database import FakeDatabase, get_database
-from ..models import UserRecord
-from ..schemas import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
-from ..services import authenticate_user, get_current_user, issue_token, register_user
+from ..database import get_session
+from ..db import User
+from ..schemas import AuthResponse, LoginRequest, ProfileResponse, RegisterRequest
+from ..services import authenticate_user, create_access_token, get_current_user, register_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _to_public_profile(user: UserRecord) -> UserPublicProfile:
-    return UserPublicProfile(
+def _to_profile_response(user: User) -> ProfileResponse:
+    return ProfileResponse(
+        id=user.id,
         username=user.username,
         email=user.email,
         bio=user.bio,
         location=user.location,
         website=user.website,
+        created_at=user.created_at,
+        last_active_at=user.last_active_at,
     )
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register_endpoint(
     payload: RegisterRequest,
-    db: FakeDatabase = Depends(get_database),
+    db: Session = Depends(get_session),
 ) -> AuthResponse:
-    user = register_user(db, payload)
-    token = issue_token(user)
-    return AuthResponse(access_token=token)
+    user, token = register_user(db, payload)
+    return AuthResponse(access_token=token, user_id=user.id, bio=user.bio)
 
 
 @router.post("/login", response_model=AuthResponse)
 async def login_endpoint(
     payload: LoginRequest,
-    db: FakeDatabase = Depends(get_database),
+    db: Session = Depends(get_session),
 ) -> AuthResponse:
     user = authenticate_user(db, payload.username, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-    token = issue_token(user)
-    return AuthResponse(access_token=token)
+    token = create_access_token(user.id)
+    return AuthResponse(access_token=token, user_id=user.id, bio=user.bio)
 
 
-@router.get("/me", response_model=UserPublicProfile)
-async def me_endpoint(current_user: UserRecord = Depends(get_current_user)) -> UserPublicProfile:
-    return _to_public_profile(current_user)
+@router.get("/me", response_model=ProfileResponse)
+async def me_endpoint(current_user: User = Depends(get_current_user)) -> ProfileResponse:
+    return _to_profile_response(current_user)

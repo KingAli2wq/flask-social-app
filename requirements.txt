@@ -1,8 +1,42 @@
+# GUI & Media
 customtkinter>=5.0
 Pillow>=9.0
 imageio>=2.9
 imageio-ffmpeg>=0.4
+opencv-python>=4.8
+numpy>=1.27
+
+# HTTP & Environment
 requests>=2.0
+httpx>=0.25
+python-dotenv>=1.0
+
+# Web Backend
 fastapi>=0.115
 uvicorn[standard]>=0.23
-python-dotenv>=1.0
+starlette>=0.27
+
+# Database & ORM
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+alembic>=1.17
+pydantic>=2.0
+typing-extensions>=4.0
+
+# File Uploads & Validation
+python-multipart>=0.0.6
+email-validator>=2.1
+
+# Security & Authentication
+passlib[bcrypt]>=1.7
+python-jose[cryptography]>=3.3
+
+# AWS / Cloud
+boto3>=1.28
+
+# Development & Testing
+pytest>=7.0
+pytest-asyncio>=0.21
+black>=24.0
+isort>=6.0
+mypy>=1.5

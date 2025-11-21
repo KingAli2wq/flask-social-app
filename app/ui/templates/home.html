@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid gap-8 lg:grid-cols-[2fr,1fr]">
+    <div class="flex flex-col gap-8">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
+            <header class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-lg font-semibold text-white">Share something new</h1>
+                    <p class="text-sm text-slate-400">Post updates, media, or shout-outs to your community.</p>
+                </div>
+                <span class="hidden rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-medium text-indigo-300 md:inline-flex">Realtime</span>
+            </header>
+            <form id="composer-form" class="mt-6 flex flex-col gap-4" enctype="multipart/form-data">
+                {{ components.forms.textarea("content", label="What's happening?", placeholder="Share an update, celebrate a win, or drop a hot take…", rows=4, required=True) | safe }}
+                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                        {{ components.forms.file_input("media", label="Attach media") | safe }}
+                        <div id="media-preview" class="hidden overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900/70">
+                            <img id="media-preview-image" class="h-24 w-24 object-cover" alt="Preview" />
+                        </div>
+                    </div>
+                    {{ components.buttons.primary("Publish", id_="post-submit", icon="🚀") | safe }}
+                </div>
+            </form>
+        </section>
+
+        <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-white">Your feed</h2>
+                <span id="feed-count" class="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-400">0 posts</span>
+            </div>
+            <div id="feed-loading" class="mt-6">{{ components.feedback.loading_spinner(label="Fetching posts") | safe }}</div>
+            <div id="feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+                No posts yet. Be the first to kick off the conversation!
+            </div>
+            <div id="feed-list" class="mt-6 grid gap-6"></div>
+            <div class="mt-8 flex justify-center">
+                <button id="feed-load-more" class="hidden rounded-full border border-slate-700/70 px-6 py-2 text-sm text-slate-300 transition hover:border-indigo-500 hover:text-indigo-200">Load more</button>
+            </div>
+        </section>
+    </div>
+    <aside class="flex flex-col gap-6">
+        <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
+            <h2 class="text-base font-semibold text-white">Trending tags</h2>
+            <ul id="trends" class="mt-4 space-y-3 text-sm text-indigo-300">
+                <li class="flex items-center justify-between"><span>#fastapi</span><span class="text-slate-500">12.4K</span></li>
+                <li class="flex items-center justify-between"><span>#buildinpublic</span><span class="text-slate-500">8.8K</span></li>
+                <li class="flex items-center justify-between"><span>#tailwind</span><span class="text-slate-500">5.6K</span></li>
+            </ul>
+        </section>
+        <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
+            <div class="flex items-center justify-between">
+                <h2 class="text-base font-semibold text-white">Media drafts</h2>
+                <a href="/media" class="text-xs font-medium text-indigo-300 hover:text-indigo-200">Manage</a>
+            </div>
+            <div id="media-drafts" class="mt-4 flex h-24 items-center justify-center rounded-2xl border border-dashed border-slate-700/70 text-sm text-slate-500">
+                Upload new media to see a preview here.
+            </div>
+        </section>
+    </aside>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        window.UI.initFeedPage();
+    });
+</script>
+{% endblock %}

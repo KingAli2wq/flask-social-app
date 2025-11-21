@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card-surface grid h-[75vh] gap-8 rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
+    <aside class="flex h-full flex-col">
+        <header class="flex items-center justify-between">
+            <h1 class="text-lg font-semibold text-white">Messages</h1>
+            <button id="new-chat" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">New chat</button>
+        </header>
+        <div id="conversation-list" class="scrollbar-thin mt-6 flex-1 overflow-y-auto divide-y divide-slate-800/70">
+            <p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>
+        </div>
+    </aside>
+    <div class="card-surface flex h-full flex-col rounded-3xl border border-slate-800/60 bg-slate-950/60">
+        <header id="chat-header" class="flex items-center justify-between border-b border-slate-800/60 px-6 py-4">
+            <div>
+                <h2 class="text-base font-semibold text-white">Select a conversation</h2>
+                <p class="text-xs text-slate-500">Choose someone from the sidebar to start chatting.</p>
+            </div>
+            <span class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Secure</span>
+        </header>
+        <div id="message-thread" class="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-6 py-6">
+            <div class="rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
+                Messages will appear here once you select a chat.
+            </div>
+        </div>
+        <form id="message-form" class="border-t border-slate-800/60 px-6 py-4">
+            <div class="flex flex-col gap-4 md:flex-row md:items-end">
+                <div class="flex-1">
+                    {{ components.forms.textarea("message", label="Message", placeholder="Say hello…", rows=2, required=True) | safe }}
+                </div>
+                <div class="flex flex-col gap-3 md:w-48">
+                    {{ components.forms.text_input("chat_id", label="Chat ID", placeholder="team-alpha", required=False) | safe }}
+                    {{ components.forms.text_input("recipient_id", label="Recipient ID", placeholder="UUID", required=False) | safe }}
+                    {{ components.buttons.primary("Send", id_="message-send", icon="📨") | safe }}
+                </div>
+            </div>
+            <div id="message-feedback" class="mt-4 hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
+        </form>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        window.UI.initMessagesPage();
+    });
+</script>
+{% endblock %}

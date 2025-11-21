@@ -1,85 +1,161 @@
-"""Business logic for authentication and authorization."""
+"""Business logic for authentication and authorization backed by PostgreSQL."""
 from __future__ import annotations
 
-import hashlib
-import secrets
-from typing import Dict, Optional
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
-from ..database import FakeDatabase, get_database
-from ..models import UserRecord
+from ..database import get_session
+from ..db import User
 from ..schemas import RegisterRequest
 
+logger = logging.getLogger(__name__)
+
 _security = HTTPBearer(auto_error=False)
-_TOKENS: Dict[str, str] = {}
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+DEFAULT_TOKEN_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", "1440"))
 
 
-def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+def _get_jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+    return secret
 
 
-def _verify_password(password: str, password_hash: str) -> bool:
-    return secrets.compare_digest(_hash_password(password), password_hash)
+def hash_password(password: str) -> str:
+    """Hash a plain-text password using bcrypt."""
+
+    return _pwd_context.hash(password)
 
 
-def register_user(db: FakeDatabase, payload: RegisterRequest) -> UserRecord:
-    if db.get_user(payload.username):
+def verify_password(password: str, hashed_password: str) -> bool:
+    """Verify that ``password`` matches ``hashed_password``."""
+
+    try:
+        return _pwd_context.verify(password, hashed_password)
+    except Exception:  # pragma: no cover - passlib internal errors are rare
+        logger.exception("Password verification failed due to an unexpected error")
+        return False
+
+
+def create_access_token(subject: UUID, *, expires_minutes: Optional[int] = None) -> str:
+    """Create a signed JWT holding the provided ``subject``."""
+
+    expire_delta = timedelta(minutes=expires_minutes or DEFAULT_TOKEN_MINUTES)
+    now = datetime.now(timezone.utc)
+    payload = {"sub": str(subject), "exp": now + expire_delta, "iat": now}
+    token = jwt.encode(payload, _get_jwt_secret(), algorithm=ALGORITHM)
+    return token
+
+
+def decode_access_token(token: str) -> UUID:
+    """Decode and validate a JWT, returning the embedded subject UUID."""
+
+    try:
+        payload = jwt.decode(token, _get_jwt_secret(), algorithms=[ALGORITHM])
+    except JWTError as exc:  # pragma: no cover - dependent on invalid tokens
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+
+    subject = payload.get("sub")
+    if not subject:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    try:
+        return UUID(subject)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload") from exc
+
+
+def register_user(db: Session, payload: RegisterRequest) -> Tuple[User, str]:
+    """Persist a new user and return the user with an access token."""
+
+    existing_username = db.scalar(select(User).where(User.username == payload.username))
+    if existing_username:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already in use")
-    record = UserRecord(
+
+    if payload.email:
+        existing_email = db.scalar(select(User).where(User.email == str(payload.email)))
+        if existing_email:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    hashed = hash_password(payload.password)
+
+    bio: str | None = payload.bio.strip() if payload.bio else None
+
+    user = User(
         username=payload.username,
-        password_hash=_hash_password(payload.password),
         email=str(payload.email) if payload.email else None,
+        hashed_password=hashed,
+        bio=bio,
     )
-    db.create_user(record)
-    return record
+
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.exception("Failed to register user")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to register user") from exc
+
+    token = create_access_token(user.id)
+    return user, token
 
 
-def authenticate_user(db: FakeDatabase, username: str, password: str) -> Optional[UserRecord]:
-    user = db.get_user(username)
+def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
+    """Authenticate a user against stored credentials."""
+
+    user = db.scalar(select(User).where(User.username == username))
     if not user:
         return None
-    if not _verify_password(password, user.password_hash):
+    if not verify_password(password, user.hashed_password):
         return None
     return user
 
 
-def issue_token(user: UserRecord) -> str:
-    token = secrets.token_hex(32)
-    _TOKENS[token] = user.username
-    return token
-
-
-def revoke_token(token: str) -> None:
-    _TOKENS.pop(token, None)
-
-
-def resolve_user_by_token(db: FakeDatabase, token: str) -> Optional[UserRecord]:
-    username = _TOKENS.get(token)
-    if not username:
-        return None
-    return db.get_user(username)
-
-
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
-    db: FakeDatabase = Depends(get_database),
-) -> UserRecord:
+    db: Session = Depends(get_session),
+) -> User:
+    """Resolve the authenticated user from the provided bearer token."""
+
     if not credentials or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
-    token = credentials.credentials
-    user = resolve_user_by_token(db, token)
+
+    user_id = decode_access_token(credentials.credentials)
+
+    user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    try:
+        user.last_active_at = datetime.now(timezone.utc)
+        db.commit()
+    except SQLAlchemyError:  # pragma: no cover - defensive logging
+        db.rollback()
+        logger.warning("Failed to update last_active_at for user %s", user.id)
+
     return user
 
 
 __all__ = [
     "register_user",
     "authenticate_user",
-    "issue_token",
-    "revoke_token",
-    "resolve_user_by_token",
+    "create_access_token",
+    "decode_access_token",
+    "hash_password",
+    "verify_password",
     "get_current_user",
 ]

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid gap-8 lg:grid-cols-[1fr,2fr]">
+    <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+        <div class="flex flex-col items-center gap-4 text-center">
+            <div class="relative">
+                <img id="profile-avatar" src="https://ui-avatars.com/api/?background=3730a3&color=fff" alt="Avatar" class="h-28 w-28 rounded-full border-4 border-indigo-500/40 object-cover shadow-lg">
+                <button id="profile-upload-trigger" class="absolute bottom-0 right-0 rounded-full bg-indigo-600 p-2 text-white shadow-lg shadow-indigo-500/40"><span class="text-sm">📷</span></button>
+            </div>
+            <div>
+                <h1 id="profile-username" class="text-xl font-semibold text-white">@username</h1>
+                <p id="profile-location" class="text-sm text-slate-400">Location</p>
+            </div>
+            <p id="profile-bio" class="text-sm text-slate-300">Bio will appear here once updated.</p>
+            <a id="profile-website" href="#" target="_blank" class="text-sm font-medium text-indigo-300 hover:text-indigo-200">Website</a>
+        </div>
+        <dl class="mt-8 grid grid-cols-2 gap-4 text-center">
+            <div class="rounded-2xl bg-slate-900/90 p-4">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Posts</dt>
+                <dd id="profile-post-count" class="mt-1 text-lg font-semibold text-white">0</dd>
+            </div>
+            <div class="rounded-2xl bg-slate-900/90 p-4">
+                <dt class="text-xs uppercase tracking-wide text-slate-500">Member since</dt>
+                <dd id="profile-created" class="mt-1 text-lg font-semibold text-white">—</dd>
+            </div>
+        </dl>
+        <form id="profile-media-form" class="hidden" enctype="multipart/form-data">
+            <input type="file" id="profile-media" name="media" accept="image/*">
+        </form>
+    </aside>
+    <div class="flex flex-col gap-8">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+            <header class="flex items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-white">Edit profile</h2>
+                    <p class="text-sm text-slate-400">Craft a profile that tells your story.</p>
+                </div>
+                {{ components.buttons.primary("Save changes", id_="profile-save", icon="💾") | safe }}
+            </header>
+            <form id="profile-form" class="mt-6 grid gap-6">
+                {{ components.forms.text_input("location", label="Location", placeholder="New York, USA", required=False) | safe }}
+                {{ components.forms.text_input("website", label="Website", placeholder="https://example.com", required=False, type_="url") | safe }}
+                {{ components.forms.textarea("bio", label="Bio", placeholder="Share what you're building…", rows=4, required=False) | safe }}
+                <div id="profile-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
+            </form>
+        </section>
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+            <header class="flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-white">Recent posts</h2>
+                <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Auto-updates</span>
+            </header>
+            <div id="profile-feed-loading" class="mt-6">{{ components.feedback.loading_spinner(label="Loading posts") | safe }}</div>
+            <div id="profile-feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+                No posts yet. Share something from the feed to see it here.
+            </div>
+            <div id="profile-feed" class="mt-6 grid gap-6"></div>
+        </section>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        window.UI.initProfilePage();
+    });
+</script>
+{% endblock %}

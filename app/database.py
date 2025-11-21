@@ -1,13 +1,24 @@
-"""Application data access layer.
+"""Database layer utilities.
 
-This module exposes a very small in-memory data store that simulates the
-behaviour of a database. The functions mirror CRUD style interactions so that
-they can be swapped with a real database implementation (for example,
-SQLAlchemy + PostgreSQL) at a later time without touching the routers.
+This module now exposes two complementary database helpers:
+
+* A SQLAlchemy engine/session factory used for the production PostgreSQL
+  database that powers new persistence-backed features.
+* The existing in-memory ``FakeDatabase`` used by legacy routes that have not
+  yet been migrated. The legacy helpers remain untouched so existing routers
+  keep functioning while new code paths can rely on the real database.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import logging
+import os
+from functools import lru_cache
+from typing import Dict, Generator, List, Optional
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 from .models import (
     GroupChatRecord,
@@ -17,6 +28,84 @@ from .models import (
     UserRecord,
 )
 from .models.base import utc_now
+
+logger = logging.getLogger(__name__)
+
+# Ensure environment variables from .env are available before any connection work.
+load_dotenv()
+
+# --- SQLAlchemy configuration ---------------------------------------------
+
+Base = declarative_base()
+
+_SessionLocal: sessionmaker[Session] | None = None
+
+
+@lru_cache(maxsize=1)
+def get_engine() -> Engine:
+    """Create or return the SQLAlchemy engine configured via DATABASE_URL."""
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        logger.error("DATABASE_URL is not set in the environment")
+        raise RuntimeError("DATABASE_URL is not set in the environment.")
+
+    database_url = database_url.strip()
+    if not database_url:
+        logger.error("DATABASE_URL is empty after trimming whitespace")
+        raise RuntimeError("DATABASE_URL is not set in the environment.")
+
+    if not database_url.lower().startswith("postgresql"):
+        logger.error("DATABASE_URL is not a valid Postgres connection string.")
+        raise RuntimeError("Invalid DATABASE_URL format.")
+
+    if "sslmode=" not in database_url.lower():
+        separator = "&" if "?" in database_url else "?"
+        database_url = f"{database_url}{separator}sslmode=require"
+        logger.info("Appended sslmode=require to DATABASE_URL for DigitalOcean Postgres")
+
+    return create_engine(database_url, echo=False, pool_pre_ping=True)
+
+
+def get_session() -> Generator[Session, None, None]:
+    """FastAPI dependency that yields a SQLAlchemy session per request."""
+
+    global _SessionLocal
+
+    if _SessionLocal is None:
+        engine = get_engine()
+        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+    session = _SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def create_session() -> Session:
+    """Return a new SQLAlchemy session for background tasks."""
+
+    global _SessionLocal
+
+    if _SessionLocal is None:
+        engine = get_engine()
+        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+
+    return _SessionLocal()
+
+
+def init_db() -> None:
+    """Initialise database schema by creating tables when missing."""
+
+    engine = get_engine()
+    # Late import to avoid circular dependencies during startup.
+    from .db import models  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)
+
+
+# --- legacy in-memory database --------------------------------------------
 
 
 class FakeDatabase:
@@ -107,11 +196,16 @@ def get_database() -> FakeDatabase:
 
 
 __all__ = [
+    "Base",
     "FakeDatabase",
-    "UserRecord",
-    "PostRecord",
+    "GroupChatRecord",
     "MessageRecord",
     "NotificationRecord",
-    "GroupChatRecord",
+    "PostRecord",
+    "UserRecord",
     "get_database",
+    "get_engine",
+    "get_session",
+    "create_session",
+    "init_db",
 ]

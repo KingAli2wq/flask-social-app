@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 
 
 class NotificationResponse(BaseModel):
-    id: str
-    body: str
+    id: UUID
+    recipient_id: UUID
+    actor_id: UUID | None
+    type: str
+    content: str
     created_at: datetime
     read: bool
 
