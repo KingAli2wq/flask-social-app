@@ -1,19 +1,18 @@
-"""Application entry point for the FastAPI backend."""
+﻿"""Application entry point for the FastAPI backend."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 
-import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from dotenv import load_dotenv
 
+from .config import get_settings
 from .database import create_session, init_db
 from .routers import (
     auth_router,
@@ -28,8 +27,11 @@ from .ui import router as ui_router
 
 logger = logging.getLogger(__name__)
 
-APP_NAME = os.getenv("APP_NAME", "Social Backend")
-API_VERSION = os.getenv("API_VERSION", "0.1.0")
+# Resolve runtime configuration (including droplet IPv4) via the shared settings helper.
+settings = get_settings()
+APP_NAME = settings.app_name
+API_VERSION = settings.api_version
+DROPLET_HOST = settings.droplet_host
 
 app = FastAPI(title=APP_NAME, version=API_VERSION)
 
@@ -59,6 +61,11 @@ _CLEANUP_INTERVAL = timedelta(hours=24)
 _CLEANUP_RETENTION = timedelta(days=2)
 _cleanup_task: asyncio.Task[None] | None = None
 _cleanup_stop = asyncio.Event()
+
+
+def _mount_static(directory: Path, route: str, name: str) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    app.mount(route, StaticFiles(directory=str(directory), check_dir=False), name=name)
 
 
 async def _run_cleanup_once() -> None:
@@ -96,11 +103,13 @@ async def _startup() -> None:
     """Ensure database schema and background tasks are ready before serving."""
 
     try:
-        load_dotenv()
         init_db()
     except Exception:  # pragma: no cover - best effort logging
         logger.exception("Database initialisation failed")
         raise
+
+    # Surface the resolved droplet IPv4 so operators can verify connectivity.
+    logger.info("Connected to droplet (IPv4): %s", DROPLET_HOST)
 
     # Run a cleanup pass immediately on startup.
     await _run_cleanup_once()
@@ -131,12 +140,9 @@ def api_info() -> dict[str, str]:
 
 @app.get("/health", tags=["system"])
 async def healthcheck() -> dict[str, str]:
-    return {"status": "ok"}
+    """Report the IPv4 address the backend is configured to use."""
 
-
-def _mount_static(directory: Path, route: str, name: str) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    app.mount(route, StaticFiles(directory=str(directory), check_dir=False), name=name)
+    return {"droplet_ipv4": DROPLET_HOST}
 
 
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "media"))

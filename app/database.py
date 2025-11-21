@@ -1,18 +1,8 @@
-"""Database layer utilities.
-
-This module now exposes two complementary database helpers:
-
-* A SQLAlchemy engine/session factory used for the production PostgreSQL
-  database that powers new persistence-backed features.
-* The existing in-memory ``FakeDatabase`` used by legacy routes that have not
-  yet been migrated. The legacy helpers remain untouched so existing routers
-  keep functioning while new code paths can rely on the real database.
-"""
+"""Database layer utilities for both PostgreSQL and legacy in-memory storage."""
 from __future__ import annotations
 
 import logging
 import os
-from functools import lru_cache
 from typing import Dict, Generator, List, Optional
 
 from dotenv import load_dotenv
@@ -31,52 +21,28 @@ from .models.base import utc_now
 
 logger = logging.getLogger(__name__)
 
-# Ensure environment variables from .env are available before any connection work.
+# Load environment variables so DATABASE_URL is available when the module is imported.
 load_dotenv()
 
-# --- SQLAlchemy configuration ---------------------------------------------
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
 
+engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
 
-_SessionLocal: sessionmaker[Session] | None = None
 
-
-@lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    """Create or return the SQLAlchemy engine configured via DATABASE_URL."""
+    """Return the configured SQLAlchemy engine."""
 
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        logger.error("DATABASE_URL is not set in the environment")
-        raise RuntimeError("DATABASE_URL is not set in the environment.")
-
-    database_url = database_url.strip()
-    if not database_url:
-        logger.error("DATABASE_URL is empty after trimming whitespace")
-        raise RuntimeError("DATABASE_URL is not set in the environment.")
-
-    if not database_url.lower().startswith("postgresql"):
-        logger.error("DATABASE_URL is not a valid Postgres connection string.")
-        raise RuntimeError("Invalid DATABASE_URL format.")
-
-    if "sslmode=" not in database_url.lower():
-        separator = "&" if "?" in database_url else "?"
-        database_url = f"{database_url}{separator}sslmode=require"
-        logger.info("Appended sslmode=require to DATABASE_URL for DigitalOcean Postgres")
-
-    return create_engine(database_url, echo=False, pool_pre_ping=True)
+    return engine
 
 
 def get_session() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a SQLAlchemy session per request."""
 
-    global _SessionLocal
-
-    if _SessionLocal is None:
-        engine = get_engine()
-        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
-    session = _SessionLocal()
+    session = SessionLocal()
     try:
         yield session
     finally:
@@ -84,28 +50,23 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def create_session() -> Session:
-    """Return a new SQLAlchemy session for background tasks."""
+    """Return a new SQLAlchemy session for background tasks or scripts."""
 
-    global _SessionLocal
-
-    if _SessionLocal is None:
-        engine = get_engine()
-        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
-    return _SessionLocal()
+    return SessionLocal()
 
 
 def init_db() -> None:
     """Initialise database schema by creating tables when missing."""
 
-    engine = get_engine()
     # Late import to avoid circular dependencies during startup.
     from .db import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
 
 
-# --- legacy in-memory database --------------------------------------------
+# ---------------------------------------------------------------------------
+# Legacy in-memory database (retained for backwards compatibility)
+# ---------------------------------------------------------------------------
 
 
 class FakeDatabase:
