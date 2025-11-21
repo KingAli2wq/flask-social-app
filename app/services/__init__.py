@@ -11,7 +11,7 @@ from .message_service import create_group_chat, delete_old_messages, list_messag
 from .notification_service import add_notification, delete_old_notifications, list_notifications, mark_all_read
 from .post_service import create_post_record, delete_old_posts, delete_post_record, list_feed_records
 from .profile_service import get_profile, update_profile
-from .spaces_service import SpacesUploadError, get_spaces_client, upload_file_to_spaces
+from .spaces_service import SpacesConfigurationError, SpacesUploadError, get_spaces_client, upload_file_to_spaces
 
 __all__ = [
     "authenticate_user",
@@ -37,6 +37,7 @@ __all__ = [
     "list_feed_records",
     "get_profile",
     "update_profile",
+    "SpacesConfigurationError",
     "SpacesUploadError",
     "get_spaces_client",
     "upload_file_to_spaces",

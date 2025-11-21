@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_session
 from ..models import User
 from ..schemas import MediaUploadResponse
-from ..services import SpacesUploadError, get_current_user, upload_file_to_spaces
+from ..services import SpacesConfigurationError, SpacesUploadError, get_current_user, upload_file_to_spaces
 
 router = APIRouter(tags=["uploads"])
 
@@ -33,6 +33,8 @@ async def upload_endpoint(
 
     try:
         result = await upload_file_to_spaces(file, folder="uploads", db=db, user_id=current_user.id)
+    except SpacesConfigurationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     except SpacesUploadError as exc:  # pragma: no cover - network bound
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

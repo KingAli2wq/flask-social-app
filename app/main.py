@@ -16,6 +16,7 @@ from .config import get_settings
 from .database import create_session, init_db
 from .routers import (
     auth_router,
+    media_router,
     messages_router,
     notifications_router,
     posts_router,
@@ -51,6 +52,7 @@ app.add_middleware(
 
 app.include_router(ui_router)
 app.include_router(auth_router)
+app.include_router(media_router)
 app.include_router(posts_router)
 app.include_router(messages_router)
 app.include_router(notifications_router)

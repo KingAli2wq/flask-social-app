@@ -49,13 +49,19 @@ class SpacesUploadResult:
     content_type: str
 
 
+class SpacesConfigurationError(RuntimeError):
+    """Raised when required DigitalOcean Spaces settings are missing or invalid."""
+
+
 class SpacesUploadError(RuntimeError):
     """Raised when an upload to DigitalOcean Spaces fails."""
 
 
 @lru_cache(maxsize=1)
-def get_spaces_config() -> SpacesConfig:
-    """Load and validate DigitalOcean Spaces configuration from the environment."""
+def load_spaces_config() -> SpacesConfig:
+    """Read and validate DigitalOcean Spaces configuration from the environment."""
+
+    load_dotenv()
 
     required: dict[str, str | None] = {
         "DO_SPACES_KEY": os.getenv("DO_SPACES_KEY"),
@@ -67,8 +73,8 @@ def get_spaces_config() -> SpacesConfig:
 
     missing = [name for name, value in required.items() if not value or not value.strip()]
     if missing:
-        raise RuntimeError(
-            "Missing required Spaces configuration: " + ", ".join(sorted(missing))
+        raise SpacesConfigurationError(
+            "Missing required DigitalOcean Spaces configuration: " + ", ".join(sorted(missing))
         )
 
     key = cast(str, required["DO_SPACES_KEY"]).strip()
@@ -80,22 +86,17 @@ def get_spaces_config() -> SpacesConfig:
     endpoint = endpoint_raw.rstrip("/")
     parsed = urlparse(endpoint)
     if not parsed.scheme:
-        logger.warning("DO_SPACES_ENDPOINT is missing a URL scheme; assuming https://")
         endpoint = f"https://{endpoint.lstrip(':/')}"
         parsed = urlparse(endpoint)
 
     host = parsed.netloc or parsed.path
     if not host:
-        message = "DO_SPACES_ENDPOINT must include a hostname."
-        logger.warning(message)
-        raise RuntimeError(message)
+        raise SpacesConfigurationError("DO_SPACES_ENDPOINT must include a hostname.")
 
     if not host.endswith(".digitaloceanspaces.com"):
-        message = (
-            "DO_SPACES_ENDPOINT must point to a DigitalOcean Spaces hostname (*.digitaloceanspaces.com)."
+        raise SpacesConfigurationError(
+            "DO_SPACES_ENDPOINT must point to a *.digitaloceanspaces.com hostname."
         )
-        logger.warning("%s Provided value: %s", message, endpoint)
-        raise RuntimeError(message)
 
     endpoint = parsed.geturl().rstrip("/")
 
@@ -106,7 +107,7 @@ def get_spaces_config() -> SpacesConfig:
 def get_spaces_client() -> BaseClient:
     """Create a singleton boto3 client for Spaces interactions."""
 
-    config = get_spaces_config()
+    config = load_spaces_config()
     session = Session()
     return session.client(
         "s3",
@@ -149,7 +150,7 @@ def _object_key(filename: str | None, folder: str) -> str:
 def build_public_url(key: str) -> str:
     """Build the public URL for an object stored in DigitalOcean Spaces."""
 
-    config = get_spaces_config()
+    config = load_spaces_config()
     normalized_key = key.lstrip("/")
     endpoint = config.endpoint.rstrip("/")
     return f"{endpoint}/{normalized_key}" if normalized_key else endpoint
@@ -165,7 +166,7 @@ async def upload_file_to_spaces(
 ) -> SpacesUploadResult:
     """Upload an ``UploadFile`` to Spaces and return its public metadata."""
 
-    config = get_spaces_config()
+    config = load_spaces_config()
     s3_client = client or get_spaces_client()
     key = _object_key(file.filename, folder)
     content_type = (file.content_type or "application/octet-stream").strip() or "application/octet-stream"
@@ -193,6 +194,15 @@ async def upload_file_to_spaces(
 
     url = build_public_url(key)
 
+    if not key or not key.strip():
+        raise SpacesUploadError("Invalid object key generated for DigitalOcean Spaces upload")
+    if not url or not url.strip():
+        raise SpacesUploadError("Invalid public URL generated for DigitalOcean Spaces upload")
+    if not config.bucket or not config.bucket.strip():
+        raise SpacesUploadError("DigitalOcean Spaces bucket is not configured")
+    if not content_type or not content_type.strip():
+        raise SpacesUploadError("Content type could not be determined for upload")
+
     asset_id: uuid.UUID | None = None
     if db is not None:
         asset = MediaAsset(
@@ -210,18 +220,24 @@ async def upload_file_to_spaces(
             asset_id = asset.id
         except SQLAlchemyError as exc:
             db.rollback()
-            logger.exception("Failed to persist media metadata for key %s", key)
-            raise SpacesUploadError("Failed to persist media metadata") from exc
+            # PRINT THE REAL DATABASE ERROR — this is what we need
+            logger.exception("DB ERROR during media metadata commit: %s", exc)
+
+            # TEMPORARY: return the real SQL error back to the API response
+            # so we can see exactly what column or constraint is failing.
+            raise SpacesUploadError(f"DB ERROR: {exc}") from exc
+
 
     return SpacesUploadResult(asset_id=asset_id, url=url, key=key, bucket=config.bucket, content_type=content_type)
 
 
 __all__ = [
     "SpacesConfig",
+    "SpacesConfigurationError",
     "SpacesUploadError",
     "SpacesUploadResult",
     "build_public_url",
+    "load_spaces_config",
     "get_spaces_client",
-    "get_spaces_config",
     "upload_file_to_spaces",
 ]

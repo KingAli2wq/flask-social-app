@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import MediaAsset, Post, User
-from .spaces_service import SpacesUploadError, upload_file_to_spaces
+from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
 
 async def create_post_record(
@@ -52,8 +52,26 @@ async def create_post_record(
     if file is not None:
         try:
             upload_result = await upload_file_to_spaces(file, folder="posts", db=db, user_id=user_id)
+        except SpacesConfigurationError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
         except SpacesUploadError as exc:  # pragma: no cover - network bound
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+        if (
+            not upload_result.key
+            or not upload_result.key.strip()
+            or not upload_result.url
+            or not upload_result.url.strip()
+            or not upload_result.bucket
+            or not upload_result.bucket.strip()
+            or not upload_result.content_type
+            or not upload_result.content_type.strip()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Invalid media metadata returned from Spaces",
+            )
+
         media_url = upload_result.url
         normalized_asset_id = upload_result.asset_id
         if normalized_asset_id is None:
