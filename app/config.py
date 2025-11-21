@@ -1,7 +1,8 @@
 """
 Runtime configuration helpers for the FastAPI application.
 
-This version correctly loads DATABASE_URL from the project root .env file.
+Correctly loads DATABASE_URL and other variables from the .env file
+located in the project root.
 """
 
 from __future__ import annotations
@@ -13,29 +14,27 @@ from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolve the project's root directory
+# Resolve the project root
 BASE_DIR = Path(__file__).resolve().parents[1]
 
 # Absolute path to .env
 ENV_PATH = BASE_DIR / ".env"
 
-# Load .env before creating settings
-load_dotenv(ENV_PATH)
+# Force-load .env BEFORE Settings() parses
+load_dotenv(dotenv_path=ENV_PATH, override=True)
 
 
 class Settings(BaseSettings):
-    """Typed application configuration sourced from environment variables."""
+    # Required field — must come from .env
+    database_url: str = Field(..., alias="DATABASE_URL")
 
-    # REQUIRED – loaded from .env
-    database_url: str = Field(alias="DATABASE_URL")
-
-    # Optional general settings
+    # Optional fields
     droplet_host: str = Field(default="159.203.7.101", alias="DROPLET_HOST")
     app_name: str = Field(default="Social Backend", alias="APP_NAME")
     api_version: str = Field(default="0.1.0", alias="API_VERSION")
 
     model_config = SettingsConfigDict(
-        env_file=ENV_PATH,
+        env_file=str(ENV_PATH),
         env_file_encoding="utf-8",
         extra="ignore"
     )
@@ -43,7 +42,6 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    """Return a cached settings instance."""
     return Settings()
 
 
