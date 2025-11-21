@@ -4,21 +4,22 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import MediaAsset, Post, User
+from .spaces_service import SpacesUploadError, upload_file_to_spaces
 
 
-def create_post_record(
+async def create_post_record(
     db: Session,
     *,
     user_id: UUID,
     caption: str,
-    media_url: str | None,
-    media_asset_id: UUID | None = None,
+    media_asset_id: UUID | str | None = None,
+    file: UploadFile | None = None,
 ) -> Post:
     """Create and persist a new post for the given user."""
 
@@ -26,14 +27,50 @@ def create_post_record(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if media_asset_id is not None:
-        asset = db.get(MediaAsset, media_asset_id)
+    normalized_asset_id: UUID | None
+    if isinstance(media_asset_id, UUID):
+        normalized_asset_id = media_asset_id
+    elif isinstance(media_asset_id, str):
+        candidate = media_asset_id.strip()
+        if not candidate:
+            normalized_asset_id = None
+        else:
+            try:
+                normalized_asset_id = UUID(candidate)
+            except ValueError as exc:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="media_asset_id must be a valid UUID") from exc
+    else:
+        normalized_asset_id = None
+
+    if file is not None and normalized_asset_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either a file upload or a media_asset_id, not both",
+        )
+
+    media_url: str | None = None
+    if file is not None:
+        try:
+            upload_result = await upload_file_to_spaces(file, folder="posts", db=db, user_id=user_id)
+        except SpacesUploadError as exc:  # pragma: no cover - network bound
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        media_url = upload_result.url
+        normalized_asset_id = upload_result.asset_id
+        if normalized_asset_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist media metadata",
+            )
+
+    asset: MediaAsset | None = None
+    if normalized_asset_id is not None and file is None:
+        asset = db.get(MediaAsset, normalized_asset_id)
         if asset is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
         if media_url is None:
             media_url = asset.url
 
-    post = Post(user_id=user_id, caption=caption, media_url=media_url, media_asset_id=media_asset_id)
+    post = Post(user_id=user_id, caption=caption, media_url=media_url, media_asset_id=normalized_asset_id)
     db.add(post)
     db.commit()
     db.refresh(post)
