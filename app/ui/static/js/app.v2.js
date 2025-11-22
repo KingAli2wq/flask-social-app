@@ -80,17 +80,16 @@
   function applyAvatarToImg(img, rawUrl) {
     if (!img) return;
 
-    if (!rawUrl) {
+    img.onerror = null;
+
+    img.src = resolveAvatarUrl(rawUrl);
+    
+    img.onerror = () => {
+      img.onerror = null;
       img.src = DEFAULT_AVATAR;
-      return;
-    }
+    };
+}
 
-    const finalUrl = shouldSkipCacheBuster(rawUrl)
-      ? rawUrl
-      : resolveAvatarUrl(rawUrl);
-
-    img.src = finalUrl;
-  }
 
 
   function updateAvatarCacheEntry(userId, rawUrl) {

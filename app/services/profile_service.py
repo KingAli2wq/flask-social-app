@@ -1,10 +1,6 @@
-"""Profile business logic backed by PostgreSQL."""
-from __future__ import annotations
-
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -12,47 +8,45 @@ from ..models import User
 from ..schemas import ProfileUpdateRequest
 
 
-def get_profile(db: Session, username: str) -> User:
-    """Return the persisted user matching ``username`` or raise 404."""
+def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest) -> User:
+    """Apply profile updates for the supplied ``user_id``."""
 
-    user = db.scalar(select(User).where(User.username == username))
+    user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
 
+    # Only update fields that were actually sent by the client
+    update_data = payload.model_dump(exclude_unset=True)
 
-def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest) -> User:
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(404, "User not found")
-
-    update_data = payload.model_dump(exclude_none=True)
-
-    # CRITICAL FIX: do NOT wipe avatar_url if frontend didn't send it
+    # --- avatar_url handling ---
+    # If the client sends avatar_url as a non-empty string, persist it.
+    # If the client sends it as null/empty, ignore it and keep the existing one.
     if "avatar_url" in update_data:
-        if not update_data["avatar_url"]:
-            # Skip null/empty avatar
-            update_data.pop("avatar_url")
-    else:
-        # Explicitly preserve existing avatar_url
-        update_data["avatar_url"] = user.avatar_url
+        avatar = update_data["avatar_url"]
+        if avatar in (None, "", "None"):
+            # Do NOT overwrite the existing avatar with null/empty.
+            update_data.pop("avatar_url", None)
 
-    # Normalize website
+    # --- website normalization ---
     if "website" in update_data:
-        if update_data["website"] in ("", None, "None"):
+        website = update_data["website"]
+        if website in (None, "", "None"):
             update_data["website"] = None
         else:
-            update_data["website"] = str(update_data["website"])
+            update_data["website"] = str(website)
 
+    # Apply all remaining updates
     for field, value in update_data.items():
         setattr(user, field, value)
 
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update profile",
+        ) from exc
+
     db.refresh(user)
     return user
-
-
-
-
-
-__all__ = ["get_profile", "update_profile"]
