@@ -1,10 +1,14 @@
 """Profile API routes backed by PostgreSQL."""
 from __future__ import annotations
 
+from typing import cast
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from ..database import get_session
+from ..database import get_db, get_session
 from ..models import User
 from ..schemas import ProfileResponse, ProfileUpdateRequest
 from ..services import get_current_user, get_profile, update_profile
@@ -42,7 +46,7 @@ async def update_my_profile(
     Update the logged-in user's profile fields.
     Avatar uploads now properly save into the "media/" folder in Spaces.
     """
-    updated = update_profile(db, user_id=current_user.id, payload=payload)
+    updated = update_profile(db, user_id=cast(UUID, current_user.id), payload=payload)
     return ProfileResponse.model_validate(updated)
 
 
@@ -63,7 +67,7 @@ async def upload_my_avatar(
         file,
         folder="media",              # <<<<<<<< FIX: FORCE MEDIA FOLDER
         db=db,
-        user_id=current_user.id,
+        user_id=cast(UUID, current_user.id),
     )
 
     return {"url": upload_result.url}
@@ -86,3 +90,18 @@ async def retrieve_profile_by_id(
         raise HTTPException(status_code=404, detail="User not found")
 
     return ProfileResponse.model_validate(user)
+
+
+@router.post("/fix-website-field")
+def fix_website_field(db=Depends(get_db)):
+    db.execute(text(
+        """
+        UPDATE users
+        SET website = NULL
+        WHERE website = 'None'
+           OR website = ''
+           OR (website IS NOT NULL AND website NOT LIKE 'http%');
+    """
+    ))
+    db.commit()
+    return {"status": "DONE"}

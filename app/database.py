@@ -39,6 +39,12 @@ def get_session() -> Generator[Session, None, None]:
         session.close()
 
 
+def get_db() -> Generator[Session, None, None]:
+    """Alias for get_session used by some routers."""
+
+    yield from get_session()
+
+
 def create_session() -> Session:
     """Return a new SQLAlchemy session for background tasks or scripts."""
 
@@ -57,6 +63,7 @@ def init_db() -> None:
 __all__ = [
     "Base",
     "get_engine",
+    "get_db",
     "get_session",
     "create_session",
     "init_db",

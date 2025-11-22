@@ -3,9 +3,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import UUID
-
+from sqlalchemy import text
+from fastapi import Depends
 from pydantic import BaseModel, ConfigDict, HttpUrl
 
+
+from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 
 class ProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -19,6 +22,13 @@ class ProfileResponse(BaseModel):
     avatar_url: str | None = None
     created_at: datetime
     last_active_at: datetime
+
+    @field_validator("website", mode="before")
+    def clean_website(cls, v):
+        if v in (None, "", "None"):
+            return None
+        return v
+
 
 
 class ProfileUpdateRequest(BaseModel):
