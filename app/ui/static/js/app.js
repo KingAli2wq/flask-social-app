@@ -521,8 +521,9 @@
       event.preventDefault();
       try {
         let avatarUrl = null;
-        let keepExistingAvatar = true;
+        let changedAvatar = false;
 
+        // If the user selected a new file, upload it
         if (uploadInput && uploadInput.files && uploadInput.files[0]) {
           const uploadData = new FormData();
           uploadData.append('file', uploadInput.files[0]);
@@ -531,28 +532,37 @@
             body: uploadData
           });
           avatarUrl = uploadResult.url || null;
-          keepExistingAvatar = false;
+          changedAvatar = !!avatarUrl;
         }
 
-        if (keepExistingAvatar) {
-          const meCurrent = await apiFetch('/auth/me');
-          avatarUrl = meCurrent.avatar_url || DEFAULT_AVATAR;
-        }
-
+        // Build base payload with profile fields
         const payload = {
           location: form.elements['location'].value || null,
           website: form.elements['website'].value || null,
-          bio: form.elements['bio'].value || null,
-          avatar_url: avatarUrl
+          bio: form.elements['bio'].value || null
         };
 
+        // Only send avatar_url if actually changed
+        if (changedAvatar) {
+          payload.avatar_url = avatarUrl;
+        }
+
+        // Save profile
         await apiFetch('/profiles/me', {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
 
+        // Refresh user data
         const me = await apiFetch('/auth/me');
         state.avatarCache[me.id] = me.avatar_url || DEFAULT_AVATAR;
+
+        // Update profile avatar immediately
+        const avatarEl = document.getElementById('profile-avatar');
+        if (avatarEl) {
+          avatarEl.src = me.avatar_url || DEFAULT_AVATAR;
+          avatarEl.onerror = () => { avatarEl.src = DEFAULT_AVATAR; };
+        }
 
         showToast('Profile updated successfully.', 'success');
         await loadProfileData();
