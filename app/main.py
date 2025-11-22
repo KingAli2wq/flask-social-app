@@ -147,13 +147,16 @@ async def healthcheck() -> dict[str, str]:
     return {"droplet_ipv4": DROPLET_HOST}
 
 
+
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "media"))
 VIDEOS_ROOT = Path(os.getenv("VIDEOS_ROOT", "videos"))
 
-# Mount ONLY the assets folder, not the entire static folder
-UI_ASSETS_ROOT = Path(__file__).resolve().parent / "ui" / "static" / "assets"
+# Serve the ENTIRE static folder
+UI_STATIC_ROOT = Path(__file__).resolve().parent / "ui" / "static"
 
 _mount_static(MEDIA_ROOT, "/media", "media")
 _mount_static(VIDEOS_ROOT, "/videos", "videos")
-_mount_static(UI_ASSETS_ROOT, "/assets", "assets")
+_mount_static(UI_STATIC_ROOT, "/assets", "assets")
+
+
 
