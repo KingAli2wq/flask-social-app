@@ -13,9 +13,8 @@
     warning: 'bg-amber-400 text-slate-900 shadow-amber-400/30',
     info: 'bg-slate-900/90 text-white shadow-slate-900/30'
   };
-  
-  const DEFAULT_AVATAR = '/assets/default-avatar.png';
 
+  const DEFAULT_AVATAR = '/assets/default-avatar.png';
 
   const state = {
     feedItems: [],
@@ -23,123 +22,16 @@
     activeChatId: null,
     conversations: loadJson(CONVERSATIONS_KEY, {}),
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
-    avatarCache: {},
-    currentProfileAvatar: null,
+    avatarCache: {},               // user_id -> resolved avatar URL
+    currentProfileAvatar: null,    // raw URL from backend for current user
     feedRefreshHandle: null,
     feedLoading: false,
     feedSignature: null
   };
 
-  function resolveAvatarUrl(rawUrl) {
-    if (typeof rawUrl !== 'string') {
-      return DEFAULT_AVATAR;
-    }
-
-    const trimmed = rawUrl.trim();
-    if (!trimmed) {
-      return DEFAULT_AVATAR;
-    }
-
-    if (trimmed.startsWith('data:image')) {
-      return trimmed;
-    }
-
-    if (shouldSkipCacheBuster(trimmed)) {
-      return trimmed;
-    }
-
-    const cacheBuster = Date.now();
-    return trimmed.includes('?') ? `${trimmed}&v=${cacheBuster}` : `${trimmed}?v=${cacheBuster}`;
-  }
-
-  function shouldSkipCacheBuster(url) {
-    try {
-      const parsed = new URL(url, window.location.origin);
-
-      // ALWAYS skip cache-busting for DigitalOcean Spaces URLs
-      if (parsed.hostname.includes("digitaloceanspaces.com")) {
-        return true;
-      }
-
-      const params = parsed.searchParams;
-
-      // Skip for AWS/Spaces signed URLs
-      return (
-        params.has('X-Amz-Signature') ||
-        params.has('X-Amz-Credential') ||
-        params.has('X-Amz-Algorithm') ||
-        params.has('AWSAccessKeyId')
-      );
-    } catch (_err) {
-      return false;
-    }
-  }  
-
-
-
-  function applyAvatarToImg(img, rawUrl) {
-    if (!img) return;
-
-    img.onerror = null;
-
-    img.src = resolveAvatarUrl(rawUrl);
-    
-    img.onerror = () => {
-      img.onerror = null;
-      img.src = DEFAULT_AVATAR;
-    };
-}
-
-
-
-  function updateAvatarCacheEntry(userId, rawUrl) {
-    if (!userId) return;
-
-    // Do NOT overwrite existing avatar if new value is null/empty
-    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
-      return;
-    }
-
-    const key = String(userId);
-    state.avatarCache[key] = resolveAvatarUrl(rawUrl);
-  }
-
-
-  function cacheProfile(profile) {
-    if (!profile || !profile.id) {
-      return null;
-    }
-    updateAvatarCacheEntry(profile.id, profile.avatar_url);
-    return state.avatarCache[String(profile.id)];
-  }
-
-  function updateCurrentUserAvatarImages(rawUrl) {
-    const avatars = document.querySelectorAll('[data-current-user-avatar]');
-    avatars.forEach(img => applyAvatarToImg(img, rawUrl));
-  }
-
-  async function fetchCurrentUserProfile() {
-    const { userId } = getAuth();
-
-    // If we do not have userId in localStorage, fall back to /auth/me
-    if (!userId) {
-      const me = await apiFetch('/auth/me');
-      console.log('[auth/me] avatar_url:', me.avatar_url || '(default from /auth/me)');
-      cacheProfile(me);
-      state.currentProfileAvatar = me.avatar_url || null;
-      updateCurrentUserAvatarImages(me.avatar_url);
-      return me;
-    }
-
-    // Prefer the canonical profile endpoint that always returns avatar_url
-    const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
-    console.log('[profiles/by-id] avatar_url:', profile.avatar_url || '(default from /profiles/by-id)');
-    cacheProfile(profile);
-    state.currentProfileAvatar = profile.avatar_url || null;
-    updateCurrentUserAvatarImages(profile.avatar_url);
-    return profile;
-  }
-
+  // -----------------------------------------------------------------------
+  // Helpers
+  // -----------------------------------------------------------------------
 
   function loadJson(key, fallback) {
     try {
@@ -168,15 +60,9 @@
   }
 
   function setAuth({ token, username, userId }) {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    }
-    if (username) {
-      localStorage.setItem(USERNAME_KEY, username);
-    }
-    if (userId) {
-      localStorage.setItem(USER_ID_KEY, userId);
-    }
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (username) localStorage.setItem(USERNAME_KEY, username);
+    if (userId) localStorage.setItem(USER_ID_KEY, userId);
   }
 
   function clearAuth() {
@@ -189,16 +75,22 @@
     const opts = { ...options };
     const headers = new Headers(options.headers || {});
     const { token } = getAuth();
+
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
     if (opts.body && !(opts.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
     }
+
     opts.headers = headers;
+
     const response = await fetch(path, opts);
     const contentType = response.headers.get('content-type') || '';
-    const payload = contentType.includes('application/json') ? await response.json().catch(() => ({})) : await response.text();
+    const payload = contentType.includes('application/json')
+      ? await response.json().catch(() => ({}))
+      : await response.text();
+
     if (!response.ok) {
       const message = (payload && payload.detail) || response.statusText || 'Request failed';
       throw new Error(message);
@@ -221,7 +113,13 @@
     const tone = palette[type] || palette.info;
     const toast = document.createElement('div');
     toast.className = `pointer-events-auto w-full max-w-md rounded-2xl px-4 py-3 text-sm shadow-lg transition ${tone}`;
-    toast.innerHTML = `<div class="flex items-start gap-3"><span class="text-base">${iconForType(type)}</span><div class="flex-1">${message}</div><button class="text-xs opacity-70 hover:opacity-100">Close</button></div>`;
+    toast.innerHTML = `
+      <div class="flex items-start gap-3">
+        <span class="text-base">${iconForType(type)}</span>
+        <div class="flex-1">${message}</div>
+        <button class="text-xs opacity-70 hover:opacity-100">Close</button>
+      </div>
+    `;
     const closeBtn = toast.querySelector('button');
     const remove = () => {
       toast.classList.add('opacity-0', 'translate-y-2');
@@ -234,14 +132,10 @@
 
   function iconForType(type) {
     switch (type) {
-      case 'success':
-        return '✅';
-      case 'error':
-        return '⚠';
-      case 'warning':
-        return '⚠';
-      default:
-        return 'ℹ';
+      case 'success': return '✅';
+      case 'error': return '⚠';
+      case 'warning': return '⚠';
+      default: return 'ℹ';
     }
   }
 
@@ -255,6 +149,10 @@
       minute: '2-digit'
     });
   }
+
+  // -----------------------------------------------------------------------
+  // Theme / Navbar
+  // -----------------------------------------------------------------------
 
   function applyStoredTheme() {
     const stored = localStorage.getItem(THEME_KEY) || 'dark';
@@ -312,7 +210,144 @@
     }
   }
 
-  // Feed ------------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Avatar utilities (critical part)
+  // -----------------------------------------------------------------------
+
+  function shouldSkipCacheBuster(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+
+      // DigitalOcean Spaces (and similar) should NEVER be cache-busted
+      if (parsed.hostname.includes('digitaloceanspaces.com')) {
+        return true;
+      }
+
+      const params = parsed.searchParams;
+      // Also skip for signed URLs
+      return (
+        params.has('X-Amz-Signature') ||
+        params.has('X-Amz-Credential') ||
+        params.has('X-Amz-Algorithm') ||
+        params.has('AWSAccessKeyId')
+      );
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function resolveAvatarUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== 'string') {
+      return DEFAULT_AVATAR;
+    }
+
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      return DEFAULT_AVATAR;
+    }
+
+    // Local asset (like /assets/default-avatar.png)
+    if (trimmed.startsWith('/assets/')) {
+      return trimmed;
+    }
+
+    // Data URL from <input type="file"> preview
+    if (trimmed.startsWith('data:image')) {
+      return trimmed;
+    }
+
+    // Spaces / signed URLs: no cache-buster
+    if (shouldSkipCacheBuster(trimmed)) {
+      return trimmed;
+    }
+
+    // Generic cache-buster for any other plain URL
+    const cacheBuster = Date.now();
+    return trimmed.includes('?') ? `${trimmed}&v=${cacheBuster}` : `${trimmed}?v=${cacheBuster}`;
+  }
+
+  function applyAvatarToImg(img, rawUrl) {
+    if (!img) return;
+
+    const finalUrl = resolveAvatarUrl(rawUrl);
+
+    // Avoid flicker / redundant loads
+    if (img.dataset.currentSrc === finalUrl) {
+      return;
+    }
+    img.dataset.currentSrc = finalUrl;
+
+    img.onerror = null;
+    img.src = finalUrl;
+
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = DEFAULT_AVATAR;
+      img.dataset.currentSrc = DEFAULT_AVATAR;
+    };
+  }
+
+  function updateAvatarCacheEntry(userId, rawUrl) {
+    if (!userId) return;
+
+    if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+      // Do NOT overwrite an existing cached avatar with an empty value
+      return;
+    }
+
+    const key = String(userId);
+    state.avatarCache[key] = resolveAvatarUrl(rawUrl);
+  }
+
+  function cacheProfile(profile) {
+    if (!profile || !profile.id) {
+      return null;
+    }
+    updateAvatarCacheEntry(profile.id, profile.avatar_url);
+    return state.avatarCache[String(profile.id)];
+  }
+
+  function updateCurrentUserAvatarImages(rawUrl) {
+    const avatars = document.querySelectorAll('[data-current-user-avatar]');
+    avatars.forEach(img => applyAvatarToImg(img, rawUrl));
+  }
+
+  async function fetchCurrentUserProfile() {
+    const { userId } = getAuth();
+
+    // If we do not have userId in localStorage, fall back to /auth/me
+    if (!userId) {
+      const me = await apiFetch('/auth/me');
+      console.log('[auth/me] avatar_url:', me.avatar_url || '(none)');
+      cacheProfile(me);
+
+      const effective = me.avatar_url && me.avatar_url.trim()
+        ? me.avatar_url
+        : state.currentProfileAvatar;
+
+      state.currentProfileAvatar = effective || null;
+      updateCurrentUserAvatarImages(state.currentProfileAvatar);
+      return me;
+    }
+
+    // Canonical profile endpoint
+    const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
+    console.log('[profiles/by-id] avatar_url:', profile.avatar_url || '(none)');
+    cacheProfile(profile);
+
+    const effective = profile.avatar_url && profile.avatar_url.trim()
+      ? profile.avatar_url
+      : state.currentProfileAvatar;
+
+    state.currentProfileAvatar = effective || null;
+    updateCurrentUserAvatarImages(state.currentProfileAvatar);
+    return profile;
+  }
+
+  // -----------------------------------------------------------------------
+  // Feed
+  // -----------------------------------------------------------------------
+
   async function initFeedPage() {
     initThemeToggle();
     await loadFeed();
@@ -348,7 +383,7 @@
       event.preventDefault();
       try {
         ensureAuthenticated();
-      } catch (err) {
+      } catch {
         return;
       }
       const formData = new FormData(form);
@@ -364,9 +399,7 @@
         });
         showToast('Post published successfully.', 'success');
         form.reset();
-        if (previewWrapper) {
-          previewWrapper.classList.add('hidden');
-        }
+        if (previewWrapper) previewWrapper.classList.add('hidden');
         await loadFeed({ forceRefresh: true });
       } catch (error) {
         showToast(error.message || 'Unable to publish post.', 'error');
@@ -384,12 +417,16 @@
       });
     }, intervalMs);
 
-    window.addEventListener('beforeunload', () => {
-      if (state.feedRefreshHandle) {
-        clearInterval(state.feedRefreshHandle);
-        state.feedRefreshHandle = null;
-      }
-    }, { once: true });
+    window.addEventListener(
+      'beforeunload',
+      () => {
+        if (state.feedRefreshHandle) {
+          clearInterval(state.feedRefreshHandle);
+          state.feedRefreshHandle = null;
+        }
+      },
+      { once: true }
+    );
   }
 
   function computeFeedSignature(items) {
@@ -403,11 +440,7 @@
 
   async function loadFeed(options = {}) {
     const normalized = typeof options === 'boolean' ? { forceRefresh: options } : options;
-    const {
-      forceRefresh = false,
-      silent = false,
-      onlyOnChange = false,
-    } = normalized;
+    const { forceRefresh = false, silent = false, onlyOnChange = false } = normalized;
 
     const loading = document.getElementById('feed-loading');
     const empty = document.getElementById('feed-empty');
@@ -416,9 +449,7 @@
     const countBadge = document.getElementById('feed-count');
     if (!list) return;
 
-    if (state.feedLoading) {
-      return;
-    }
+    if (state.feedLoading) return;
     state.feedLoading = true;
 
     if (!silent && loading) loading.classList.remove('hidden');
@@ -426,9 +457,7 @@
     if (forceRefresh) {
       state.feedItems = [];
       state.feedCursor = 0;
-      if (!silent) {
-        list.innerHTML = '';
-      }
+      if (!silent) list.innerHTML = '';
     }
 
     try {
@@ -447,7 +476,12 @@
       await ensureAvatarCache(state.feedItems);
       if (state.feedItems.length) {
         const sample = state.feedItems[0];
-        console.log('[feed] sample author', sample.user_id, 'avatar', state.avatarCache[sample.user_id] || DEFAULT_AVATAR);
+        console.log(
+          '[feed] sample author',
+          sample.user_id,
+          'avatar',
+          state.avatarCache[String(sample.user_id)] || DEFAULT_AVATAR
+        );
       }
       renderNextFeedBatch();
       if (countBadge) {
@@ -523,23 +557,27 @@
 
   function createPostCard(post, currentUserMeta, avatarUrl) {
     const el = document.createElement('article');
-    el.className = 'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
+    el.className =
+      'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
     const currentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
     const currentUserId = typeof currentUserMeta === 'object' ? currentUserMeta?.userId : null;
     const isCurrentUser = currentUserId && String(post.user_id) === String(currentUserId);
     const displayName = post.username
       ? `@${post.username}`
-      : (isCurrentUser && currentUsername ? `@${currentUsername}` : `User ${String(post.user_id).slice(0, 8)}`);
+      : isCurrentUser && currentUsername
+      ? `@${currentUsername}`
+      : `User ${String(post.user_id).slice(0, 8)}`;
     const timestamp = formatDate(post.created_at);
-    const media = post.media_url ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">` : '';
+    const media = post.media_url
+      ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">`
+      : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
         <img data-role="post-avatar"
-            data-user-id="${post.user_id}"
-            src="${DEFAULT_AVATAR}"
-            class="h-12 w-12 rounded-full object-cover"
-            alt="Post avatar" />
-
+             data-user-id="${post.user_id}"
+             src="${DEFAULT_AVATAR}"
+             class="h-12 w-12 rounded-full object-cover"
+             alt="Post avatar" />
         <div>
           <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
           <p class="text-xs text-slate-400">${timestamp}</p>
@@ -561,7 +599,10 @@
     return el;
   }
 
-  // Authentication ---------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Auth
+  // -----------------------------------------------------------------------
+
   function initLoginPage() {
     initThemeToggle();
     const form = document.getElementById('login-form');
@@ -623,18 +664,15 @@
     });
   }
 
-  // Manual test plan (avatars & profile)
-  // 1. Log out and reload / to confirm feed avatars render from Spaces or fall back to /assets/default-avatar.png.
-  // 2. Log in as Ali / NewPassword123!, revisit the feed, and ensure avatars still display.
-  // 3. On /profile, edit only bio/location and save; avatar must remain unchanged.
-  // 4. On /profile, upload a new avatar, save, confirm the avatar updates immediately, survives a reload, and shows up on your feed posts.
+  // -----------------------------------------------------------------------
+  // Profile
+  // -----------------------------------------------------------------------
 
-  // Profile ----------------------------------------------------------------
   async function initProfilePage() {
     initThemeToggle();
     try {
       ensureAuthenticated();
-    } catch (err) {
+    } catch {
       return;
     }
     await loadProfileData();
@@ -656,7 +694,12 @@
     try {
       const profile = prefetchedProfile || await fetchCurrentUserProfile();
       cacheProfile(profile);
-      state.currentProfileAvatar = profile.avatar_url || null;
+
+      // Never downgrade currentProfileAvatar from non-empty to empty
+      if (profile.avatar_url && profile.avatar_url.trim()) {
+        state.currentProfileAvatar = profile.avatar_url;
+      }
+
       const { username } = profile;
       if (usernameEl) usernameEl.textContent = `@${username}`;
       if (bioEl) bioEl.textContent = profile.bio || 'Add a short bio to introduce yourself.';
@@ -669,12 +712,15 @@
           websiteEl.removeAttribute('href');
         }
       }
-      if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
+      if (createdEl) {
+        createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
+      }
+
       if (avatarEl) {
         const url = profile.avatar_url || state.currentProfileAvatar;
         applyAvatarToImg(avatarEl, url);
+        console.log('[profile img] final src:', avatarEl.src);
       }
-
 
       const form = document.getElementById('profile-form');
       if (form) {
@@ -722,6 +768,7 @@
     }
 
     if (!saveButton || !form) return;
+
     saveButton.addEventListener('click', async event => {
       event.preventDefault();
       try {
@@ -730,7 +777,6 @@
         const avatarFileChosen = Boolean(uploadInput && uploadInput.files && uploadInput.files[0]);
         console.log('[profile] avatar file selected:', avatarFileChosen);
 
-        // If the user selected a new file, upload it
         if (avatarFileChosen) {
           const uploadData = new FormData();
           uploadData.append('file', uploadInput.files[0]);
@@ -753,52 +799,43 @@
           bio: form.elements['bio'].value || null
         };
 
-        // Only send avatar_url if actually changed
-        if (changedAvatar) {
+        // IMPORTANT: only send avatar_url if it actually changed.
+        // Otherwise the backend keeps the existing avatar.
+        if (changedAvatar && avatarUrl) {
           payload.avatar_url = avatarUrl;
-        } else {
-          const authData = getAuth();
-          const cached = authData?.userId ? state.avatarCache[String(authData.userId)] : null;
-          payload.avatar_url = state.currentProfileAvatar || cached || null;
         }
 
         console.log('[profile] PUT /profiles/me payload:', payload);
 
-        // Save profile
         await apiFetch('/profiles/me', {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
 
-        // Refresh user data
         const me = await fetchCurrentUserProfile();
 
-        // FIX: Update avatar cache to newest value
-        if (me && me.id) {
+        if (me && me.id && me.avatar_url) {
           state.avatarCache[String(me.id)] = resolveAvatarUrl(me.avatar_url);
         }
 
-        // Update profile avatar immediately
         const avatarNode = document.getElementById('profile-avatar');
         if (avatarNode) {
-          applyAvatarToImg(avatarNode, me.avatar_url);
+          applyAvatarToImg(avatarNode, me.avatar_url || state.currentProfileAvatar);
         }
 
-        // FIX: refresh all avatars in feed that belong to this user
-        document.querySelectorAll('[data-role="post-avatar"][data-user-id]')
+        // Refresh all avatars in feed for this user
+        document
+          .querySelectorAll('[data-role="post-avatar"][data-user-id]')
           .forEach(node => {
             if (String(node.dataset.userId) === String(me.id)) {
-              applyAvatarToImg(node, me.avatar_url);
+              applyAvatarToImg(node, me.avatar_url || state.currentProfileAvatar);
             }
           });
-        
-        if (uploadInput) {
-          uploadInput.value = '';
-        }
+
+        if (uploadInput) uploadInput.value = '';
 
         showToast('Profile updated successfully.', 'success');
         await loadProfileData(me);
-
       } catch (error) {
         if (feedback) {
           feedback.textContent = error.message || 'Failed to update profile.';
@@ -808,12 +845,15 @@
     });
   }
 
-  // Messages ---------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Messages
+  // -----------------------------------------------------------------------
+
   async function initMessagesPage() {
     initThemeToggle();
     try {
       ensureAuthenticated();
-    } catch (err) {
+    } catch {
       return;
     }
     renderConversationList();
@@ -826,14 +866,17 @@
     if (!container) return;
     const entries = Object.keys(state.conversations);
     if (entries.length === 0) {
-      container.innerHTML = '<p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>';
+      container.innerHTML =
+        '<p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>';
       return;
     }
     container.innerHTML = '';
     entries.forEach(chatId => {
       const meta = state.conversations[chatId];
       const item = document.createElement('button');
-      item.className = `w-full px-4 py-3 text-left transition hover:bg-indigo-500/10 ${state.activeChatId === chatId ? 'bg-indigo-500/10' : ''}`;
+      item.className = `w-full px-4 py-3 text-left transition hover:bg-indigo-500/10 ${
+        state.activeChatId === chatId ? 'bg-indigo-500/10' : ''
+      }`;
       item.innerHTML = `
         <div class="flex items-center justify-between text-sm text-white">
           <span>${chatId}</span>
@@ -858,7 +901,10 @@
       const chatId = prompt('Enter a new chat ID (e.g., team-alpha):');
       if (!chatId) return;
       if (!state.conversations[chatId]) {
-        state.conversations[chatId] = { preview: 'New conversation', updated: formatDate(new Date().toISOString()) };
+        state.conversations[chatId] = {
+          preview: 'New conversation',
+          updated: formatDate(new Date().toISOString())
+        };
         saveJson(CONVERSATIONS_KEY, state.conversations);
       }
       state.activeChatId = chatId;
@@ -953,7 +999,9 @@
     const outbound = message.sender_id === currentUserId;
     el.className = `flex ${outbound ? 'justify-end' : 'justify-start'}`;
     el.innerHTML = `
-      <div class="max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-lg ${outbound ? 'bg-indigo-600 text-white' : 'bg-slate-800/90 text-slate-100'}">
+      <div class="max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-lg ${
+        outbound ? 'bg-indigo-600 text-white' : 'bg-slate-800/90 text-slate-100'
+      }">
         <p class="whitespace-pre-line leading-relaxed">${message.content}</p>
         <span class="mt-2 block text-right text-xs text-white/70">${formatDate(message.created_at)}</span>
       </div>
@@ -961,12 +1009,15 @@
     return el;
   }
 
-  // Notifications ---------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Notifications
+  // -----------------------------------------------------------------------
+
   async function initNotificationsPage() {
     initThemeToggle();
     try {
       ensureAuthenticated();
-    } catch (err) {
+    } catch {
       return;
     }
     await loadNotifications();
@@ -1012,10 +1063,14 @@
 
   function createNotificationItem(notification) {
     const li = document.createElement('li');
-    li.className = `card-surface rounded-2xl p-5 shadow-md shadow-black/10 transition hover:shadow-indigo-500/20 ${notification.read ? 'bg-slate-900/70' : 'bg-indigo-500/10 border border-indigo-400/30'}`;
+    li.className = `card-surface rounded-2xl p-5 shadow-md shadow-black/10 transition hover:shadow-indigo-500/20 ${
+      notification.read ? 'bg-slate-900/70' : 'bg-indigo-500/10 border border-indigo-400/30'
+    }`;
     li.innerHTML = `
       <div class="flex items-center justify-between">
-        <span class="rounded-full bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-300">${notification.read ? 'Read' : 'New'}</span>
+        <span class="rounded-full bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-300">${
+          notification.read ? 'Read' : 'New'
+        }</span>
         <time class="text-xs text-slate-400">${formatDate(notification.created_at)}</time>
       </div>
       <p class="mt-3 text-sm text-slate-200">${notification.content}</p>
@@ -1023,7 +1078,10 @@
     return li;
   }
 
-  // Media -----------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Media
+  // -----------------------------------------------------------------------
+
   function initMediaPage() {
     initThemeToggle();
     const fileInput = document.getElementById('media-file');
@@ -1062,7 +1120,7 @@
         event.preventDefault();
         try {
           ensureAuthenticated();
-        } catch (err) {
+        } catch {
           return;
         }
         const files = fileInput && fileInput.files;
@@ -1083,9 +1141,7 @@
           saveJson(MEDIA_HISTORY_KEY, state.mediaHistory);
           renderMediaHistory();
           form.reset();
-          if (preview) {
-            preview.classList.add('hidden');
-          }
+          if (preview) preview.classList.add('hidden');
         } catch (error) {
           if (feedback) {
             feedback.textContent = error.message || 'Upload failed';
@@ -1109,7 +1165,8 @@
       el.href = item.url;
       el.target = '_blank';
       el.rel = 'noopener';
-      el.className = 'flex items-center justify-between rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-sm transition hover:border-indigo-500/60 hover:bg-indigo-500/10 card-surface';
+      el.className =
+        'flex items-center justify-between rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-sm transition hover:border-indigo-500/60 hover:bg-indigo-500/10 card-surface';
       el.innerHTML = `
         <div class="flex flex-col">
           <span class="font-medium text-white">${item.key || 'Media asset'}</span>
@@ -1121,7 +1178,10 @@
     });
   }
 
-  // Public API -------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Public API
+  // -----------------------------------------------------------------------
+
   window.UI = {
     apiFetch,
     getAuth,
