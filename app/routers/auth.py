@@ -20,6 +20,7 @@ def _to_profile_response(user: User) -> ProfileResponse:
         bio=user.bio,
         location=user.location,
         website=user.website,
+        avatar_url=user.avatar_url,
         created_at=user.created_at,
         last_active_at=user.last_active_at,
     )

@@ -438,7 +438,11 @@
       }
       if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
       if (avatarEl) {
-        avatarEl.src = `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
+        if (profile.avatar_url) {
+          avatarEl.src = profile.avatar_url;
+        } else {
+          avatarEl.src = `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
+        }
       }
 
       const form = document.getElementById('profile-form');
@@ -490,10 +494,23 @@
     saveButton.addEventListener('click', async event => {
       event.preventDefault();
       try {
+        let avatarUrl = null;
+
+        if (uploadInput && uploadInput.files && uploadInput.files[0]) {
+          const uploadData = new FormData();
+          uploadData.append('file', uploadInput.files[0]);
+          const uploadResult = await apiFetch('/media/upload', {
+            method: 'POST',
+            body: uploadData
+          });
+          avatarUrl = uploadResult.url || null;
+        }
+
         const payload = {
           location: form.elements['location'].value || null,
           website: form.elements['website'].value || null,
-          bio: form.elements['bio'].value || null
+          bio: form.elements['bio'].value || null,
+          avatar_url: avatarUrl
         };
         await apiFetch('/profiles/me', {
           method: 'PUT',

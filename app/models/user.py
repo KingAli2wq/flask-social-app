@@ -22,6 +22,7 @@ class User(Base):
     bio = Column(String(500), nullable=True)
     location = Column(String(255), nullable=True)
     website = Column(String(255), nullable=True)
+    avatar_url = Column(String(1024), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_active_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

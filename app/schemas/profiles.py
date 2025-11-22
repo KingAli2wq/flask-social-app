@@ -16,6 +16,7 @@ class ProfileResponse(BaseModel):
     bio: str | None
     location: str | None
     website: HttpUrl | None = None
+    avatar_url: str | None = None
     created_at: datetime
     last_active_at: datetime
 
@@ -24,6 +25,7 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = None
     location: str | None = None
     website: HttpUrl | None = None
+    avatar_url: str | None = None
 
 
 __all__ = ["ProfileResponse", "ProfileUpdateRequest"]
