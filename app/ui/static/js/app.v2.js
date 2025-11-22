@@ -211,33 +211,11 @@
   }
 
   // -----------------------------------------------------------------------
-  // Avatar utilities (critical part)
+  // Avatar helpers
   // -----------------------------------------------------------------------
 
-  function shouldSkipCacheBuster(url) {
-    try {
-      const parsed = new URL(url, window.location.origin);
-
-      // DigitalOcean Spaces (and similar) should NEVER be cache-busted
-      if (parsed.hostname.includes('digitaloceanspaces.com')) {
-        return true;
-      }
-
-      const params = parsed.searchParams;
-      // Also skip for signed URLs
-      return (
-        params.has('X-Amz-Signature') ||
-        params.has('X-Amz-Credential') ||
-        params.has('X-Amz-Algorithm') ||
-        params.has('AWSAccessKeyId')
-      );
-    } catch (_err) {
-      return false;
-    }
-  }
-
   function resolveAvatarUrl(rawUrl) {
-    if (!rawUrl || typeof rawUrl !== 'string') {
+    if (typeof rawUrl !== 'string') {
       return DEFAULT_AVATAR;
     }
 
@@ -246,52 +224,62 @@
       return DEFAULT_AVATAR;
     }
 
-    // Local asset (like /assets/default-avatar.png)
-    if (trimmed.startsWith('/assets/')) {
-      return trimmed;
-    }
-
-    // Data URL from <input type="file"> preview
     if (trimmed.startsWith('data:image')) {
       return trimmed;
     }
 
-    // Spaces / signed URLs: no cache-buster
     if (shouldSkipCacheBuster(trimmed)) {
       return trimmed;
     }
 
-    // Generic cache-buster for any other plain URL
     const cacheBuster = Date.now();
-    return trimmed.includes('?') ? `${trimmed}&v=${cacheBuster}` : `${trimmed}?v=${cacheBuster}`;
+    return trimmed.includes('?')
+      ? `${trimmed}&v=${cacheBuster}`
+      : `${trimmed}?v=${cacheBuster}`;
+  }
+
+  function shouldSkipCacheBuster(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+
+      if (parsed.hostname.includes('digitaloceanspaces.com')) {
+        return true;
+      }
+
+      const params = parsed.searchParams;
+
+      return (
+        params.has('X-Amz-Signature') ||
+        params.has('X-Amz-Credential') ||
+        params.has('X-Amz-Algorithm') ||
+        params.has('AWSAccessKeyId')
+      );
+    } catch {
+      return false;
+    }
   }
 
   function applyAvatarToImg(img, rawUrl) {
     if (!img) return;
 
-    const finalUrl = resolveAvatarUrl(rawUrl);
+    console.log('[avatar] applyAvatarToImg for', img.id || img.dataset.userId, 'rawUrl =', rawUrl);
 
-    // Avoid flicker / redundant loads
-    if (img.dataset.currentSrc === finalUrl) {
+    if (!rawUrl) {
+      img.src = DEFAULT_AVATAR;
       return;
     }
-    img.dataset.currentSrc = finalUrl;
 
-    img.onerror = null;
+    const finalUrl = shouldSkipCacheBuster(rawUrl)
+      ? rawUrl
+      : resolveAvatarUrl(rawUrl);
+
     img.src = finalUrl;
-
-    img.onerror = () => {
-      img.onerror = null;
-      img.src = DEFAULT_AVATAR;
-      img.dataset.currentSrc = DEFAULT_AVATAR;
-    };
   }
 
   function updateAvatarCacheEntry(userId, rawUrl) {
     if (!userId) return;
 
     if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
-      // Do NOT overwrite an existing cached avatar with an empty value
       return;
     }
 
@@ -300,9 +288,7 @@
   }
 
   function cacheProfile(profile) {
-    if (!profile || !profile.id) {
-      return null;
-    }
+    if (!profile || !profile.id) return null;
     updateAvatarCacheEntry(profile.id, profile.avatar_url);
     return state.avatarCache[String(profile.id)];
   }
@@ -315,32 +301,20 @@
   async function fetchCurrentUserProfile() {
     const { userId } = getAuth();
 
-    // If we do not have userId in localStorage, fall back to /auth/me
     if (!userId) {
       const me = await apiFetch('/auth/me');
       console.log('[auth/me] avatar_url:', me.avatar_url || '(none)');
       cacheProfile(me);
-
-      const effective = me.avatar_url && me.avatar_url.trim()
-        ? me.avatar_url
-        : state.currentProfileAvatar;
-
-      state.currentProfileAvatar = effective || null;
-      updateCurrentUserAvatarImages(state.currentProfileAvatar);
+      state.currentProfileAvatar = me.avatar_url || null;
+      updateCurrentUserAvatarImages(me.avatar_url);
       return me;
     }
 
-    // Canonical profile endpoint
     const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
     console.log('[profiles/by-id] avatar_url:', profile.avatar_url || '(none)');
     cacheProfile(profile);
-
-    const effective = profile.avatar_url && profile.avatar_url.trim()
-      ? profile.avatar_url
-      : state.currentProfileAvatar;
-
-    state.currentProfileAvatar = effective || null;
-    updateCurrentUserAvatarImages(state.currentProfileAvatar);
+    state.currentProfileAvatar = profile.avatar_url || null;
+    updateCurrentUserAvatarImages(profile.avatar_url);
     return profile;
   }
 
@@ -694,11 +668,7 @@
     try {
       const profile = prefetchedProfile || await fetchCurrentUserProfile();
       cacheProfile(profile);
-
-      // Never downgrade currentProfileAvatar from non-empty to empty
-      if (profile.avatar_url && profile.avatar_url.trim()) {
-        state.currentProfileAvatar = profile.avatar_url;
-      }
+      state.currentProfileAvatar = profile.avatar_url || null;
 
       const { username } = profile;
       if (usernameEl) usernameEl.textContent = `@${username}`;
@@ -719,7 +689,6 @@
       if (avatarEl) {
         const url = profile.avatar_url || state.currentProfileAvatar;
         applyAvatarToImg(avatarEl, url);
-        console.log('[profile img] final src:', avatarEl.src);
       }
 
       const form = document.getElementById('profile-form');
@@ -734,10 +703,13 @@
       if (postCountEl) postCountEl.textContent = filtered.length;
       if (feedLoading) feedLoading.classList.add('hidden');
       if (filtered.length === 0 && feedEmpty) feedEmpty.classList.remove('hidden');
+
       if (feedList) {
         feedList.innerHTML = '';
         filtered.forEach(post => {
-          const avatarUrl = state.avatarCache[profile.id] || resolveAvatarUrl(profile.avatar_url);
+          const avatarUrl =
+            state.avatarCache[profile.id] ||
+            resolveAvatarUrl(profile.avatar_url);
           feedList.appendChild(createPostCard(post, username, avatarUrl));
         });
       }
@@ -771,10 +743,13 @@
 
     saveButton.addEventListener('click', async event => {
       event.preventDefault();
+
       try {
         let avatarUrl = null;
         let changedAvatar = false;
-        const avatarFileChosen = Boolean(uploadInput && uploadInput.files && uploadInput.files[0]);
+        const avatarFileChosen = Boolean(
+          uploadInput && uploadInput.files && uploadInput.files[0]
+        );
         console.log('[profile] avatar file selected:', avatarFileChosen);
 
         if (avatarFileChosen) {
@@ -792,17 +767,20 @@
           console.log('[profile] uploaded avatar url:', avatarUrl);
         }
 
-        // Build base payload with profile fields
         const payload = {
           location: form.elements['location'].value || null,
           website: form.elements['website'].value || null,
           bio: form.elements['bio'].value || null
         };
 
-        // IMPORTANT: only send avatar_url if it actually changed.
-        // Otherwise the backend keeps the existing avatar.
-        if (changedAvatar && avatarUrl) {
+        if (changedAvatar) {
           payload.avatar_url = avatarUrl;
+        } else {
+          const authData = getAuth();
+          const cached = authData?.userId
+            ? state.avatarCache[String(authData.userId)]
+            : null;
+          payload.avatar_url = state.currentProfileAvatar || cached || null;
         }
 
         console.log('[profile] PUT /profiles/me payload:', payload);
@@ -814,31 +792,33 @@
 
         const me = await fetchCurrentUserProfile();
 
-        if (me && me.id && me.avatar_url) {
+        if (me && me.id) {
           state.avatarCache[String(me.id)] = resolveAvatarUrl(me.avatar_url);
         }
 
         const avatarNode = document.getElementById('profile-avatar');
         if (avatarNode) {
-          applyAvatarToImg(avatarNode, me.avatar_url || state.currentProfileAvatar);
+          applyAvatarToImg(avatarNode, me.avatar_url);
         }
 
-        // Refresh all avatars in feed for this user
         document
           .querySelectorAll('[data-role="post-avatar"][data-user-id]')
           .forEach(node => {
             if (String(node.dataset.userId) === String(me.id)) {
-              applyAvatarToImg(node, me.avatar_url || state.currentProfileAvatar);
+              applyAvatarToImg(node, me.avatar_url);
             }
           });
 
-        if (uploadInput) uploadInput.value = '';
+        if (uploadInput) {
+          uploadInput.value = '';
+        }
 
         showToast('Profile updated successfully.', 'success');
         await loadProfileData(me);
       } catch (error) {
         if (feedback) {
-          feedback.textContent = error.message || 'Failed to update profile.';
+          feedback.textContent =
+            error.message || 'Failed to update profile.';
           feedback.classList.remove('hidden');
         }
       }
