@@ -580,7 +580,7 @@
         setTimeout(() => {
           applyAvatarToImg(avatarEl, profile.avatar_url);
         }, 50);
-      }
+    }
 
 
       const form = document.getElementById('profile-form');
@@ -672,6 +672,11 @@
 
         // Refresh user data
         const me = await fetchCurrentUserProfile();
+
+        // FIX: Update avatar cache to newest value
+        if (me && me.id) {
+          state.avatarCache[String(me.id)] = resolveAvatarUrl(me.avatar_url);
+        }
 
         // Update profile avatar immediately
         const avatarNode = document.getElementById('profile-avatar');
