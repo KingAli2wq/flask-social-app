@@ -521,6 +521,7 @@
       event.preventDefault();
       try {
         let avatarUrl = null;
+        let keepExistingAvatar = true;
 
         if (uploadInput && uploadInput.files && uploadInput.files[0]) {
           const uploadData = new FormData();
@@ -530,6 +531,12 @@
             body: uploadData
           });
           avatarUrl = uploadResult.url || null;
+          keepExistingAvatar = false;
+        }
+
+        if (keepExistingAvatar) {
+          const meCurrent = await apiFetch('/auth/me');
+          avatarUrl = meCurrent.avatar_url || DEFAULT_AVATAR;
         }
 
         const payload = {
@@ -538,15 +545,18 @@
           bio: form.elements['bio'].value || null,
           avatar_url: avatarUrl
         };
+
         await apiFetch('/profiles/me', {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
-        if (feedback) {
-          feedback.classList.add('hidden');
-        }
+
+        const me = await apiFetch('/auth/me');
+        state.avatarCache[me.id] = me.avatar_url || DEFAULT_AVATAR;
+
         showToast('Profile updated successfully.', 'success');
         await loadProfileData();
+
       } catch (error) {
         if (feedback) {
           feedback.textContent = error.message || 'Failed to update profile.';
