@@ -45,13 +45,22 @@
 
   function applyAvatarToImg(img, rawUrl) {
     if (!img) return;
+
     img.onerror = null;
-    img.src = resolveAvatarUrl(rawUrl);
+
+    // If preview is a base64 data URL, do NOT apply cache-busting.
+    if (typeof rawUrl === 'string' && rawUrl.startsWith('data:image')) {
+      img.src = rawUrl;
+    } else {
+      img.src = resolveAvatarUrl(rawUrl);
+    }
+    
     img.onerror = () => {
       img.onerror = null;
       img.src = DEFAULT_AVATAR;
     };
   }
+
 
   function updateAvatarCacheEntry(userId, rawUrl) {
     if (!userId) return;
