@@ -80,14 +80,16 @@
   function applyAvatarToImg(img, rawUrl) {
     if (!img) return;
 
-    img.onerror = null;
-
-    img.src = resolveAvatarUrl(rawUrl);
-    
-    img.onerror = () => {
-      img.onerror = null;
+    if (!rawUrl) {
       img.src = DEFAULT_AVATAR;
-    };
+      return;
+    }
+
+    const finalUrl = shouldSkipCacheBuster(rawUrl)
+      ? rawUrl
+      : resolveAvatarUrl(rawUrl);
+
+    img.src = finalUrl;
   }
 
 
@@ -670,12 +672,8 @@
       }
       if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
       if (avatarEl) {
-        applyAvatarToImg(avatarEl, profile.avatar_url);
-
-        // Force a re-render in case the browser cached the default avatar
-        setTimeout(() => {
-          applyAvatarToImg(avatarEl, profile.avatar_url);
-        }, 50);
+        const url = profile.avatar_url || state.currentProfileAvatar;
+        applyAvatarToImg(avatarEl, url);
       }
 
 
