@@ -3,10 +3,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import UUID
-from sqlalchemy import text
-from fastapi import Depends
-from pydantic import BaseModel, ConfigDict, HttpUrl
-
 
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 
@@ -19,7 +15,7 @@ class ProfileResponse(BaseModel):
     bio: str | None
     location: str | None
     website: HttpUrl | None = None
-    avatar_url: str | None = None
+    avatar_url: HttpUrl | str | None = None
     created_at: datetime
     last_active_at: datetime
 
@@ -29,12 +25,11 @@ class ProfileResponse(BaseModel):
             return None
         return v
 
-
-
 class ProfileUpdateRequest(BaseModel):
     bio: str | None = None
     location: str | None = None
     website: HttpUrl | None = None
+    avatar_url: HttpUrl | str | None = None
 
 
 

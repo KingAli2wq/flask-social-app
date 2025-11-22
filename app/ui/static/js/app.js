@@ -23,7 +23,9 @@
     activeChatId: null,
     conversations: loadJson(CONVERSATIONS_KEY, {}),
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
-    avatarCache: {}
+    avatarCache: {},
+    feedRefreshHandle: null,
+    feedLoading: false
   };
 
   function resolveAvatarUrl(rawUrl) {
@@ -285,6 +287,7 @@
     initThemeToggle();
     await loadFeed();
     setupComposer();
+    startFeedAutoRefresh();
   }
 
   function setupComposer() {
@@ -341,6 +344,26 @@
     });
   }
 
+  function startFeedAutoRefresh(intervalMs = 15000) {
+    if (state.feedRefreshHandle) {
+      clearInterval(state.feedRefreshHandle);
+    }
+    state.feedRefreshHandle = window.setInterval(async () => {
+      try {
+        await loadFeed(true);
+      } catch (error) {
+        console.warn('[feed] auto refresh failed', error);
+      }
+    }, intervalMs);
+
+    window.addEventListener('beforeunload', () => {
+      if (state.feedRefreshHandle) {
+        clearInterval(state.feedRefreshHandle);
+        state.feedRefreshHandle = null;
+      }
+    }, { once: true });
+  }
+
   async function loadFeed(forceRefresh = false) {
     const loading = document.getElementById('feed-loading');
     const empty = document.getElementById('feed-empty');
@@ -348,6 +371,11 @@
     const loadMore = document.getElementById('feed-load-more');
     const countBadge = document.getElementById('feed-count');
     if (!list) return;
+
+    if (state.feedLoading) {
+      return;
+    }
+    state.feedLoading = true;
 
     if (loading) loading.classList.remove('hidden');
     if (empty) empty.classList.add('hidden');
@@ -381,39 +409,39 @@
     } catch (error) {
       showToast(error.message || 'Unable to load feed.', 'error');
     } finally {
+      state.feedLoading = false;
       if (loading) loading.classList.add('hidden');
     }
   }
 
   async function ensureAvatarCache(posts) {
     const { userId: currentUserId } = getAuth();
-    const ids = Array.from(
-      new Set(
-        posts
-          .map(post => (post && post.user_id ? String(post.user_id) : null))
-          .filter(Boolean)
-      )
-    );
-    const fetches = ids.map(async userId => {
+    const idsNeedingFetch = [];
+
+    posts.forEach(post => {
+      if (!post || !post.user_id) return;
+      const key = String(post.user_id);
+      if (post.avatar_url) {
+        updateAvatarCacheEntry(key, post.avatar_url);
+      }
+      if (!state.avatarCache[key]) {
+        idsNeedingFetch.push(key);
+      }
+    });
+
+    const uniqueIds = Array.from(new Set(idsNeedingFetch));
+    const fetches = uniqueIds.map(async userId => {
       if (state.avatarCache[userId]) return;
       try {
         if (currentUserId && String(userId) === String(currentUserId)) {
           await fetchCurrentUserProfile();
           return;
         }
-        // FIX: backend expects username, but our feed only has user_id
-        // add backend route GET /profiles/by-id/<id>
         const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
         cacheProfile(profile);
-
-      } catch (_err) {
-        console.warn("[avatar-cache] Failed to load profile for:", userId);
-        // Only set default if we truly have no data for this user
-        if (!state.avatarCache[userId]) {
-          updateAvatarCacheEntry(userId, null);
-        }
+      } catch (error) {
+        console.warn('[avatar-cache] Failed to load profile for:', userId, error);
       }
-
     });
     await Promise.all(fetches);
   }
@@ -422,14 +450,16 @@
     const list = document.getElementById('feed-list');
     const loadMore = document.getElementById('feed-load-more');
     if (!list) return;
-    const { username } = getAuth();
+    const authMeta = getAuth();
     const slice = state.feedItems.slice(state.feedCursor, state.feedCursor + FEED_BATCH_SIZE);
     slice.forEach(post => {
+      updateAvatarCacheEntry(post.user_id, post.avatar_url);
+      const cacheKey = post && post.user_id ? String(post.user_id) : null;
       const avatarUrl =
-        state.avatarCache[post.user_id] ||
+        (cacheKey && state.avatarCache[cacheKey]) ||
         resolveAvatarUrl(post.avatar_url) ||
         DEFAULT_AVATAR;
-      list.appendChild(createPostCard(post, username, avatarUrl));
+      list.appendChild(createPostCard(post, authMeta, avatarUrl));
     });
     state.feedCursor += slice.length;
     if (loadMore) {
@@ -437,10 +467,15 @@
     }
   }
 
-  function createPostCard(post, currentUsername, avatarUrl) {
+  function createPostCard(post, currentUserMeta, avatarUrl) {
     const el = document.createElement('article');
     el.className = 'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
-    const displayName = currentUsername && post.user_id === getAuth().userId ? `@${currentUsername}` : `User ${String(post.user_id).slice(0, 8)}`;
+    const currentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
+    const currentUserId = typeof currentUserMeta === 'object' ? currentUserMeta?.userId : null;
+    const isCurrentUser = currentUserId && String(post.user_id) === String(currentUserId);
+    const displayName = post.username
+      ? `@${post.username}`
+      : (isCurrentUser && currentUsername ? `@${currentUsername}` : `User ${String(post.user_id).slice(0, 8)}`);
     const timestamp = formatDate(post.created_at);
     const media = post.media_url ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">` : '';
     el.innerHTML = `

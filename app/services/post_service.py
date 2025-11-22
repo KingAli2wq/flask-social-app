@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
@@ -86,7 +87,7 @@ async def create_post_record(
         if asset is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
         if media_url is None:
-            media_url = asset.url
+            media_url = cast(str | None, asset.url)
 
     post = Post(user_id=user_id, caption=caption, media_url=media_url, media_asset_id=normalized_asset_id)
     db.add(post)
@@ -95,11 +96,36 @@ async def create_post_record(
     return post
 
 
-def list_feed_records(db: Session) -> list[Post]:
-    """Return the latest posts in reverse chronological order."""
+def list_feed_records(db: Session) -> list[dict[str, Any]]:
+    """Return the latest posts along with author metadata."""
 
-    statement = select(Post).order_by(Post.created_at.desc())
-    return list(db.scalars(statement))
+    statement = (
+        select(
+            Post,
+            User.username.label("username"),
+            User.avatar_url.label("avatar_url"),
+        )
+        .join(User, Post.user_id == User.id)
+        .order_by(Post.created_at.desc())
+    )
+
+    records: list[dict[str, Any]] = []
+    for post, username_value, avatar_value in db.execute(statement).all():
+        username = cast(str | None, username_value)
+        avatar_url = cast(str | None, avatar_value)
+        records.append(
+            {
+                "id": post.id,
+                "user_id": post.user_id,
+                "caption": post.caption,
+                "media_url": post.media_url,
+                "media_asset_id": post.media_asset_id,
+                "created_at": post.created_at,
+                "username": username,
+                "avatar_url": avatar_url,
+            }
+        )
+    return records
 
 
 def delete_post_record(db: Session, *, post_id: UUID, requester_id: UUID) -> None:
@@ -108,7 +134,8 @@ def delete_post_record(db: Session, *, post_id: UUID, requester_id: UUID) -> Non
     post = db.get(Post, post_id)
     if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
-    if post.user_id != requester_id:
+    post_author_id = cast(UUID, post.user_id)
+    if post_author_id != requester_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this post")
     db.delete(post)
     db.commit()

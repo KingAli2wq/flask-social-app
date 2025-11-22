@@ -27,6 +27,8 @@ class PostResponse(BaseModel):
     media_url: str | None = None
     media_asset_id: UUID | None = None
     created_at: datetime
+    username: str | None = None
+    avatar_url: str | None = None
 
 
 class PostFeedResponse(BaseModel):
