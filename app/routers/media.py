@@ -41,9 +41,18 @@ async def upload_media(
     try:
         result = await upload_file_to_spaces(file, folder="media", db=db, user_id=user_id)
     except SpacesConfigurationError as exc:
+        print("CONFIG ERROR:", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except SpacesUploadError as exc:  # pragma: no cover - network bound
+    except SpacesUploadError as exc:
+        print("UPLOAD ERROR:", exc)
+        # Print inner exception if it exists
+        if hasattr(exc, "__cause__") and exc.__cause__:
+            print("CAUSE:", exc.__cause__)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        print("UNEXPECTED ERROR:", exc)
+        raise
+
 
     if result.asset_id is None:
         raise HTTPException(status_code=500, detail="Failed to persist media metadata")
