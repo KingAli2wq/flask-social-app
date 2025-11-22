@@ -14,7 +14,7 @@
     info: 'bg-slate-900/90 text-white shadow-slate-900/30'
   };
   
-  const DEFAULT_AVATAR = '/static/assets/default-avatar.png';
+  const DEFAULT_AVATAR = '/assets/default-avatar.png';
 
 
   const state = {
