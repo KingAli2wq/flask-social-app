@@ -5,10 +5,13 @@
     <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
         <div class="flex flex-col items-center gap-4 text-center">
             <div class="flex flex-col items-center gap-4">
+
+                <!-- FIX: Remove hardcoded default avatar -->
                 <img
                     id="profile-avatar"
+                    data-current-user-avatar
                     class="h-32 w-32 rounded-full object-cover border shadow"
-                    src="/assets/default-avatar.png"
+                    src=""
                     alt="Profile Avatar"
                 >
 
@@ -27,31 +30,47 @@
                     Change Avatar
                 </button>
             </div>
+
             <div>
                 <h1 id="profile-username" class="text-xl font-semibold text-white">@username</h1>
                 <p id="profile-location" class="text-sm text-slate-400">Location not set</p>
             </div>
+
             <p id="profile-bio" class="text-sm text-slate-300">Add a short bio to introduce yourself.</p>
-            <a id="profile-website" href="#" rel="noopener" target="_blank" class="text-sm font-medium text-indigo-300 hover:text-indigo-200">Website</a>
+
+            <a
+                id="profile-website"
+                href="#"
+                rel="noopener"
+                target="_blank"
+                class="text-sm font-medium text-indigo-300 hover:text-indigo-200"
+            >
+                Website
+            </a>
         </div>
+
         <dl class="mt-8 grid grid-cols-2 gap-4 text-center">
             <div class="rounded-2xl bg-slate-900/90 p-4">
                 <dt class="text-xs uppercase tracking-wide text-slate-500">Posts</dt>
                 <dd id="profile-post-count" class="mt-1 text-lg font-semibold text-white">0</dd>
             </div>
+
             <div class="rounded-2xl bg-slate-900/90 p-4">
                 <dt class="text-xs uppercase tracking-wide text-slate-500">Member since</dt>
                 <dd id="profile-created" class="mt-1 text-lg font-semibold text-white">—</dd>
             </div>
         </dl>
     </aside>
+
     <div class="flex flex-col gap-8">
+
         <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
             <header class="flex items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Edit profile</h2>
                     <p class="text-sm text-slate-400">Craft a profile that tells your story.</p>
                 </div>
+
                 <button
                     id="profile-save"
                     type="button"
@@ -61,7 +80,9 @@
                     <span>Save changes</span>
                 </button>
             </header>
+
             <form id="profile-form" class="mt-6 grid gap-6">
+
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="location">
                     <span>Location</span>
                     <input
@@ -69,9 +90,10 @@
                         name="location"
                         type="text"
                         placeholder="New York, USA"
-                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600"
                     >
                 </label>
+
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="website">
                     <span>Website</span>
                     <input
@@ -79,9 +101,10 @@
                         name="website"
                         type="url"
                         placeholder="https://example.com"
-                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600"
                     >
                 </label>
+
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="bio">
                     <span>Bio</span>
                     <textarea
@@ -89,26 +112,39 @@
                         name="bio"
                         rows="4"
                         placeholder="Share what you're building…"
-                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0 resize-none"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 resize-none"
                     ></textarea>
                 </label>
-                <div id="profile-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
+
+                <div
+                    id="profile-feedback"
+                    class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"
+                ></div>
             </form>
         </section>
+
         <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+
             <header class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-white">Recent posts</h2>
                 <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Auto-updates</span>
             </header>
+
             <div id="profile-feed-loading" class="mt-6 flex items-center gap-3 text-sm text-slate-400">
                 <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
                 <span>Loading posts…</span>
             </div>
-            <div id="profile-feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+
+            <div
+                id="profile-feed-empty"
+                class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400"
+            >
                 No posts yet. Share something from the feed to see it here.
             </div>
+
             <div id="profile-feed" class="mt-6 grid gap-6"></div>
         </section>
+
     </div>
 </section>
 {% endblock %}
@@ -125,13 +161,12 @@
         };
     })();
 </script>
+
 <script>
     if (window.UI && typeof window.UI.initProfilePage === "function") {
         window.UI.initProfilePage();
     } else {
-        window.addEventListener("DOMContentLoaded", () => {
-            window.UI.initProfilePage();
-        });
+        window.addEventListener("DOMContentLoaded", () => window.UI.initProfilePage());
     }
 </script>
 {% endblock %}
