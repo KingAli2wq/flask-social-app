@@ -232,8 +232,8 @@
         return;
       }
       const formData = new FormData(form);
-      const content = formData.get('content');
-      if (!content || String(content).trim().length === 0) {
+      const caption = formData.get('caption');
+      if (!caption || String(caption).trim().length === 0) {
         showToast('Write something before publishing.', 'warning');
         return;
       }
@@ -322,7 +322,7 @@
           <p class="text-xs text-slate-400">${timestamp}</p>
         </div>
       </header>
-      <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.content || ''}</p>
+      <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.caption || ''}</p>
       ${media}
       <footer class="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button class="like-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>❤</span><span>Like</span></button>

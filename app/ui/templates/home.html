@@ -12,7 +12,7 @@
                 <span class="hidden rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-medium text-indigo-300 md:inline-flex">Realtime</span>
             </header>
             <form id="composer-form" class="mt-6 flex flex-col gap-4" enctype="multipart/form-data">
-                {{ components.forms.textarea("content", label="What's happening?", placeholder="Share an update, celebrate a win, or drop a hot take…", rows=4, required=True) | safe }}
+                {{ components.forms.textarea("caption", label="What's happening?", placeholder="Share an update, celebrate a win, or drop a hot take…", rows=4, required=True) | safe }}
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                         {{ components.forms.file_input("file", label="Attach media") | safe }}
