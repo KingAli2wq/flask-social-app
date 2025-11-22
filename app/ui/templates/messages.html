@@ -5,7 +5,7 @@
     <aside class="flex h-full flex-col">
         <header class="flex items-center justify-between">
             <h1 class="text-lg font-semibold text-white">Messages</h1>
-            <button id="new-chat" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">New chat</button>
+            <button id="new-chat" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10" type="button">New chat</button>
         </header>
         <div id="conversation-list" class="scrollbar-thin mt-6 flex-1 overflow-y-auto divide-y divide-slate-800/70">
             <p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>
@@ -32,7 +32,13 @@
                 <div class="flex flex-col gap-3 md:w-48">
                     {{ components.forms.text_input("chat_id", label="Chat ID", placeholder="team-alpha", required=False) | safe }}
                     {{ components.forms.text_input("recipient_id", label="Recipient ID", placeholder="UUID", required=False) | safe }}
-                    {{ components.buttons.primary("Send", id_="message-send", icon="📨") | safe }}
+                    <button
+                        id="message-send"
+                        type="submit"
+                        class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                    >
+                        <span class="text-base">➤</span><span>Send</span>
+                    </button>
                 </div>
             </div>
             <div id="message-feedback" class="mt-4 hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>

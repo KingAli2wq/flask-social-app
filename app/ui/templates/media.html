@@ -12,7 +12,7 @@
         </header>
         <form id="media-upload-form" class="mt-8 flex flex-col gap-6" enctype="multipart/form-data">
             <label for="media-file" class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-700/70 bg-slate-950/60 px-6 py-16 text-center text-sm text-slate-400 transition hover:border-indigo-500/70 hover:bg-indigo-500/5">
-                <span class="text-3xl">⤴</span>
+                <span class="text-3xl">⤓</span>
                 <span><strong>Drop files</strong> or click to browse</span>
                 <input id="media-file" name="file" type="file" accept="image/*,video/*" class="hidden">
             </label>
@@ -20,7 +20,13 @@
                 <img id="media-preview-img" class="hidden h-64 w-full object-cover" alt="Preview">
                 <video id="media-preview-video" class="hidden h-64 w-full object-cover" controls></video>
             </div>
-            {{ components.buttons.primary("Upload", id_="media-upload-submit", icon="⬆") | safe }}
+            <button
+                id="media-upload-submit"
+                type="submit"
+                class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            >
+                <span class="text-base">⇪</span><span>Upload</span>
+            </button>
             <div id="media-upload-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
         </form>
     </div>
