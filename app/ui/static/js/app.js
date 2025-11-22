@@ -13,13 +13,15 @@
     warning: 'bg-amber-400 text-slate-900 shadow-amber-400/30',
     info: 'bg-slate-900/90 text-white shadow-slate-900/30'
   };
+  const DEFAULT_AVATAR = '/assets/default-avatar.png';
 
   const state = {
     feedItems: [],
     feedCursor: 0,
     activeChatId: null,
     conversations: loadJson(CONVERSATIONS_KEY, {}),
-    mediaHistory: loadJson(MEDIA_HISTORY_KEY, [])
+    mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
+    avatarCache: {}
   };
 
   function loadJson(key, fallback) {
@@ -275,6 +277,7 @@
       state.feedItems = Array.isArray(data.items) ? data.items : [];
       state.feedCursor = 0;
       list.innerHTML = '';
+      await ensureAvatarCache(state.feedItems);
       renderNextFeedBatch();
       if (countBadge) {
         countBadge.textContent = `${state.feedItems.length} posts`;
@@ -293,6 +296,26 @@
     }
   }
 
+  async function ensureAvatarCache(posts) {
+    const { userId: currentUserId } = getAuth();
+    const ids = new Set(posts.map(post => post.user_id).filter(Boolean));
+    const fetches = Array.from(ids).map(async userId => {
+      if (state.avatarCache[userId]) return;
+      try {
+        if (currentUserId && String(userId) === String(currentUserId)) {
+          const me = await apiFetch('/auth/me');
+          state.avatarCache[userId] = me.avatar_url || DEFAULT_AVATAR;
+        } else {
+          const profile = await apiFetch(`/profiles/${encodeURIComponent(userId)}`);
+          state.avatarCache[userId] = profile.avatar_url || DEFAULT_AVATAR;
+        }
+      } catch (_err) {
+        state.avatarCache[userId] = DEFAULT_AVATAR;
+      }
+    });
+    await Promise.all(fetches);
+  }
+
   function renderNextFeedBatch() {
     const list = document.getElementById('feed-list');
     const loadMore = document.getElementById('feed-load-more');
@@ -300,7 +323,8 @@
     const { username } = getAuth();
     const slice = state.feedItems.slice(state.feedCursor, state.feedCursor + FEED_BATCH_SIZE);
     slice.forEach(post => {
-      list.appendChild(createPostCard(post, username));
+      const avatarUrl = state.avatarCache[post.user_id] || DEFAULT_AVATAR;
+      list.appendChild(createPostCard(post, username, avatarUrl));
     });
     state.feedCursor += slice.length;
     if (loadMore) {
@@ -308,7 +332,7 @@
     }
   }
 
-  function createPostCard(post, currentUsername) {
+  function createPostCard(post, currentUsername, avatarUrl) {
     const el = document.createElement('article');
     el.className = 'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
     const displayName = currentUsername && post.user_id === getAuth().userId ? `@${currentUsername}` : `User ${String(post.user_id).slice(0, 8)}`;
@@ -316,7 +340,7 @@
     const media = post.media_url ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">` : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
-        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-500/30 text-sm font-semibold text-indigo-200">${displayName.slice(0, 2).toUpperCase()}</div>
+        <img src="${avatarUrl || DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" />
         <div>
           <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
           <p class="text-xs text-slate-400">${timestamp}</p>
@@ -445,6 +469,7 @@
             `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
         }
       }
+      state.avatarCache[profile.id] = profile.avatar_url || DEFAULT_AVATAR;
 
       const form = document.getElementById('profile-form');
       if (form) {
@@ -461,7 +486,8 @@
       if (feedList) {
         feedList.innerHTML = '';
         filtered.forEach(post => {
-          feedList.appendChild(createPostCard(post, username));
+          const avatarUrl = state.avatarCache[profile.id] || DEFAULT_AVATAR;
+          feedList.appendChild(createPostCard(post, username, avatarUrl));
         });
       }
     } catch (error) {
