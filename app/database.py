@@ -10,7 +10,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # Load environment variables so DATABASE_URL is available when the module is imported.
-load_dotenv()
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
