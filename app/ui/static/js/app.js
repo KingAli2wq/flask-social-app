@@ -575,7 +575,13 @@
       if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
       if (avatarEl) {
         applyAvatarToImg(avatarEl, profile.avatar_url);
+
+        // Force a re-render in case the browser cached the default avatar
+        setTimeout(() => {
+          applyAvatarToImg(avatarEl, profile.avatar_url);
+        }, 50);
       }
+
 
       const form = document.getElementById('profile-form');
       if (form) {
