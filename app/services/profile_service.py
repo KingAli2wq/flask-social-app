@@ -22,43 +22,35 @@ def get_profile(db: Session, username: str) -> User:
 
 
 def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest) -> User:
-    """Apply profile updates for the supplied ``user_id``."""
-
     user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user:
+        raise HTTPException(404, "User not found")
 
-    # Only update fields provided by user
-    update_data = payload.model_dump(exclude_unset=True)
+    update_data = payload.model_dump(exclude_none=True)
 
-    # Preserve avatar unless explicitly updated AND not null/empty
+    # CRITICAL FIX: do NOT wipe avatar_url if frontend didn't send it
     if "avatar_url" in update_data:
         if not update_data["avatar_url"]:
+            # Skip null/empty avatar
             update_data.pop("avatar_url")
+    else:
+        # Explicitly preserve existing avatar_url
+        update_data["avatar_url"] = user.avatar_url
 
-    # Handle website safely
+    # Normalize website
     if "website" in update_data:
-        if update_data["website"] in (None, "", "None"):
-            update_data.pop("website")
+        if update_data["website"] in ("", None, "None"):
+            update_data["website"] = None
         else:
             update_data["website"] = str(update_data["website"])
 
-    # Apply valid fields
-    if update_data:
-        for field, value in update_data.items():
-            setattr(user, field, value)
+    for field, value in update_data.items():
+        setattr(user, field, value)
 
-        try:
-            db.commit()
-        except SQLAlchemyError as exc:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to update profile"
-            ) from exc
-
+    db.commit()
     db.refresh(user)
     return user
+
 
 
 
