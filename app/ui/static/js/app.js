@@ -64,9 +64,16 @@
 
   function updateAvatarCacheEntry(userId, rawUrl) {
     if (!userId) return;
+
+    // Do NOT overwrite existing avatar if new value is null/empty
+    if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
+      return;
+    }
+
     const key = String(userId);
     state.avatarCache[key] = resolveAvatarUrl(rawUrl);
   }
+
 
   function cacheProfile(profile) {
     if (!profile || !profile.id) {
