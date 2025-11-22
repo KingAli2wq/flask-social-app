@@ -7,7 +7,15 @@ from sqlalchemy.orm import Session
 from ..models import User
 from ..schemas import ProfileUpdateRequest
 
-
+def get_profile(db: Session, user_id: UUID) -> User:
+    """Return profile for a user by id (raises 404 if not found)."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
 def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest) -> User:
     """Apply profile updates for the supplied ``user_id``."""
 
