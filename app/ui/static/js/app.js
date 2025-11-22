@@ -13,7 +13,9 @@
     warning: 'bg-amber-400 text-slate-900 shadow-amber-400/30',
     info: 'bg-slate-900/90 text-white shadow-slate-900/30'
   };
-  const DEFAULT_AVATAR = '/assets/default-avatar.png';
+  
+  const DEFAULT_AVATAR = '/static/assets/default-avatar.png';
+
 
   const state = {
     feedItems: [],
@@ -462,13 +464,10 @@
       }
       if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
       if (avatarEl) {
-        if (profile.avatar_url) {
-          avatarEl.src = profile.avatar_url;
-        } else {
-          avatarEl.src =
-            `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
-        }
+        avatarEl.src = profile.avatar_url || DEFAULT_AVATAR;
+        avatarEl.onerror = () => { avatarEl.src = DEFAULT_AVATAR; };
       }
+
       state.avatarCache[profile.id] = profile.avatar_url || DEFAULT_AVATAR;
 
       const form = document.getElementById('profile-form');
