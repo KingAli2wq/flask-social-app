@@ -25,7 +25,7 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = None
     location: str | None = None
     website: HttpUrl | None = None
-    avatar_url: str | None = None
+
 
 
 __all__ = ["ProfileResponse", "ProfileUpdateRequest"]

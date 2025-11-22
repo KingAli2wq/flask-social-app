@@ -28,25 +28,35 @@ def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # FIX: preserve avatar_url and treat nulls properly
-    update_data = payload.model_dump(exclude_none=True)
+    # Only fields explicitly provided will be updated
+    update_data = payload.model_dump(exclude_unset=True)
+
+    # Do NOT allow avatar_url to be overwritten unless explicitly provided AND not None
+    if "avatar_url" in update_data:
+        if update_data["avatar_url"] is None or update_data["avatar_url"] == "":
+            # remove it so it's not updated
+            update_data.pop("avatar_url")
 
     # Normalize website (HttpUrl type)
     if "website" in update_data:
         update_data["website"] = str(update_data["website"])
 
-
     if update_data:
         for field, value in update_data.items():
             setattr(user, field, value)
+
         try:
             db.commit()
         except SQLAlchemyError as exc:
             db.rollback()
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update profile") from exc
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update profile"
+            ) from exc
 
     db.refresh(user)
     return user
+
 
 
 __all__ = ["get_profile", "update_profile"]
