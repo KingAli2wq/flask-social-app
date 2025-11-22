@@ -25,23 +25,45 @@
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
     avatarCache: {},
     feedRefreshHandle: null,
-    feedLoading: false
+    feedLoading: false,
+    feedSignature: null
   };
 
   function resolveAvatarUrl(rawUrl) {
-    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    if (typeof rawUrl !== 'string') {
       return DEFAULT_AVATAR;
     }
 
-    // Cache-busting timestamp to force browser to re-download images
-    const cacheBuster = Date.now();
-
-    // If URL already has query params, append with &
-      if (rawUrl.includes('?')) {
-      return `${rawUrl}&v=${cacheBuster}`;
+    const trimmed = rawUrl.trim();
+    if (!trimmed) {
+      return DEFAULT_AVATAR;
     }
 
-    return `${rawUrl}?v=${cacheBuster}`;
+    if (trimmed.startsWith('data:image')) {
+      return trimmed;
+    }
+
+    if (shouldSkipCacheBuster(trimmed)) {
+      return trimmed;
+    }
+
+    const cacheBuster = Date.now();
+    return trimmed.includes('?') ? `${trimmed}&v=${cacheBuster}` : `${trimmed}?v=${cacheBuster}`;
+  }
+
+  function shouldSkipCacheBuster(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const params = parsed.searchParams;
+      return (
+        params.has('X-Amz-Signature') ||
+        params.has('X-Amz-Credential') ||
+        params.has('X-Amz-Algorithm') ||
+        params.has('AWSAccessKeyId')
+      );
+    } catch (_err) {
+      return false;
+    }
   }
 
 
@@ -50,12 +72,7 @@
 
     img.onerror = null;
 
-    // If preview is a base64 data URL, do NOT apply cache-busting.
-    if (typeof rawUrl === 'string' && rawUrl.startsWith('data:image')) {
-      img.src = rawUrl;
-    } else {
-      img.src = resolveAvatarUrl(rawUrl);
-    }
+    img.src = resolveAvatarUrl(rawUrl);
     
     img.onerror = () => {
       img.onerror = null;
@@ -337,7 +354,7 @@
         if (previewWrapper) {
           previewWrapper.classList.add('hidden');
         }
-        await loadFeed(true);
+        await loadFeed({ forceRefresh: true });
       } catch (error) {
         showToast(error.message || 'Unable to publish post.', 'error');
       }
@@ -348,12 +365,10 @@
     if (state.feedRefreshHandle) {
       clearInterval(state.feedRefreshHandle);
     }
-    state.feedRefreshHandle = window.setInterval(async () => {
-      try {
-        await loadFeed(true);
-      } catch (error) {
+    state.feedRefreshHandle = window.setInterval(() => {
+      loadFeed({ forceRefresh: true, silent: true, onlyOnChange: true }).catch(error => {
         console.warn('[feed] auto refresh failed', error);
-      }
+      });
     }, intervalMs);
 
     window.addEventListener('beforeunload', () => {
@@ -364,7 +379,23 @@
     }, { once: true });
   }
 
-  async function loadFeed(forceRefresh = false) {
+  function computeFeedSignature(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return `len:${items ? items.length : 0}`;
+    }
+    return items
+      .map(item => `${item?.id ?? 'unknown'}:${item?.created_at ?? ''}:${item?.caption?.length ?? 0}:${item?.media_url ?? ''}`)
+      .join('|');
+  }
+
+  async function loadFeed(options = {}) {
+    const normalized = typeof options === 'boolean' ? { forceRefresh: options } : options;
+    const {
+      forceRefresh = false,
+      silent = false,
+      onlyOnChange = false,
+    } = normalized;
+
     const loading = document.getElementById('feed-loading');
     const empty = document.getElementById('feed-empty');
     const list = document.getElementById('feed-list');
@@ -377,17 +408,27 @@
     }
     state.feedLoading = true;
 
-    if (loading) loading.classList.remove('hidden');
-    if (empty) empty.classList.add('hidden');
+    if (!silent && loading) loading.classList.remove('hidden');
+    if (!silent && empty) empty.classList.add('hidden');
     if (forceRefresh) {
       state.feedItems = [];
       state.feedCursor = 0;
-      list.innerHTML = '';
+      if (!silent) {
+        list.innerHTML = '';
+      }
     }
 
     try {
       const data = await apiFetch('/posts/feed');
-      state.feedItems = Array.isArray(data.items) ? data.items : [];
+      const incomingItems = Array.isArray(data.items) ? data.items : [];
+      const newSignature = computeFeedSignature(incomingItems);
+
+      if (onlyOnChange && state.feedSignature === newSignature) {
+        return;
+      }
+
+      state.feedSignature = newSignature;
+      state.feedItems = incomingItems;
       state.feedCursor = 0;
       list.innerHTML = '';
       await ensureAvatarCache(state.feedItems);
@@ -410,7 +451,7 @@
       showToast(error.message || 'Unable to load feed.', 'error');
     } finally {
       state.feedLoading = false;
-      if (loading) loading.classList.add('hidden');
+      if (!silent && loading) loading.classList.add('hidden');
     }
   }
 
