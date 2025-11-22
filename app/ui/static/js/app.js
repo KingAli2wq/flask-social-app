@@ -55,7 +55,15 @@
   function shouldSkipCacheBuster(url) {
     try {
       const parsed = new URL(url, window.location.origin);
+
+      // ALWAYS skip cache-busting for DigitalOcean Spaces URLs
+      if (parsed.hostname.includes("digitaloceanspaces.com")) {
+        return true;
+      }
+
       const params = parsed.searchParams;
+
+      // Skip for AWS/Spaces signed URLs
       return (
         params.has('X-Amz-Signature') ||
         params.has('X-Amz-Credential') ||
@@ -65,7 +73,8 @@
     } catch (_err) {
       return false;
     }
-  }
+  }  
+
 
 
   function applyAvatarToImg(img, rawUrl) {
