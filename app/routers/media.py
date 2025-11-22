@@ -1,5 +1,6 @@
 """Media upload endpoints that leverage DigitalOcean Spaces."""
 from __future__ import annotations
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -26,9 +27,19 @@ async def upload_media(
 
     content_type = (file.content_type or "application/octet-stream").strip() or "application/octet-stream"
 
+    user_id_value = getattr(current_user, "id", None)
+    if user_id_value is None:
+        raise HTTPException(status_code=500, detail="Authenticated user is missing an identifier.")
+    if isinstance(user_id_value, uuid.UUID):
+        user_id = user_id_value
+    else:
+        try:
+            user_id = uuid.UUID(str(user_id_value))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="Invalid user identifier.") from exc
 
     try:
-        result = await upload_file_to_spaces(file, folder="media", db=db, user_id=current_user.id)
+        result = await upload_file_to_spaces(file, folder="media", db=db, user_id=user_id)
     except SpacesConfigurationError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except SpacesUploadError as exc:  # pragma: no cover - network bound

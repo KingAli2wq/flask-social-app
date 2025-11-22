@@ -4,9 +4,31 @@
 <section class="grid gap-8 lg:grid-cols-[1fr,2fr]">
     <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
         <div class="flex flex-col items-center gap-4 text-center">
-            <div class="relative">
-                <img id="profile-avatar" src="https://ui-avatars.com/api/?background=3730a3&color=fff" alt="Avatar" class="h-28 w-28 rounded-full border-4 border-indigo-500/40 object-cover shadow-lg">
-                <button id="profile-upload-trigger" class="absolute bottom-0 right-0 rounded-full bg-indigo-600 p-2 text-white shadow-lg shadow-indigo-500/40"><span class="text-sm">📷</span></button>
+            <div class="flex flex-col items-center gap-4">
+                <!-- Avatar image -->
+                <img
+                    id="profile-avatar"
+                    class="w-32 h-32 rounded-full object-cover border shadow"
+                    src="{{ profile.avatar_url or 'https://ui-avatars.com/api/?background=3730a3&color=fff&name=' ~ username }}"
+                    alt="Profile Avatar"
+                >
+
+                <!-- File input -->
+                <input
+                    type="file"
+                    id="profile-media"
+                    accept="image/*"
+                    class="hidden"
+                >
+
+                <!-- Upload button -->
+                <button
+                    id="profile-media-trigger"
+                    type="button"
+                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition"
+                >
+                    Change Avatar
+                </button>
             </div>
             <div>
                 <h1 id="profile-username" class="text-xl font-semibold text-white">@username</h1>
@@ -25,9 +47,6 @@
                 <dd id="profile-created" class="mt-1 text-lg font-semibold text-white">—</dd>
             </div>
         </dl>
-        <form id="profile-media-form" class="hidden" enctype="multipart/form-data">
-            <input type="file" id="profile-media" name="media" accept="image/*">
-        </form>
     </aside>
     <div class="flex flex-col gap-8">
         <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
