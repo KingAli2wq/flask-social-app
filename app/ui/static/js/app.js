@@ -24,6 +24,7 @@
     conversations: loadJson(CONVERSATIONS_KEY, {}),
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
     avatarCache: {},
+    currentProfileAvatar: null,
     feedRefreshHandle: null,
     feedLoading: false,
     feedSignature: null
@@ -115,6 +116,7 @@
       const me = await apiFetch('/auth/me');
       console.log('[auth/me] avatar_url:', me.avatar_url || '(default from /auth/me)');
       cacheProfile(me);
+      state.currentProfileAvatar = me.avatar_url || null;
       updateCurrentUserAvatarImages(me.avatar_url);
       return me;
     }
@@ -123,6 +125,7 @@
     const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
     console.log('[profiles/by-id] avatar_url:', profile.avatar_url || '(default from /profiles/by-id)');
     cacheProfile(profile);
+    state.currentProfileAvatar = profile.avatar_url || null;
     updateCurrentUserAvatarImages(profile.avatar_url);
     return profile;
   }
@@ -643,6 +646,7 @@
     try {
       const profile = prefetchedProfile || await fetchCurrentUserProfile();
       cacheProfile(profile);
+      state.currentProfileAvatar = profile.avatar_url || null;
       const { username } = profile;
       if (usernameEl) usernameEl.textContent = `@${username}`;
       if (bioEl) bioEl.textContent = profile.bio || 'Add a short bio to introduce yourself.';
@@ -730,6 +734,9 @@
           });
           avatarUrl = uploadResult.url || null;
           changedAvatar = !!avatarUrl;
+          if (changedAvatar) {
+            state.currentProfileAvatar = avatarUrl;
+          }
           console.log('[profile] uploaded avatar url:', avatarUrl);
         }
 
@@ -743,6 +750,10 @@
         // Only send avatar_url if actually changed
         if (changedAvatar) {
           payload.avatar_url = avatarUrl;
+        } else {
+          const authData = getAuth();
+          const cached = authData?.userId ? state.avatarCache[String(authData.userId)] : null;
+          payload.avatar_url = state.currentProfileAvatar || cached || null;
         }
 
         console.log('[profile] PUT /profiles/me payload:', payload);

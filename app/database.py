@@ -19,7 +19,13 @@ if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is not set")
 
 engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    future=True,
+    expire_on_commit=False,
+)
 Base = declarative_base()
 
 

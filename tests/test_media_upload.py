@@ -13,6 +13,7 @@ from sqlalchemy import delete
 # Ensure the database URL and JWT secret are available before importing application modules.
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///./test_media_upload.db")
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("DISABLE_CLEANUP", "true")
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402

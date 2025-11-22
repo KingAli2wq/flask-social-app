@@ -33,6 +33,7 @@ settings = get_settings()
 APP_NAME = settings.app_name
 API_VERSION = settings.api_version
 DROPLET_HOST = settings.droplet_host
+DISABLE_CLEANUP = os.getenv("DISABLE_CLEANUP", "").lower() == "true" or os.getenv("PYTEST_CURRENT_TEST") is not None
 
 app = FastAPI(title=APP_NAME, version=API_VERSION)
 
@@ -113,6 +114,10 @@ async def _startup() -> None:
     # Surface the resolved droplet IPv4 so operators can verify connectivity.
     logger.info("Connected to droplet (IPv4): %s", DROPLET_HOST)
 
+    if DISABLE_CLEANUP:
+        logger.info("Background cleanup disabled (testing mode)")
+        return
+
     # Run a cleanup pass immediately on startup.
     await _run_cleanup_once()
 
@@ -126,6 +131,9 @@ async def _startup() -> None:
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     """Stop background tasks cleanly during application shutdown."""
+
+    if DISABLE_CLEANUP:
+        return
 
     _cleanup_stop.set()
     if _cleanup_task is not None:
