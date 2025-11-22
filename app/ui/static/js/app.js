@@ -441,7 +441,8 @@
         if (profile.avatar_url) {
           avatarEl.src = profile.avatar_url;
         } else {
-          avatarEl.src = `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
+          avatarEl.src =
+            `https://ui-avatars.com/api/?background=3730a3&color=fff&name=${encodeURIComponent(username)}`;
         }
       }
 
