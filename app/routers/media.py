@@ -25,7 +25,7 @@ async def upload_media(
         raise HTTPException(status_code=400, detail="Uploaded file must include a filename.")
 
     content_type = (file.content_type or "application/octet-stream").strip() or "application/octet-stream"
-    file.content_type = content_type
+
 
     try:
         result = await upload_file_to_spaces(file, folder="media", db=db, user_id=current_user.id)
