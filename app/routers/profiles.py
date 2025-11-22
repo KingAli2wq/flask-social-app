@@ -1,13 +1,14 @@
 """Profile API routes backed by PostgreSQL."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import User
 from ..schemas import ProfileResponse, ProfileUpdateRequest
 from ..services import get_current_user, get_profile, update_profile
+from ..services.spaces_service import upload_file_to_spaces   # NEW IMPORT
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
 
@@ -29,7 +30,7 @@ async def retrieve_profile(
 
 
 # ---------------------------------------------------------------------------
-# Update the logged-in user's profile
+# Update the logged-in user's profile — FIXED to support avatar upload
 # ---------------------------------------------------------------------------
 @router.put("/me", response_model=ProfileResponse)
 async def update_my_profile(
@@ -38,14 +39,38 @@ async def update_my_profile(
     db: Session = Depends(get_session),
 ) -> ProfileResponse:
     """
-    Update the logged-in user's profile fields (bio, website, location, avatar_url).
+    Update the logged-in user's profile fields.
+    Avatar uploads now properly save into the "media/" folder in Spaces.
     """
     updated = update_profile(db, user_id=current_user.id, payload=payload)
     return ProfileResponse.model_validate(updated)
 
 
 # ---------------------------------------------------------------------------
-# NEW: Retrieve profile by UUID user_id (required by feed front-end)
+# Avatar upload endpoint — REQUIRED FIX
+# ---------------------------------------------------------------------------
+@router.post("/me/avatar", response_model=dict)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """
+    Uploads a new avatar to Spaces under /media/.
+    Returns the URL so the front-end can PATCH /profiles/me with avatar_url.
+    """
+    upload_result = await upload_file_to_spaces(
+        file,
+        folder="media",              # <<<<<<<< FIX: FORCE MEDIA FOLDER
+        db=db,
+        user_id=current_user.id,
+    )
+
+    return {"url": upload_result.url}
+
+
+# ---------------------------------------------------------------------------
+# Retrieve profile by UUID user_id (required by feed front-end)
 # ---------------------------------------------------------------------------
 @router.get("/by-id/{user_id}", response_model=ProfileResponse)
 async def retrieve_profile_by_id(
