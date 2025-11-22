@@ -27,12 +27,21 @@
   };
 
   function resolveAvatarUrl(rawUrl) {
-    if (typeof rawUrl !== 'string') {
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) {
       return DEFAULT_AVATAR;
     }
-    const trimmed = rawUrl.trim();
-    return trimmed ? trimmed : DEFAULT_AVATAR;
+
+    // Cache-busting timestamp to force browser to re-download images
+    const cacheBuster = Date.now();
+
+    // If URL already has query params, append with &
+      if (rawUrl.includes('?')) {
+      return `${rawUrl}&v=${cacheBuster}`;
+    }
+
+    return `${rawUrl}?v=${cacheBuster}`;
   }
+
 
   function applyAvatarToImg(img, rawUrl) {
     if (!img) return;
