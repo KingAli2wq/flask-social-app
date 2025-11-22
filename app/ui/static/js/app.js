@@ -580,7 +580,7 @@
         setTimeout(() => {
           applyAvatarToImg(avatarEl, profile.avatar_url);
         }, 50);
-    }
+      }
 
 
       const form = document.getElementById('profile-form');
