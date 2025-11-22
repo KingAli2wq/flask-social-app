@@ -64,12 +64,25 @@
   }
 
   async function fetchCurrentUserProfile() {
-    const profile = await apiFetch('/auth/me');
-    console.log('[auth/me] avatar_url:', profile.avatar_url || '(default)');
+    const { userId } = getAuth();
+
+    // If we do not have userId in localStorage, fall back to /auth/me
+    if (!userId) {
+      const me = await apiFetch('/auth/me');
+      console.log('[auth/me] avatar_url:', me.avatar_url || '(default from /auth/me)');
+      cacheProfile(me);
+      updateCurrentUserAvatarImages(me.avatar_url);
+      return me;
+    }
+
+    // Prefer the canonical profile endpoint that always returns avatar_url
+    const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
+    console.log('[profiles/by-id] avatar_url:', profile.avatar_url || '(default from /profiles/by-id)');
     cacheProfile(profile);
     updateCurrentUserAvatarImages(profile.avatar_url);
     return profile;
   }
+
 
   function loadJson(key, fallback) {
     try {
