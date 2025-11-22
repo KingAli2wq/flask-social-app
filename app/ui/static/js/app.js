@@ -26,6 +26,51 @@
     avatarCache: {}
   };
 
+  function resolveAvatarUrl(rawUrl) {
+    if (typeof rawUrl !== 'string') {
+      return DEFAULT_AVATAR;
+    }
+    const trimmed = rawUrl.trim();
+    return trimmed ? trimmed : DEFAULT_AVATAR;
+  }
+
+  function applyAvatarToImg(img, rawUrl) {
+    if (!img) return;
+    img.onerror = null;
+    img.src = resolveAvatarUrl(rawUrl);
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = DEFAULT_AVATAR;
+    };
+  }
+
+  function updateAvatarCacheEntry(userId, rawUrl) {
+    if (!userId) return;
+    const key = String(userId);
+    state.avatarCache[key] = resolveAvatarUrl(rawUrl);
+  }
+
+  function cacheProfile(profile) {
+    if (!profile || !profile.id) {
+      return null;
+    }
+    updateAvatarCacheEntry(profile.id, profile.avatar_url);
+    return state.avatarCache[String(profile.id)];
+  }
+
+  function updateCurrentUserAvatarImages(rawUrl) {
+    const avatars = document.querySelectorAll('[data-current-user-avatar]');
+    avatars.forEach(img => applyAvatarToImg(img, rawUrl));
+  }
+
+  async function fetchCurrentUserProfile() {
+    const profile = await apiFetch('/auth/me');
+    console.log('[auth/me] avatar_url:', profile.avatar_url || '(default)');
+    cacheProfile(profile);
+    updateCurrentUserAvatarImages(profile.avatar_url);
+    return profile;
+  }
+
   function loadJson(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -280,6 +325,10 @@
       state.feedCursor = 0;
       list.innerHTML = '';
       await ensureAvatarCache(state.feedItems);
+      if (state.feedItems.length) {
+        const sample = state.feedItems[0];
+        console.log('[feed] sample author', sample.user_id, 'avatar', state.avatarCache[sample.user_id] || DEFAULT_AVATAR);
+      }
       renderNextFeedBatch();
       if (countBadge) {
         countBadge.textContent = `${state.feedItems.length} posts`;
@@ -300,20 +349,33 @@
 
   async function ensureAvatarCache(posts) {
     const { userId: currentUserId } = getAuth();
-    const ids = new Set(posts.map(post => post.user_id).filter(Boolean));
-    const fetches = Array.from(ids).map(async userId => {
+    const ids = Array.from(
+      new Set(
+        posts
+          .map(post => (post && post.user_id ? String(post.user_id) : null))
+          .filter(Boolean)
+      )
+    );
+    const fetches = ids.map(async userId => {
       if (state.avatarCache[userId]) return;
       try {
         if (currentUserId && String(userId) === String(currentUserId)) {
-          const me = await apiFetch('/auth/me');
-          state.avatarCache[userId] = me.avatar_url || DEFAULT_AVATAR;
-        } else {
-          const profile = await apiFetch(`/profiles/${encodeURIComponent(userId)}`);
-          state.avatarCache[userId] = profile.avatar_url || DEFAULT_AVATAR;
+          await fetchCurrentUserProfile();
+          return;
         }
+        // FIX: backend expects username, but our feed only has user_id
+        // add backend route GET /profiles/by-id/<id>
+        const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
+        cacheProfile(profile);
+
       } catch (_err) {
-        state.avatarCache[userId] = DEFAULT_AVATAR;
+        console.warn("[avatar-cache] Failed to load profile for:", userId);
+        // Only set default if we truly have no data for this user
+        if (!state.avatarCache[userId]) {
+          updateAvatarCacheEntry(userId, null);
+        }
       }
+
     });
     await Promise.all(fetches);
   }
@@ -325,7 +387,10 @@
     const { username } = getAuth();
     const slice = state.feedItems.slice(state.feedCursor, state.feedCursor + FEED_BATCH_SIZE);
     slice.forEach(post => {
-      const avatarUrl = state.avatarCache[post.user_id] || DEFAULT_AVATAR;
+      const avatarUrl =
+        state.avatarCache[post.user_id] ||
+        resolveAvatarUrl(post.avatar_url) ||
+        DEFAULT_AVATAR;
       list.appendChild(createPostCard(post, username, avatarUrl));
     });
     state.feedCursor += slice.length;
@@ -342,7 +407,12 @@
     const media = post.media_url ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">` : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
-        <img src="${avatarUrl || DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" />
+        <img data-role="post-avatar"
+            data-user-id="${post.user_id}"
+            src="${DEFAULT_AVATAR}"
+            class="h-12 w-12 rounded-full object-cover"
+            alt="Post avatar" />
+
         <div>
           <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
           <p class="text-xs text-slate-400">${timestamp}</p>
@@ -359,6 +429,8 @@
     el.querySelectorAll('.like-btn, .comment-btn, .share-btn').forEach(btn => {
       btn.addEventListener('click', () => showToast('Action coming soon 🎉', 'info'));
     });
+    const avatarImg = el.querySelector('[data-role="post-avatar"]');
+    applyAvatarToImg(avatarImg, avatarUrl);
     return el;
   }
 
@@ -424,6 +496,12 @@
     });
   }
 
+  // Manual test plan (avatars & profile)
+  // 1. Log out and reload / to confirm feed avatars render from Spaces or fall back to /assets/default-avatar.png.
+  // 2. Log in as Ali / NewPassword123!, revisit the feed, and ensure avatars still display.
+  // 3. On /profile, edit only bio/location and save; avatar must remain unchanged.
+  // 4. On /profile, upload a new avatar, save, confirm the avatar updates immediately, survives a reload, and shows up on your feed posts.
+
   // Profile ----------------------------------------------------------------
   async function initProfilePage() {
     initThemeToggle();
@@ -436,7 +514,7 @@
     setupProfileForm();
   }
 
-  async function loadProfileData() {
+  async function loadProfileData(prefetchedProfile = null) {
     const usernameEl = document.getElementById('profile-username');
     const bioEl = document.getElementById('profile-bio');
     const websiteEl = document.getElementById('profile-website');
@@ -449,7 +527,8 @@
     const feedEmpty = document.getElementById('profile-feed-empty');
 
     try {
-      const profile = await apiFetch('/auth/me');
+      const profile = prefetchedProfile || await fetchCurrentUserProfile();
+      cacheProfile(profile);
       const { username } = profile;
       if (usernameEl) usernameEl.textContent = `@${username}`;
       if (bioEl) bioEl.textContent = profile.bio || 'Add a short bio to introduce yourself.';
@@ -464,11 +543,8 @@
       }
       if (createdEl) createdEl.textContent = profile.created_at ? new Date(profile.created_at).getFullYear() : '—';
       if (avatarEl) {
-        avatarEl.src = profile.avatar_url || DEFAULT_AVATAR;
-        avatarEl.onerror = () => { avatarEl.src = DEFAULT_AVATAR; };
+        applyAvatarToImg(avatarEl, profile.avatar_url);
       }
-
-      state.avatarCache[profile.id] = profile.avatar_url || DEFAULT_AVATAR;
 
       const form = document.getElementById('profile-form');
       if (form) {
@@ -485,7 +561,7 @@
       if (feedList) {
         feedList.innerHTML = '';
         filtered.forEach(post => {
-          const avatarUrl = state.avatarCache[profile.id] || DEFAULT_AVATAR;
+          const avatarUrl = state.avatarCache[profile.id] || resolveAvatarUrl(profile.avatar_url);
           feedList.appendChild(createPostCard(post, username, avatarUrl));
         });
       }
@@ -499,7 +575,7 @@
     const form = document.getElementById('profile-form');
     const feedback = document.getElementById('profile-feedback');
     const uploadTrigger = document.getElementById('profile-upload-trigger');
-    const uploadInput = document.getElementById('profile-media');
+    const uploadInput = document.getElementById('avatar-file');
     const avatarEl = document.getElementById('profile-avatar');
 
     if (uploadTrigger && uploadInput) {
@@ -509,8 +585,7 @@
         if (!file || !avatarEl) return;
         const reader = new FileReader();
         reader.onload = e => {
-          avatarEl.src = e.target.result;
-          showToast('Preview updated. Upload endpoint available via media page.', 'info');
+          applyAvatarToImg(avatarEl, e.target.result);
         };
         reader.readAsDataURL(file);
       });
@@ -522,9 +597,11 @@
       try {
         let avatarUrl = null;
         let changedAvatar = false;
+        const avatarFileChosen = Boolean(uploadInput && uploadInput.files && uploadInput.files[0]);
+        console.log('[profile] avatar file selected:', avatarFileChosen);
 
         // If the user selected a new file, upload it
-        if (uploadInput && uploadInput.files && uploadInput.files[0]) {
+        if (avatarFileChosen) {
           const uploadData = new FormData();
           uploadData.append('file', uploadInput.files[0]);
           const uploadResult = await apiFetch('/media/upload', {
@@ -533,6 +610,7 @@
           });
           avatarUrl = uploadResult.url || null;
           changedAvatar = !!avatarUrl;
+          console.log('[profile] uploaded avatar url:', avatarUrl);
         }
 
         // Build base payload with profile fields
@@ -547,6 +625,8 @@
           payload.avatar_url = avatarUrl;
         }
 
+        console.log('[profile] PUT /profiles/me payload:', payload);
+
         // Save profile
         await apiFetch('/profiles/me', {
           method: 'PUT',
@@ -554,18 +634,28 @@
         });
 
         // Refresh user data
-        const me = await apiFetch('/auth/me');
-        state.avatarCache[me.id] = me.avatar_url || DEFAULT_AVATAR;
+        const me = await fetchCurrentUserProfile();
 
         // Update profile avatar immediately
-        const avatarEl = document.getElementById('profile-avatar');
-        if (avatarEl) {
-          avatarEl.src = me.avatar_url || DEFAULT_AVATAR;
-          avatarEl.onerror = () => { avatarEl.src = DEFAULT_AVATAR; };
+        const avatarNode = document.getElementById('profile-avatar');
+        if (avatarNode) {
+          applyAvatarToImg(avatarNode, me.avatar_url);
+        }
+
+        // FIX: refresh all avatars in feed that belong to this user
+        document.querySelectorAll('[data-role="post-avatar"][data-user-id]')
+          .forEach(node => {
+            if (String(node.dataset.userId) === String(me.id)) {
+              applyAvatarToImg(node, me.avatar_url);
+            }
+          });
+        
+        if (uploadInput) {
+          uploadInput.value = '';
         }
 
         showToast('Profile updated successfully.', 'success');
-        await loadProfileData();
+        await loadProfileData(me);
 
       } catch (error) {
         if (feedback) {
