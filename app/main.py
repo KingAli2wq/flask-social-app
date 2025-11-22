@@ -149,8 +149,11 @@ async def healthcheck() -> dict[str, str]:
 
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "media"))
 VIDEOS_ROOT = Path(os.getenv("VIDEOS_ROOT", "videos"))
-UI_STATIC_ROOT = Path(__file__).resolve().parent / "ui" / "static"
+
+# Mount ONLY the assets folder, not the entire static folder
+UI_ASSETS_ROOT = Path(__file__).resolve().parent / "ui" / "static" / "assets"
 
 _mount_static(MEDIA_ROOT, "/media", "media")
 _mount_static(VIDEOS_ROOT, "/videos", "videos")
-_mount_static(UI_STATIC_ROOT, "/assets", "assets")
+_mount_static(UI_ASSETS_ROOT, "/assets", "assets")
+
