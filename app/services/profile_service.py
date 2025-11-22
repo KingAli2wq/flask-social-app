@@ -28,9 +28,13 @@ def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    update_data = payload.model_dump(exclude_unset=True)
-    if "website" in update_data and update_data["website"] is not None:
+    # FIX: preserve avatar_url and treat nulls properly
+    update_data = payload.model_dump(exclude_none=True)
+
+    # Normalize website (HttpUrl type)
+    if "website" in update_data:
         update_data["website"] = str(update_data["website"])
+
 
     if update_data:
         for field, value in update_data.items():
