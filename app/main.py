@@ -8,13 +8,12 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 
 from .config import get_settings
-from .database import create_session, get_db, init_db
+from .database import create_session, init_db
 from .routers import (
     auth_router,
     media_router,
@@ -59,21 +58,6 @@ app.include_router(messages_router)
 app.include_router(notifications_router)
 app.include_router(profiles_router)
 app.include_router(uploads_router)
-
-
-@app.post("/fix-website-field")
-def fix_website_field(db=Depends(get_db)):
-    db.execute(text(
-        """
-        UPDATE users
-        SET website = NULL
-        WHERE website = 'None'
-           OR website = ''
-           OR (website IS NOT NULL AND website NOT LIKE 'http%');
-    """
-    ))
-    db.commit()
-    return {"status": "DONE"}
 
 _CLEANUP_INTERVAL = timedelta(hours=24)
 _CLEANUP_RETENTION = timedelta(days=2)
