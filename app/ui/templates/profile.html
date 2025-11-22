@@ -52,12 +52,46 @@
                     <h2 class="text-lg font-semibold text-white">Edit profile</h2>
                     <p class="text-sm text-slate-400">Craft a profile that tells your story.</p>
                 </div>
-                {{ components.buttons.primary("Save changes", id_="profile-save", icon="💾") | safe }}
+                <button
+                    id="profile-save"
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
+                >
+                    <span aria-hidden="true">💾</span>
+                    <span>Save changes</span>
+                </button>
             </header>
             <form id="profile-form" class="mt-6 grid gap-6">
-                {{ components.forms.text_input("location", label="Location", placeholder="New York, USA", required=False) | safe }}
-                {{ components.forms.text_input("website", label="Website", placeholder="https://example.com", required=False, type_="url") | safe }}
-                {{ components.forms.textarea("bio", label="Bio", placeholder="Share what you're building…", rows=4, required=False) | safe }}
+                <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="location">
+                    <span>Location</span>
+                    <input
+                        id="location"
+                        name="location"
+                        type="text"
+                        placeholder="New York, USA"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0"
+                    >
+                </label>
+                <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="website">
+                    <span>Website</span>
+                    <input
+                        id="website"
+                        name="website"
+                        type="url"
+                        placeholder="https://example.com"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0"
+                    >
+                </label>
+                <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="bio">
+                    <span>Bio</span>
+                    <textarea
+                        id="bio"
+                        name="bio"
+                        rows="4"
+                        placeholder="Share what you're building…"
+                        class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0 resize-none"
+                    ></textarea>
+                </label>
                 <div id="profile-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
             </form>
         </section>
@@ -66,7 +100,10 @@
                 <h2 class="text-lg font-semibold text-white">Recent posts</h2>
                 <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Auto-updates</span>
             </header>
-            <div id="profile-feed-loading" class="mt-6">{{ components.feedback.loading_spinner(label="Loading posts") | safe }}</div>
+            <div id="profile-feed-loading" class="mt-6 flex items-center gap-3 text-sm text-slate-400">
+                <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
+                <span>Loading posts…</span>
+            </div>
             <div id="profile-feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
                 No posts yet. Share something from the feed to see it here.
             </div>
