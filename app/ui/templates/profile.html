@@ -5,25 +5,22 @@
     <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
         <div class="flex flex-col items-center gap-4 text-center">
             <div class="flex flex-col items-center gap-4">
-                <!-- Avatar image -->
                 <img
                     id="profile-avatar"
-                    class="w-32 h-32 rounded-full object-cover border shadow"
-                    src="{{ profile.avatar_url or 'https://ui-avatars.com/api/?background=3730a3&color=fff&name=' ~ username }}"
+                    class="h-32 w-32 rounded-full object-cover border shadow"
+                    src="/assets/default-avatar.png"
                     alt="Profile Avatar"
                 >
 
-                <!-- File input -->
                 <input
                     type="file"
-                    id="profile-media"
+                    id="avatar-file"
                     accept="image/*"
                     class="hidden"
                 >
 
-                <!-- Upload button -->
                 <button
-                    id="profile-media-trigger"
+                    id="profile-upload-trigger"
                     type="button"
                     class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition"
                 >
@@ -32,10 +29,10 @@
             </div>
             <div>
                 <h1 id="profile-username" class="text-xl font-semibold text-white">@username</h1>
-                <p id="profile-location" class="text-sm text-slate-400">Location</p>
+                <p id="profile-location" class="text-sm text-slate-400">Location not set</p>
             </div>
-            <p id="profile-bio" class="text-sm text-slate-300">Bio will appear here once updated.</p>
-            <a id="profile-website" href="#" target="_blank" class="text-sm font-medium text-indigo-300 hover:text-indigo-200">Website</a>
+            <p id="profile-bio" class="text-sm text-slate-300">Add a short bio to introduce yourself.</p>
+            <a id="profile-website" href="#" rel="noopener" target="_blank" class="text-sm font-medium text-indigo-300 hover:text-indigo-200">Website</a>
         </div>
         <dl class="mt-8 grid grid-cols-2 gap-4 text-center">
             <div class="rounded-2xl bg-slate-900/90 p-4">
@@ -81,8 +78,23 @@
 
 {% block scripts %}
 <script>
-    window.addEventListener('DOMContentLoaded', () => {
+    (function aliasProfileMediaId() {
+        const originalGetById = document.getElementById.bind(document);
+        document.getElementById = function patchedGetElementById(id) {
+            if (id === "profile-media") {
+                return originalGetById("avatar-file") || originalGetById(id);
+            }
+            return originalGetById(id);
+        };
+    })();
+</script>
+<script>
+    if (window.UI && typeof window.UI.initProfilePage === "function") {
         window.UI.initProfilePage();
-    });
+    } else {
+        window.addEventListener("DOMContentLoaded", () => {
+            window.UI.initProfilePage();
+        });
+    }
 </script>
 {% endblock %}
