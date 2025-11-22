@@ -28,19 +28,22 @@ def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # Only fields explicitly provided will be updated
+    # Only update fields provided by user
     update_data = payload.model_dump(exclude_unset=True)
 
-    # Do NOT allow avatar_url to be overwritten unless explicitly provided AND not None
+    # Preserve avatar unless explicitly updated AND not null/empty
     if "avatar_url" in update_data:
-        if update_data["avatar_url"] is None or update_data["avatar_url"] == "":
-            # remove it so it's not updated
+        if not update_data["avatar_url"]:
             update_data.pop("avatar_url")
 
-    # Normalize website (HttpUrl type)
+    # Handle website safely
     if "website" in update_data:
-        update_data["website"] = str(update_data["website"])
+        if update_data["website"] in (None, "", "None"):
+            update_data.pop("website")
+        else:
+            update_data["website"] = str(update_data["website"])
 
+    # Apply valid fields
     if update_data:
         for field, value in update_data.items():
             setattr(user, field, value)
@@ -56,6 +59,7 @@ def update_profile(db: Session, *, user_id: UUID, payload: ProfileUpdateRequest)
 
     db.refresh(user)
     return user
+
 
 
 
