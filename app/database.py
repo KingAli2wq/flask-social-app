@@ -1,24 +1,20 @@
 """Database layer utilities for SQLAlchemy-backed persistence."""
 from __future__ import annotations
 
-import os
 from typing import Generator
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
-# Load environment variables so DATABASE_URL is available when the module is imported.
-from pathlib import Path
-load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
+from .config import get_settings
 
+# Load settings (DATABASE_URL and others come from env/.env)
+settings = get_settings()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set")
+# Use the Pydantic settings value – this will read from .env
+engine: Engine = create_engine(settings.database_url, pool_pre_ping=True, future=True)
 
-engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,
@@ -26,18 +22,17 @@ SessionLocal = sessionmaker(
     future=True,
     expire_on_commit=False,
 )
+
 Base = declarative_base()
 
 
 def get_engine() -> Engine:
     """Return the configured SQLAlchemy engine."""
-
     return engine
 
 
 def get_session() -> Generator[Session, None, None]:
     """FastAPI dependency that yields a SQLAlchemy session per request."""
-
     session = SessionLocal()
     try:
         yield session
@@ -47,19 +42,16 @@ def get_session() -> Generator[Session, None, None]:
 
 def get_db() -> Generator[Session, None, None]:
     """Alias for get_session used by some routers."""
-
     yield from get_session()
 
 
 def create_session() -> Session:
     """Return a new SQLAlchemy session for background tasks or scripts."""
-
     return SessionLocal()
 
 
 def init_db() -> None:
     """Initialise database schema by creating tables when missing."""
-
     # Import models to ensure they are registered on the metadata before create_all runs.
     from . import models  # noqa: F401
 
