@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 from markupsafe import Markup
-from urllib.parse import quote
-
 from markupsafe import Markup
 
 
@@ -14,7 +12,7 @@ NAV_LINKS = (
     ("Notifications", "/notifications"),
     ("Media", "/media"),
 )
-LOGO_IMAGE = "/media/" + quote("Buttons/Social Sphere App Logo.png")
+LOGO_IMAGE = "/assets/img/social-sphere-logo.png"
 
 
 def navbar(*, active: str | None = None) -> Markup:

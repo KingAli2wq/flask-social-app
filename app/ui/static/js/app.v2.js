@@ -544,7 +544,7 @@
     const timestamp = formatDate(post.created_at);
     const mediaUrl = typeof post.media_url === 'string' ? post.media_url.trim() : '';
     const media = mediaUrl
-      ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">`
+      ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="">`
       : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
