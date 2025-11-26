@@ -20,8 +20,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 # Absolute path to .env
 ENV_PATH = BASE_DIR / ".env"
 
-# Force-load .env BEFORE Settings() parses
-load_dotenv(dotenv_path=ENV_PATH, override=True)
+# Load .env defaults without overriding environment variables provided by the platform
+load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 
 class Settings(BaseSettings):

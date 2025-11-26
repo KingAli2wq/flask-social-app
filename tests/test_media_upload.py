@@ -102,7 +102,7 @@ def test_upload_creates_media_asset_with_complete_metadata(authed_client, monkey
     monkeypatch.setenv("DO_SPACES_SECRET", "secret")
     monkeypatch.setenv("DO_SPACES_REGION", "nyc3")
     monkeypatch.setenv("DO_SPACES_NAME", "bucket")
-    monkeypatch.setenv("DO_SPACES_ENDPOINT", "https://bucket.nyc3.digitaloceanspaces.com")
+    monkeypatch.setenv("DO_SPACES_ENDPOINT", "https://cdn.test/bucket")
     spaces_service.load_spaces_config.cache_clear()
 
     created_assets: list[MediaAsset] = []

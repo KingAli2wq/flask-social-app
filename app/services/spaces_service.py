@@ -35,7 +35,8 @@ class SpacesConfig:
     secret: str
     region: str
     bucket: str
-    endpoint: str
+    api_endpoint: str
+    public_endpoint: str
 
 
 @dataclass(frozen=True)
@@ -61,8 +62,6 @@ class SpacesUploadError(RuntimeError):
 def load_spaces_config() -> SpacesConfig:
     """Read and validate DigitalOcean Spaces configuration from the environment."""
 
-    load_dotenv()
-
     required: dict[str, str | None] = {
         "DO_SPACES_KEY": os.getenv("DO_SPACES_KEY"),
         "DO_SPACES_SECRET": os.getenv("DO_SPACES_SECRET"),
@@ -83,11 +82,11 @@ def load_spaces_config() -> SpacesConfig:
     bucket = cast(str, required["DO_SPACES_NAME"]).strip()
     endpoint_raw = cast(str, required["DO_SPACES_ENDPOINT"]).strip()
 
-    endpoint = endpoint_raw.rstrip("/")
-    parsed = urlparse(endpoint)
+    public_endpoint = endpoint_raw.rstrip("/")
+    parsed = urlparse(public_endpoint)
     if not parsed.scheme:
-        endpoint = f"https://{endpoint.lstrip(':/')}"
-        parsed = urlparse(endpoint)
+        public_endpoint = f"https://{public_endpoint.lstrip(':/')}"
+        parsed = urlparse(public_endpoint)
 
     host = parsed.netloc or parsed.path
     if not host:
@@ -98,9 +97,17 @@ def load_spaces_config() -> SpacesConfig:
             "DO_SPACES_ENDPOINT must point to a *.digitaloceanspaces.com hostname."
         )
 
-    endpoint = parsed.geturl().rstrip("/")
+    public_endpoint = parsed.geturl().rstrip("/")
+    api_endpoint = f"https://{bucket}.{region}.digitaloceanspaces.com"
 
-    return SpacesConfig(key=key, secret=secret, region=region, bucket=bucket, endpoint=endpoint)
+    return SpacesConfig(
+        key=key,
+        secret=secret,
+        region=region,
+        bucket=bucket,
+        api_endpoint=api_endpoint,
+        public_endpoint=public_endpoint,
+    )
 
 
 @lru_cache(maxsize=1)
@@ -112,7 +119,7 @@ def get_spaces_client() -> BaseClient:
     return session.client(
         "s3",
         region_name=config.region,
-        endpoint_url=config.endpoint,
+        endpoint_url=config.api_endpoint,
         aws_access_key_id=config.key,
         aws_secret_access_key=config.secret,
     )
@@ -152,7 +159,7 @@ def build_public_url(key: str) -> str:
 
     config = load_spaces_config()
     normalized_key = key.lstrip("/")
-    endpoint = config.endpoint.rstrip("/")
+    endpoint = config.public_endpoint.rstrip("/")
     return f"{endpoint}/{normalized_key}" if normalized_key else endpoint
 
 
