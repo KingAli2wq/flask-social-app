@@ -542,8 +542,9 @@
       ? `@${currentUsername}`
       : `User ${String(post.user_id).slice(0, 8)}`;
     const timestamp = formatDate(post.created_at);
-    const media = post.media_url
-      ? `<img src="${post.media_url}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">`
+    const mediaUrl = typeof post.media_url === 'string' ? post.media_url.trim() : '';
+    const media = mediaUrl
+      ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="Post media">`
       : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">

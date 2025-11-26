@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from markupsafe import Markup
+from urllib.parse import quote
+
+from markupsafe import Markup
 
 
 NAV_LINKS = (
@@ -11,6 +14,7 @@ NAV_LINKS = (
     ("Notifications", "/notifications"),
     ("Media", "/media"),
 )
+LOGO_IMAGE = "/media/" + quote("Buttons/Social Sphere App Logo.png")
 
 
 def navbar(*, active: str | None = None) -> Markup:
@@ -27,7 +31,7 @@ def navbar(*, active: str | None = None) -> Markup:
         <header class=\"sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur\">
             <div class=\"mx-auto flex max-w-7xl items-center justify-between px-6 py-4\">
                 <a href=\"/\" class=\"flex items-center gap-3 text-lg font-semibold text-white\">
-                    <span class=\"inline-flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 text-base text-white shadow-lg shadow-indigo-500/30\">SS</span>
+                        <img src="{LOGO_IMAGE}" alt="SocialSphere logo" class="h-10 w-10 rounded-full object-cover shadow-lg shadow-indigo-500/30 border border-indigo-400/40" loading="lazy">
                     SocialSphere
                 </a>
                 <nav class=\"hidden items-center gap-1 md:flex\">{links}</nav>
