@@ -1377,7 +1377,7 @@
       container.innerHTML = '<div class="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-6 text-sm text-slate-300">Searching…</div>';
     }
     try {
-      const response = await apiFetch(`/friends/search?query=${encodeURIComponent(query)}`);
+      const response = await apiFetch(`/friends/search/users?query=${encodeURIComponent(query)}`);
       state.friendSearch.results = response.results || [];
       renderFriendSearchResults();
     } catch (error) {

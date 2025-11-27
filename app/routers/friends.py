@@ -78,7 +78,7 @@ async def friends_overview(
     )
 
 
-@router.get("/search", response_model=FriendSearchResponse)
+@router.get("/search/users", response_model=FriendSearchResponse)
 async def search_users(
     q: str = Query(..., min_length=2, max_length=150, alias="query"),
     limit: int = Query(12, ge=1, le=50),
