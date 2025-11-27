@@ -7,7 +7,7 @@ from .group_chat import GroupChat
 from .media import MediaAsset
 from .message import Message
 from .notification import Notification
-from .post import Post
+from .post import Post, PostComment, PostLike
 from .user import User
 
 __all__ = [
@@ -20,5 +20,7 @@ __all__ = [
     "Message",
     "Notification",
     "Post",
+    "PostLike",
+    "PostComment",
     "User",
 ]

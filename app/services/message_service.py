@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Iterable
+from typing import Iterable, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ..models import GroupChat, Message, User
 from ..schemas import GroupChatCreate, MessageSendRequest
@@ -69,11 +69,12 @@ def send_message(
     chat_identifier = payload.chat_id
 
     recipient_id: UUID | None = None
+    parent_message: Message | None = None
 
     if payload.friend_id is not None:
         friendship, friend = require_friendship(db, user=sender, friend_id=payload.friend_id)
         chat_identifier = friendship.thread_id
-        recipient_id = friend.id
+        recipient_id = cast(UUID, friend.id)
     elif payload.chat_id:
         try:
             group_chat_uuid = UUID(payload.chat_id)
@@ -84,11 +85,19 @@ def send_message(
             chat = db.get(GroupChat, group_chat_uuid)
             if chat is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
-            group_chat_id = chat.id
+            group_chat_id = cast(UUID, chat.id)
             chat_identifier = str(chat.id)
 
     if recipient_id is None and payload.friend_id is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Friendship required")
+
+    if payload.reply_to_id is not None:
+        parent_message = db.get(Message, payload.reply_to_id)
+        if parent_message is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reply target not found")
+        parent_chat_id = cast(str | None, parent_message.chat_id)
+        if parent_chat_id != chat_identifier:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reply must stay within the same chat")
 
     message = Message(
         chat_id=chat_identifier,
@@ -97,6 +106,7 @@ def send_message(
         recipient_id=recipient_id,
         content=payload.content,
         attachments=_attachments_or_none(payload.attachments),
+        parent_id=parent_message.id if parent_message else None,
     )
 
     try:
@@ -114,8 +124,41 @@ def send_message(
 def list_messages(db: Session, *, chat_id: str) -> list[Message]:
     """Return messages for the provided chat ordered chronologically."""
 
-    stmt = select(Message).where(Message.chat_id == chat_id).order_by(Message.created_at.asc())
+    stmt = (
+        select(Message)
+        .where(Message.chat_id == chat_id)
+        .options(
+            selectinload(Message.sender),
+            selectinload(Message.parent).selectinload(Message.sender),
+        )
+        .order_by(Message.created_at.asc())
+    )
     return list(db.scalars(stmt))
+
+
+def delete_message(db: Session, *, message_id: UUID, requester: User) -> Message:
+    message = db.get(Message, message_id)
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    sender_id = cast(UUID, message.sender_id)
+    if sender_id != requester.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own messages")
+    if cast(bool, message.is_deleted):
+        return message
+
+    setattr(message, "is_deleted", True)
+    setattr(message, "deleted_at", datetime.now(timezone.utc))
+    setattr(message, "content", "")
+    setattr(message, "attachments", None)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete message") from exc
+
+    db.refresh(message)
+    return message
 
 
 def delete_old_messages(db: Session, *, older_than: timedelta | None = None) -> int:
@@ -137,5 +180,6 @@ __all__ = [
     "create_group_chat",
     "send_message",
     "list_messages",
+    "delete_message",
     "delete_old_messages",
 ]

@@ -55,6 +55,10 @@
     },
     publicProfile: null,
     publicProfileStats: null,
+    postRegistry: {},           // post_id -> post payload shown anywhere in UI
+    postComments: {},           // post_id -> { items, loaded }
+    messageReplyTarget: null,
+    messageReplyElements: null,
   };
 
   // -----------------------------------------------------------------------
@@ -825,6 +829,227 @@
         trigger.disabled = false;
         trigger.classList.remove('opacity-60', 'cursor-not-allowed');
       }
+    }
+  }
+
+  function registerPostInstance(post) {
+    if (!post || !post.id) return;
+    state.postRegistry[String(post.id)] = post;
+  }
+
+  function getCommentStore(postId) {
+    if (!postId) return { items: [], loaded: false };
+    const key = String(postId);
+    if (!state.postComments[key]) {
+      state.postComments[key] = { items: [], loaded: false };
+    }
+    return state.postComments[key];
+  }
+
+  function findCommentById(comments, targetId) {
+    if (!Array.isArray(comments) || !targetId) return null;
+    const key = String(targetId);
+    for (const comment of comments) {
+      if (String(comment.id) === key) return comment;
+      const childMatch = findCommentById(comment.replies || [], targetId);
+      if (childMatch) return childMatch;
+    }
+    return null;
+  }
+
+  function renderCommentList(postId, comments, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    const emptyState = container.parentElement?.querySelector('[data-role="comments-empty"]');
+    const hasComments = Array.isArray(comments) && comments.length > 0;
+    if (!hasComments) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      return;
+    }
+    if (emptyState) emptyState.classList.add('hidden');
+    comments.forEach(comment => {
+      container.appendChild(createCommentBlock(postId, comment, 0));
+    });
+  }
+
+  function createCommentBlock(postId, comment, depth) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 shadow-sm shadow-black/10';
+    wrapper.dataset.commentId = comment.id;
+    if (depth > 0) {
+      wrapper.style.marginLeft = `${Math.min(depth, 3) * 16}px`;
+    }
+    const avatarId = `comment-avatar-${comment.id}`;
+    const author = comment.username ? `@${comment.username}` : 'User';
+    const previewText = comment.content || '';
+    wrapper.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+          <img id="${avatarId}" alt="${author}" class="h-full w-full object-cover" />
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-semibold text-slate-200">${author}</span>
+            <time class="text-[11px]">${formatDate(comment.created_at)}</time>
+          </div>
+          <p class="mt-1 text-sm text-slate-200">${previewText}</p>
+          <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
+            <button type="button" data-role="comment-reply" class="hover:text-white">Reply</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const avatarNode = wrapper.querySelector(`#${avatarId}`);
+    applyAvatarToImg(avatarNode, comment.avatar_url);
+    const replyButton = wrapper.querySelector('[data-role="comment-reply"]');
+    if (replyButton) {
+      replyButton.addEventListener('click', () => {
+        const panel = wrapper.closest('[data-role="comment-panel"]');
+        beginCommentReply(postId, comment, panel);
+      });
+    }
+    if (Array.isArray(comment.replies) && comment.replies.length) {
+      const repliesContainer = document.createElement('div');
+      repliesContainer.className = 'mt-3 space-y-3';
+      comment.replies.forEach(reply => {
+        repliesContainer.appendChild(createCommentBlock(postId, reply, depth + 1));
+      });
+      wrapper.appendChild(repliesContainer);
+    }
+    return wrapper;
+  }
+
+  async function loadCommentsForPost(postId, panel) {
+    if (!panel || !postId) return;
+    const list = panel.querySelector('[data-role="comment-list"]');
+    const store = getCommentStore(postId);
+    if (store.loaded) {
+      renderCommentList(postId, store.items, list);
+      return;
+    }
+    panel.classList.add('opacity-70');
+    try {
+      const response = await apiFetch(`/posts/${encodeURIComponent(postId)}/comments`);
+      store.items = Array.isArray(response.items) ? response.items : [];
+      store.loaded = true;
+      renderCommentList(postId, store.items, list);
+    } catch (error) {
+      showToast(error.message || 'Unable to load comments.', 'error');
+    } finally {
+      panel.classList.remove('opacity-70');
+    }
+  }
+
+  function beginCommentReply(postId, comment, panel) {
+    if (!panel || !comment) return;
+    const form = panel.querySelector('[data-role="comment-form"]');
+    const pill = panel.querySelector('[data-role="comment-reply-pill"]');
+    const usernameNode = panel.querySelector('[data-role="comment-reply-username"]');
+    if (!form || !pill || !usernameNode) return;
+    form.dataset.replyId = comment.id;
+    usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
+    pill.classList.remove('hidden');
+  }
+
+  function resetCommentReply(panel) {
+    if (!panel) return;
+    const form = panel.querySelector('[data-role="comment-form"]');
+    if (form) delete form.dataset.replyId;
+    const pill = panel.querySelector('[data-role="comment-reply-pill"]');
+    if (pill) pill.classList.add('hidden');
+  }
+
+  function appendCommentRecord(postId, comment) {
+    const store = getCommentStore(postId);
+    if (!store.loaded) {
+      store.items.push(comment);
+      return;
+    }
+    if (comment.parent_id) {
+      const parent = findCommentById(store.items, comment.parent_id);
+      if (!parent) {
+        store.items.push(comment);
+        return;
+      }
+      if (!Array.isArray(parent.replies)) parent.replies = [];
+      parent.replies.push(comment);
+    } else {
+      store.items.push(comment);
+    }
+  }
+
+  function updateCommentCountDisplays(postId, nextCount) {
+    const value = typeof nextCount === 'number' ? nextCount : 0;
+    document.querySelectorAll(`[data-role="comment-count"][data-post-id="${postId}"]`).forEach(node => {
+      node.textContent = String(value);
+    });
+  }
+
+  function applyLikeButtonState(button, isLiked, likeCount) {
+    if (!button) return;
+    const baseClasses = 'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
+    button.dataset.liked = isLiked ? 'true' : 'false';
+    button.className = isLiked
+      ? `${baseClasses} border-rose-500/40 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30`
+      : `${baseClasses} border-indigo-500/60 bg-slate-800/80 text-white hover:bg-indigo-600`;
+    const label = button.querySelector('[data-role="like-label"]');
+    const count = button.querySelector('[data-role="like-count"]');
+    if (label) label.textContent = isLiked ? 'Liked' : 'Like';
+    if (count) count.textContent = String(likeCount ?? 0);
+  }
+
+  function updateLikeButtonsForPost(postId, isLiked, likeCount) {
+    document.querySelectorAll(`[data-role="like-button"][data-post-id="${postId}"]`).forEach(button => {
+      applyLikeButtonState(button, isLiked, likeCount);
+    });
+  }
+
+  function setPostEngagementSnapshot(snapshot) {
+    if (!snapshot || !snapshot.post_id) return;
+    const key = String(snapshot.post_id);
+    const { like_count = 0, comment_count = 0, viewer_has_liked = false } = snapshot;
+    const cached = state.postRegistry[key];
+    if (cached) {
+      cached.like_count = like_count;
+      cached.comment_count = comment_count;
+      cached.viewer_has_liked = viewer_has_liked;
+    }
+    state.feedItems.forEach(item => {
+      if (String(item.id) === key) {
+        item.like_count = like_count;
+        item.comment_count = comment_count;
+        item.viewer_has_liked = viewer_has_liked;
+      }
+    });
+    updateLikeButtonsForPost(key, viewer_has_liked, like_count);
+    updateCommentCountDisplays(key, comment_count);
+  }
+
+  async function togglePostLike(post, button) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!post?.id || !button || button.disabled) return;
+    const shouldUnlike = button.dataset.liked === 'true';
+    button.disabled = true;
+    button.classList.add('opacity-70');
+    try {
+      const snapshot = await apiFetch(`/posts/${encodeURIComponent(post.id)}/likes`, {
+        method: shouldUnlike ? 'DELETE' : 'POST'
+      });
+      setPostEngagementSnapshot(snapshot);
+      post.viewer_has_liked = snapshot.viewer_has_liked;
+      post.like_count = snapshot.like_count;
+      if (!shouldUnlike) {
+        showToast('Post liked.', 'success');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update like.', 'error');
+    } finally {
+      button.disabled = false;
+      button.classList.remove('opacity-70');
     }
   }
 

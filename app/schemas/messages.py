@@ -13,6 +13,15 @@ class MessageSendRequest(BaseModel):
     friend_id: UUID | None = Field(None, description="Direct message recipient derived from friendships")
     content: str = Field(..., min_length=1, max_length=2000)
     attachments: List[str] = Field(default_factory=list)
+    reply_to_id: UUID | None = Field(None, description="Optional message being replied to")
+
+
+class MessageReplyContext(BaseModel):
+    id: UUID
+    sender_id: UUID
+    sender_username: str | None = None
+    content: str | None = None
+    is_deleted: bool = False
 
 
 class MessageResponse(BaseModel):
@@ -25,6 +34,10 @@ class MessageResponse(BaseModel):
     content: str
     attachments: List[str]
     created_at: datetime
+    sender_username: str | None = None
+    reply_to: MessageReplyContext | None = None
+    is_deleted: bool = False
+    deleted_at: datetime | None = None
 
 
 class MessageThreadResponse(BaseModel):
@@ -57,6 +70,7 @@ class GroupChatResponse(BaseModel):
 
 __all__ = [
     "MessageSendRequest",
+    "MessageReplyContext",
     "MessageResponse",
     "MessageThreadResponse",
     "DirectThreadResponse",

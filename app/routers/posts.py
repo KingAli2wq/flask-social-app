@@ -11,13 +11,23 @@ from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import User
-from ..schemas import PostFeedResponse, PostResponse
+from ..schemas import (
+    PostCommentCreate,
+    PostCommentListResponse,
+    PostCommentResponse,
+    PostEngagementResponse,
+    PostFeedResponse,
+    PostResponse,
+)
 from ..services import (
+    create_post_comment,
     create_post_record,
     delete_post_record,
     get_current_user,
     get_optional_user,
+    list_post_comments,
     list_feed_records,
+    set_post_like_state,
 )
 from ..services.realtime import feed_updates_manager
 
@@ -100,6 +110,52 @@ async def posts_by_user_endpoint(
         for item in list_feed_records(db, viewer_id=viewer_id, author_id=user.id)
     ]
     return PostFeedResponse(items=posts)
+
+
+@router.post("/{post_id}/likes", response_model=PostEngagementResponse)
+async def like_post_endpoint(
+    post_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostEngagementResponse:
+    payload = set_post_like_state(db, post_id=post_id, user_id=current_user.id, should_like=True)
+    return PostEngagementResponse(**payload)
+
+
+@router.delete("/{post_id}/likes", response_model=PostEngagementResponse)
+async def unlike_post_endpoint(
+    post_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostEngagementResponse:
+    payload = set_post_like_state(db, post_id=post_id, user_id=current_user.id, should_like=False)
+    return PostEngagementResponse(**payload)
+
+
+@router.get("/{post_id}/comments", response_model=PostCommentListResponse)
+async def list_post_comments_endpoint(
+    post_id: UUID,
+    db: Session = Depends(get_session),
+) -> PostCommentListResponse:
+    items = list_post_comments(db, post_id=post_id)
+    return PostCommentListResponse(items=[PostCommentResponse(**item) for item in items])
+
+
+@router.post("/{post_id}/comments", response_model=PostCommentResponse, status_code=status.HTTP_201_CREATED)
+async def create_post_comment_endpoint(
+    post_id: UUID,
+    payload: PostCommentCreate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostCommentResponse:
+    comment = create_post_comment(
+        db,
+        post_id=post_id,
+        author=current_user,
+        content=payload.content,
+        parent_id=payload.parent_id,
+    )
+    return PostCommentResponse(**comment)
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)

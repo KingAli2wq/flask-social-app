@@ -31,6 +31,9 @@ class PostResponse(BaseModel):
     avatar_url: str | None = None
     follow_priority: int | None = None
     is_following_author: bool | None = None
+    like_count: int = 0
+    comment_count: int = 0
+    viewer_has_liked: bool = False
 
 
 class PostFeedResponse(BaseModel):
@@ -39,4 +42,45 @@ class PostFeedResponse(BaseModel):
     items: list[PostResponse]
 
 
-__all__ = ["PostCreate", "PostResponse", "PostFeedResponse"]
+class PostEngagementResponse(BaseModel):
+    """Like/comment counters used by interactive UI."""
+
+    post_id: UUID
+    like_count: int
+    comment_count: int
+    viewer_has_liked: bool
+
+
+class PostCommentCreate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=500)
+    parent_id: UUID | None = None
+
+
+class PostCommentResponse(BaseModel):
+    id: UUID
+    post_id: UUID
+    user_id: UUID
+    username: str | None = None
+    avatar_url: str | None = None
+    content: str
+    parent_id: UUID | None = None
+    created_at: datetime
+    replies: list["PostCommentResponse"] = Field(default_factory=list)
+
+
+class PostCommentListResponse(BaseModel):
+    items: list[PostCommentResponse]
+
+
+PostCommentResponse.model_rebuild()
+
+
+__all__ = [
+    "PostCreate",
+    "PostResponse",
+    "PostFeedResponse",
+    "PostEngagementResponse",
+    "PostCommentCreate",
+    "PostCommentResponse",
+    "PostCommentListResponse",
+]

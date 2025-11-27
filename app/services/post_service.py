@@ -6,11 +6,11 @@ from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import delete, select, case
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import Follow, MediaAsset, Post, User
+from ..models import Follow, MediaAsset, Post, PostComment, PostLike, User
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
 
@@ -23,6 +23,8 @@ async def create_post_record(
     file: UploadFile | None = None,
 ) -> Post:
     """Create and persist a new post for the given user."""
+
+
 
     user = db.get(User, user_id)
     if user is None:
@@ -41,6 +43,8 @@ async def create_post_record(
             except ValueError as exc:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="media_asset_id must be a valid UUID") from exc
     else:
+
+
         normalized_asset_id = None
 
     if file is not None and normalized_asset_id is not None:
@@ -64,6 +68,8 @@ async def create_post_record(
             or not upload_result.url
             or not upload_result.url.strip()
             or not upload_result.bucket
+
+
             or not upload_result.bucket.strip()
             or not upload_result.content_type
             or not upload_result.content_type.strip()
@@ -96,6 +102,8 @@ async def create_post_record(
     return post
 
 
+
+
 def list_feed_records(
     db: Session,
     *,
@@ -110,12 +118,30 @@ def list_feed_records(
         User.avatar_url.label("avatar_url"),
     ]
     statement = select(*base_columns).join(User, Post.user_id == User.id)
+
+    like_count_subquery = (
+        select(func.count(PostLike.id)).where(PostLike.post_id == Post.id).scalar_subquery()
+    )
+    comment_count_subquery = (
+        select(func.count(PostComment.id)).where(PostComment.post_id == Post.id).scalar_subquery()
+    )
+
+    statement = statement.add_columns(like_count_subquery, comment_count_subquery)
     if author_id is not None:
         statement = statement.where(Post.user_id == author_id)
 
     include_follow_weight = viewer_id is not None
     follow_match_col = None
     follow_priority_col = None
+    viewer_like_col = None
+
+    if viewer_id is not None:
+        viewer_like_col = (
+            select(func.count(PostLike.id))
+            .where(PostLike.post_id == Post.id, PostLike.user_id == viewer_id)
+            .scalar_subquery()
+        )
+        statement = statement.add_columns(viewer_like_col)
 
     if include_follow_weight and viewer_id is not None:
         follow_subquery = (
@@ -137,11 +163,28 @@ def list_feed_records(
     records: list[dict[str, Any]] = []
     rows = db.execute(statement).all()
     for row in rows:
-        post = row[0]
-        username_value = row[1]
-        avatar_value = row[2]
-        follow_match_value = row[3] if include_follow_weight and follow_match_col is not None else None
-        follow_priority_value = row[4] if include_follow_weight and follow_priority_col is not None else None
+        idx = 0
+        post = row[idx]
+        idx += 1
+        username_value = row[idx]
+        idx += 1
+        avatar_value = row[idx]
+        idx += 1
+        like_count_value = row[idx]
+        idx += 1
+        comment_count_value = row[idx]
+        idx += 1
+        viewer_like_value = None
+        if viewer_like_col is not None:
+            viewer_like_value = row[idx]
+            idx += 1
+        follow_match_value = None
+        follow_priority_value = None
+        if include_follow_weight and follow_match_col is not None and follow_priority_col is not None:
+            follow_match_value = row[idx]
+            idx += 1
+            follow_priority_value = row[idx]
+            idx += 1
 
         username = cast(str | None, username_value)
         avatar_url = cast(str | None, avatar_value)
@@ -154,6 +197,9 @@ def list_feed_records(
             "created_at": post.created_at,
             "username": username,
             "avatar_url": avatar_url,
+            "like_count": int(like_count_value or 0),
+            "comment_count": int(comment_count_value or 0),
+            "viewer_has_liked": bool(viewer_like_value) if viewer_like_col is not None else False,
         }
 
         if include_follow_weight:
@@ -163,6 +209,132 @@ def list_feed_records(
         records.append(record)
 
     return records
+
+
+def _get_post_or_404(db: Session, post_id: UUID) -> Post:
+    post = db.get(Post, post_id)
+    if post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    return post
+
+
+def _post_engagement_snapshot(db: Session, post_id: UUID, viewer_id: UUID | None) -> dict[str, Any]:
+    like_count = db.scalar(select(func.count(PostLike.id)).where(PostLike.post_id == post_id)) or 0
+    comment_count = db.scalar(select(func.count(PostComment.id)).where(PostComment.post_id == post_id)) or 0
+    viewer_has_liked = False
+    if viewer_id is not None:
+        viewer_has_liked = (
+            db.scalar(
+                select(PostLike.id).where(PostLike.post_id == post_id, PostLike.user_id == viewer_id).limit(1)
+            )
+            is not None
+        )
+    return {
+        "post_id": post_id,
+        "like_count": int(like_count),
+        "comment_count": int(comment_count),
+        "viewer_has_liked": viewer_has_liked,
+    }
+
+
+def set_post_like_state(
+    db: Session,
+    *,
+    post_id: UUID,
+    user_id: UUID,
+    should_like: bool,
+) -> dict[str, Any]:
+    _get_post_or_404(db, post_id)
+
+    existing = db.scalar(select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id))
+
+    if should_like and existing is None:
+        db.add(PostLike(post_id=post_id, user_id=user_id))
+    elif not should_like and existing is not None:
+        db.delete(existing)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update like") from exc
+
+    return _post_engagement_snapshot(db, post_id, user_id)
+
+
+def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
+    _get_post_or_404(db, post_id)
+    stmt = (
+        select(PostComment, User.username, User.avatar_url)
+        .join(User, PostComment.user_id == User.id)
+        .where(PostComment.post_id == post_id)
+        .order_by(PostComment.created_at.asc())
+    )
+    rows = db.execute(stmt).all()
+
+    nodes: dict[UUID, dict[str, Any]] = {}
+    roots: list[dict[str, Any]] = []
+
+    for comment, username, avatar_url in rows:
+        node = {
+            "id": comment.id,
+            "post_id": comment.post_id,
+            "user_id": comment.user_id,
+            "username": cast(str | None, username),
+            "avatar_url": cast(str | None, avatar_url),
+            "content": comment.content,
+            "parent_id": comment.parent_id,
+            "created_at": comment.created_at,
+            "replies": [],
+        }
+        nodes[comment.id] = node
+        if comment.parent_id and comment.parent_id in nodes:
+            nodes[comment.parent_id]["replies"].append(node)
+        else:
+            roots.append(node)
+
+    return roots
+
+
+def create_post_comment(
+    db: Session,
+    *,
+    post_id: UUID,
+    author: User,
+    content: str,
+    parent_id: UUID | None = None,
+) -> dict[str, Any]:
+    post = _get_post_or_404(db, post_id)
+    text = (content or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
+
+    parent: PostComment | None = None
+    if parent_id is not None:
+        parent = db.get(PostComment, parent_id)
+        if parent is None or parent.post_id != post.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid parent comment")
+
+    comment = PostComment(post_id=post.id, user_id=author.id, content=text, parent_id=parent.id if parent else None)
+    db.add(comment)
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add comment") from exc
+
+    db.refresh(comment)
+    return {
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "user_id": author.id,
+        "username": author.username,
+        "avatar_url": author.avatar_url,
+        "content": comment.content,
+        "parent_id": comment.parent_id,
+        "created_at": comment.created_at,
+        "replies": [],
+    }
 
 
 def delete_post_record(db: Session, *, post_id: UUID, requester_id: UUID) -> None:
@@ -193,4 +365,12 @@ def delete_old_posts(db: Session, *, older_than: timedelta | None = None) -> int
         return 0
 
 
-__all__ = ["create_post_record", "list_feed_records", "delete_post_record", "delete_old_posts"]
+__all__ = [
+    "create_post_record",
+    "list_feed_records",
+    "set_post_like_state",
+    "list_post_comments",
+    "create_post_comment",
+    "delete_post_record",
+    "delete_old_posts",
+]

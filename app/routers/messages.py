@@ -22,6 +22,7 @@ from ..schemas import (
 from ..services import (
     create_group_chat,
     decode_access_token,
+    delete_message,
     get_current_user,
     list_messages,
     require_friendship,
@@ -34,6 +35,16 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 def _to_message_response(message: Message) -> MessageResponse:
     attachments = message.attachments or []
+    parent = message.parent
+    reply_payload = None
+    if parent is not None:
+        reply_payload = {
+            "id": parent.id,
+            "sender_id": parent.sender_id,
+            "sender_username": parent.sender.username if parent.sender else None,
+            "content": None if parent.is_deleted else parent.content,
+            "is_deleted": parent.is_deleted,
+        }
     return MessageResponse(
         id=message.id,
         chat_id=message.chat_id,
@@ -42,6 +53,10 @@ def _to_message_response(message: Message) -> MessageResponse:
         content=message.content,
         attachments=attachments,
         created_at=message.created_at,
+        sender_username=message.sender.username if message.sender else None,
+        reply_to=reply_payload,
+        is_deleted=message.is_deleted,
+        deleted_at=message.deleted_at,
     )
 
 
@@ -75,6 +90,18 @@ async def send_message_endpoint(
     record = send_message(db, sender=current_user, payload=payload)
     response = _to_message_response(record)
     await _broadcast_message(response)
+    return response
+
+
+@router.delete("/{message_id}", response_model=MessageResponse)
+async def delete_message_endpoint(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> MessageResponse:
+    record = delete_message(db, message_id=message_id, requester=current_user)
+    response = _to_message_response(record)
+    await _broadcast_message(response, event_type="message.deleted")
     return response
 
 
@@ -160,11 +187,11 @@ def _user_can_access_chat(db: Session, chat_id: str, user_id: UUID) -> bool:
     return chat is not None
 
 
-async def _broadcast_message(message: MessageResponse) -> None:
+async def _broadcast_message(message: MessageResponse, event_type: str = "message.created") -> None:
     await message_stream_manager.broadcast(
         message.chat_id,
         {
-            "type": "message.created",
+            "type": event_type,
             "chat_id": message.chat_id,
             "message": message.model_dump(),
         },

@@ -92,6 +92,8 @@ class User(Base):
         back_populates="follower",
         cascade="all, delete-orphan",
     )
+    post_likes = relationship("PostLike", back_populates="user", cascade="all, delete-orphan")
+    post_comments = relationship("PostComment", back_populates="user", cascade="all, delete-orphan")
 
 
 __all__ = ["User"]
