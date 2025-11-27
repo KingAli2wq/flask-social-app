@@ -3,7 +3,6 @@
   const USERNAME_KEY = 'socialsphere:username';
   const USER_ID_KEY = 'socialsphere:user_id';
   const THEME_KEY = 'socialsphere:theme';
-  const CONVERSATIONS_KEY = 'socialsphere:conversations';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const FEED_BATCH_SIZE = 5;
   const REALTIME_WS_PATH = '/ws/feed';
@@ -20,8 +19,13 @@
   const state = {
     feedItems: [],
     feedCursor: 0,
-    activeChatId: null,
-    conversations: loadJson(CONVERSATIONS_KEY, {}),
+    friends: [],
+    incomingRequests: [],
+    outgoingRequests: [],
+    activeFriendId: null,
+    activeFriendMeta: null,
+    activeThreadLock: null,
+    threadLoading: false,
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
     avatarCache: {},               // user_id -> resolved avatar URL
     currentProfileAvatar: null,    // raw URL from backend for current user
@@ -979,61 +983,313 @@
     } catch {
       return;
     }
-    renderConversationList();
-    setupNewChatButton();
     setupMessageForm();
+    setupFriendActions();
+    await refreshFriendsDirectory();
   }
 
-  function renderConversationList() {
-    const container = document.getElementById('conversation-list');
+  function setupFriendActions() {
+    const button = document.getElementById('friend-add');
+    if (button) {
+      button.addEventListener('click', async () => {
+        const username = prompt('Enter the username you want to invite:');
+        if (!username) return;
+        try {
+          await apiFetch('/friends/requests', {
+            method: 'POST',
+            body: JSON.stringify({ username: username.trim() })
+          });
+          showToast(`Friend request sent to ${username.trim()}.`, 'success');
+          await refreshFriendsDirectory();
+        } catch (error) {
+          showToast(error.message || 'Unable to send friend request.', 'error');
+        }
+      });
+    }
+  }
+
+  async function refreshFriendsDirectory() {
+    const container = document.getElementById('friend-list');
+    if (container) container.classList.add('opacity-70');
+    try {
+      const data = await apiFetch('/friends/');
+      state.friends = data.friends || [];
+      state.incomingRequests = data.incoming_requests || [];
+      state.outgoingRequests = data.outgoing_requests || [];
+      renderFriendList();
+      renderFriendRequests();
+      reconcileActiveFriend();
+    } catch (error) {
+      showToast(error.message || 'Unable to load friends.', 'error');
+      renderFriendList(true);
+      renderFriendRequests(true);
+    } finally {
+      if (container) container.classList.remove('opacity-70');
+    }
+  }
+
+  function reconcileActiveFriend() {
+    const stillExists = state.friends.some(friend => String(friend.id) === String(state.activeFriendId));
+    if (!stillExists) {
+      state.activeFriendId = null;
+      state.activeFriendMeta = null;
+      state.activeThreadLock = null;
+      clearThreadView();
+    }
+    if (!state.activeFriendId && state.friends.length) {
+      selectFriend(state.friends[0].id);
+    } else {
+      updateFriendSelection();
+      updateRecipientHint();
+      updateSendAvailability();
+    }
+  }
+
+  function renderFriendList(showError = false) {
+    const container = document.getElementById('friend-list');
     if (!container) return;
-    const entries = Object.keys(state.conversations);
-    if (entries.length === 0) {
-      container.innerHTML =
-        '<p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>';
+    container.innerHTML = '';
+    if (showError) {
+      container.innerHTML = '<p class="px-2 py-4 text-sm text-rose-300">Unable to load friends.</p>';
       return;
     }
-    container.innerHTML = '';
-    entries.forEach(chatId => {
-      const meta = state.conversations[chatId];
+    if (!state.friends.length) {
+      container.innerHTML = '<p class="px-2 py-4 text-sm text-slate-400">No friends yet. Send a request to start chatting.</p>';
+      return;
+    }
+    state.friends.forEach(friend => {
       const item = document.createElement('button');
-      item.className = `w-full px-4 py-3 text-left transition hover:bg-indigo-500/10 ${
-        state.activeChatId === chatId ? 'bg-indigo-500/10' : ''
+      item.type = 'button';
+      item.dataset.friendId = String(friend.id);
+      item.className = `flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-indigo-500/10 ${
+        String(state.activeFriendId) === String(friend.id) ? 'bg-indigo-500/10' : ''
       }`;
       item.innerHTML = `
-        <div class="flex items-center justify-between text-sm text-white">
-          <span>${chatId}</span>
-          <span class="text-xs text-slate-400">${meta.updated || ''}</span>
+        <div class="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+          <img data-friend-avatar="${friend.id}" alt="${friend.username}" class="h-full w-full object-cover" />
         </div>
-        <p class="mt-1 text-xs text-slate-400">${meta.preview || 'Start chatting'}</p>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-slate-100">${friend.username}</p>
+          <p class="text-[11px] uppercase tracking-wide text-slate-500">Lock ${shortenLock(friend.lock_code)}</p>
+        </div>
       `;
-      item.addEventListener('click', () => {
-        state.activeChatId = chatId;
-        saveJson(CONVERSATIONS_KEY, state.conversations);
-        renderConversationList();
-        loadChatThread(chatId);
-      });
+      item.addEventListener('click', () => selectFriend(friend.id));
       container.appendChild(item);
+      const avatarNode = item.querySelector(`[data-friend-avatar="${friend.id}"]`);
+      applyAvatarToImg(avatarNode, friend.avatar_url);
+    });
+    updateFriendSelection();
+  }
+
+  function renderFriendRequests(showError = false) {
+    const badge = document.getElementById('incoming-count');
+    if (badge) {
+      badge.textContent = showError ? '0' : String(state.incomingRequests.length);
+    }
+    renderRequestBucket('incoming-requests', state.incomingRequests, showError, true);
+    renderRequestBucket('outgoing-requests', state.outgoingRequests, showError, false);
+  }
+
+  function renderRequestBucket(domId, items, showError, allowActions) {
+    const container = document.getElementById(domId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (showError) {
+      container.innerHTML = '<p class="text-xs text-rose-300">Unable to load requests.</p>';
+      return;
+    }
+    if (!items.length) {
+      container.innerHTML = `<p class="text-xs text-slate-500">${allowActions ? 'No pending requests.' : 'No outgoing requests.'}</p>`;
+      return;
+    }
+    items.forEach(request => {
+      const entry = document.createElement('div');
+      entry.className = 'rounded-2xl border border-slate-800/60 bg-slate-950/60 p-3 text-xs text-slate-300 shadow-sm shadow-black/20';
+      entry.innerHTML = `
+        <p class="font-semibold text-white/90">${allowActions ? 'From' : 'To'} ${truncateId(allowActions ? request.sender_id : request.recipient_id)}</p>
+        <p class="text-[11px] text-slate-500">${formatDate(request.created_at)}</p>
+      `;
+      if (allowActions) {
+        const actions = document.createElement('div');
+        actions.className = 'mt-2 flex gap-2';
+        const accept = document.createElement('button');
+        accept.type = 'button';
+        accept.className = 'flex-1 rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold text-emerald-300 hover:bg-emerald-500/30';
+        accept.textContent = 'Accept';
+        accept.addEventListener('click', () => handleRequestAction(request.id, 'accept', accept));
+        const decline = document.createElement('button');
+        decline.type = 'button';
+        decline.className = 'flex-1 rounded-full bg-rose-500/10 px-3 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-500/20';
+        decline.textContent = 'Decline';
+        decline.addEventListener('click', () => handleRequestAction(request.id, 'decline', decline));
+        actions.appendChild(accept);
+        actions.appendChild(decline);
+        entry.appendChild(actions);
+      }
+      container.appendChild(entry);
     });
   }
 
-  function setupNewChatButton() {
-    const button = document.getElementById('new-chat');
-    if (!button) return;
-    button.addEventListener('click', () => {
-      const chatId = prompt('Enter a new chat ID (e.g., team-alpha):');
-      if (!chatId) return;
-      if (!state.conversations[chatId]) {
-        state.conversations[chatId] = {
-          preview: 'New conversation',
-          updated: formatDate(new Date().toISOString())
-        };
-        saveJson(CONVERSATIONS_KEY, state.conversations);
+  function truncateId(value) {
+    if (!value) return 'Unknown user';
+    const str = String(value);
+    return `${str.slice(0, 6)}…${str.slice(-4)}`;
+  }
+
+  function shortenLock(lock) {
+    if (!lock) return '—';
+    return `${lock.slice(0, 4)}…${lock.slice(-4)}`;
+  }
+
+  async function handleRequestAction(requestId, action, button) {
+    if (button) button.disabled = true;
+    try {
+      const endpoint = action === 'accept' ? `/friends/requests/${requestId}/accept` : `/friends/requests/${requestId}/decline`;
+      await apiFetch(endpoint, { method: 'POST' });
+      showToast(action === 'accept' ? 'Friend added!' : 'Request declined.', 'success');
+      await refreshFriendsDirectory();
+    } catch (error) {
+      showToast(error.message || 'Unable to update request.', 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function selectFriend(friendId) {
+    if (!friendId) return;
+    if (String(state.activeFriendId) === String(friendId) && state.threadLoading) {
+      return;
+    }
+    state.activeFriendId = friendId;
+    updateFriendSelection();
+    updateRecipientHint();
+    updateSendAvailability();
+    loadDirectThread(friendId);
+  }
+
+  function updateFriendSelection() {
+    document.querySelectorAll('[data-friend-id]').forEach(node => {
+      if (String(node.dataset.friendId) === String(state.activeFriendId)) {
+        node.classList.add('bg-indigo-500/10');
+      } else {
+        node.classList.remove('bg-indigo-500/10');
       }
-      state.activeChatId = chatId;
-      renderConversationList();
-      loadChatThread(chatId, true);
     });
+  }
+
+  function updateRecipientHint() {
+    const hint = document.getElementById('message-recipient');
+    if (!hint) return;
+    if (state.activeFriendMeta) {
+      hint.textContent = `Securely messaging @${state.activeFriendMeta.username}`;
+      hint.classList.remove('text-slate-500');
+      hint.classList.add('text-indigo-300');
+    } else {
+      hint.textContent = 'Select a friend to unlock messaging.';
+      hint.classList.remove('text-indigo-300');
+      hint.classList.add('text-slate-500');
+    }
+  }
+
+  function updateSendAvailability() {
+    const button = document.getElementById('message-send');
+    if (!button) return;
+    const disabled = !state.activeFriendId;
+    button.disabled = disabled;
+    if (disabled) {
+      button.classList.add('cursor-not-allowed', 'opacity-50');
+    } else {
+      button.classList.remove('cursor-not-allowed', 'opacity-50');
+    }
+  }
+
+  async function loadDirectThread(friendId) {
+    const thread = document.getElementById('message-thread');
+    const header = document.getElementById('chat-header');
+    if (!thread || !header) return;
+    state.threadLoading = true;
+    thread.classList.add('opacity-80');
+    try {
+      const data = await apiFetch(`/messages/direct/${friendId}`);
+      state.activeFriendMeta = {
+        id: data.friend_id,
+        username: data.friend_username,
+        avatar_url: data.friend_avatar_url
+      };
+      state.activeThreadLock = data.lock_code;
+      updateChatHeader();
+      updateRecipientHint();
+      renderMessageThread(data.messages);
+    } catch (error) {
+      showToast(error.message || 'Unable to load chat.', 'error');
+    } finally {
+      state.threadLoading = false;
+      thread.classList.remove('opacity-80');
+    }
+  }
+
+  function updateChatHeader() {
+    const header = document.getElementById('chat-header');
+    if (!header || !state.activeFriendMeta) {
+      clearThreadView();
+      return;
+    }
+    const { username, avatar_url } = state.activeFriendMeta;
+    const lockSnippet = shortenLock(state.activeThreadLock);
+    header.innerHTML = `
+      <div class="flex items-center gap-3">
+        <div class="h-12 w-12 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+          <img id="active-friend-avatar" alt="${username}" class="h-full w-full object-cover" />
+        </div>
+        <div>
+          <h2 class="text-base font-semibold text-white">@${username}</h2>
+          <p class="text-xs text-slate-400">Secure lock ${lockSnippet}</p>
+        </div>
+      </div>
+      <span id="lock-indicator" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Lock ${lockSnippet}</span>
+    `;
+    const avatarNode = document.getElementById('active-friend-avatar');
+    applyAvatarToImg(avatarNode, avatar_url);
+  }
+
+  function clearThreadView() {
+    state.activeFriendMeta = null;
+    state.activeThreadLock = null;
+    const header = document.getElementById('chat-header');
+    const thread = document.getElementById('message-thread');
+    if (header) {
+      header.innerHTML = `
+        <div>
+          <h2 class="text-base font-semibold text-white">Select a conversation</h2>
+          <p class="text-xs text-slate-500">Choose someone from the sidebar to start chatting.</p>
+        </div>
+        <span id="lock-indicator" class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Locked</span>
+      `;
+    }
+    if (thread) {
+      thread.innerHTML = `
+        <div class="rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
+          Messages will appear here once you select a chat.
+        </div>
+      `;
+    }
+    updateRecipientHint();
+    updateSendAvailability();
+  }
+
+  function renderMessageThread(messages) {
+    const thread = document.getElementById('message-thread');
+    if (!thread) return;
+    thread.innerHTML = '';
+    if (!messages || !messages.length) {
+      thread.innerHTML = '<p class="text-center text-sm text-slate-500">No messages yet. Say hello!</p>';
+      return;
+    }
+    const currentUser = getAuth().userId;
+    messages.forEach(message => {
+      thread.appendChild(createMessageBubble(message, currentUser));
+    });
+    thread.scrollTop = thread.scrollHeight;
   }
 
   function setupMessageForm() {
@@ -1042,42 +1298,29 @@
     if (!form) return;
     form.addEventListener('submit', async event => {
       event.preventDefault();
-      const formData = new FormData(form);
-      const content = String(formData.get('message') || '').trim();
-      const chatId = String(formData.get('chat_id') || '').trim();
-      const recipientId = String(formData.get('recipient_id') || '').trim();
+      const textarea = form.querySelector('textarea[name="message"]');
+      const content = String(textarea?.value || '').trim();
+      if (feedback) {
+        feedback.classList.add('hidden');
+        feedback.textContent = '';
+      }
+      if (!state.activeFriendId) {
+        showToast('Select a friend to send a message.', 'warning');
+        return;
+      }
       if (!content) {
         showToast('Message cannot be empty.', 'warning');
         return;
       }
-      if (!chatId && !recipientId) {
-        showToast('Provide either a chat ID or recipient ID.', 'warning');
-        return;
-      }
-      const payload = {
-        content,
-        chat_id: chatId || null,
-        recipient_id: recipientId || null,
-        attachments: null
-      };
       try {
-        const response = await apiFetch('/messages/send', {
+        await apiFetch('/messages/send', {
           method: 'POST',
-          body: JSON.stringify(payload)
+          body: JSON.stringify({ content, friend_id: state.activeFriendId, attachments: [] })
         });
         showToast('Message sent!', 'success');
         form.reset();
-        const activeChat = response.chat_id || chatId;
-        if (activeChat) {
-          state.conversations[activeChat] = {
-            preview: content.slice(0, 64),
-            updated: formatDate(response.created_at)
-          };
-          state.activeChatId = activeChat;
-          saveJson(CONVERSATIONS_KEY, state.conversations);
-          renderConversationList();
-          loadChatThread(activeChat, false, response);
-        }
+        await loadDirectThread(state.activeFriendId);
+        textarea?.focus();
       } catch (error) {
         if (feedback) {
           feedback.textContent = error.message || 'Failed to send message';
@@ -1085,36 +1328,6 @@
         }
       }
     });
-  }
-
-  async function loadChatThread(chatId, clearThread = false, newMessage = null) {
-    const header = document.getElementById('chat-header');
-    const thread = document.getElementById('message-thread');
-    if (!thread || !header) return;
-    header.innerHTML = `
-      <div>
-        <h2 class="text-base font-semibold text-white">Chat: ${chatId}</h2>
-        <p class="text-xs text-slate-400">Connected • ${new Date().toLocaleTimeString()}</p>
-      </div>
-      <span class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Online</span>
-    `;
-    if (clearThread) {
-      thread.innerHTML = '';
-    }
-    try {
-      const data = await apiFetch(`/messages/${encodeURIComponent(chatId)}`);
-      const currentUser = getAuth().userId;
-      thread.innerHTML = '';
-      data.messages.forEach(msg => {
-        thread.appendChild(createMessageBubble(msg, currentUser));
-      });
-      if (newMessage) {
-        thread.appendChild(createMessageBubble(newMessage, currentUser));
-      }
-      thread.scrollTop = thread.scrollHeight;
-    } catch (error) {
-      showToast(error.message || 'Unable to load chat.', 'error');
-    }
   }
 
   function createMessageBubble(message, currentUserId) {

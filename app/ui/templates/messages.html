@@ -4,11 +4,31 @@
 <section class="card-surface grid h-[75vh] gap-8 rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
     <aside class="flex h-full flex-col">
         <header class="flex items-center justify-between">
-            <h1 class="text-lg font-semibold text-white">Messages</h1>
-            <button id="new-chat" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10" type="button">New chat</button>
+            <div>
+                <p class="text-xs uppercase tracking-wide text-slate-500">Inbox</p>
+                <h1 class="text-lg font-semibold text-white">Friends</h1>
+            </div>
+            <button id="friend-add" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10" type="button">Add friend</button>
         </header>
-        <div id="conversation-list" class="scrollbar-thin mt-6 flex-1 overflow-y-auto divide-y divide-slate-800/70">
-            <p class="px-2 py-4 text-sm text-slate-400">No conversations yet. Start messaging to see them here.</p>
+        <div id="friend-list" class="scrollbar-thin mt-6 flex-1 overflow-y-auto divide-y divide-slate-800/70">
+            <p class="px-2 py-4 text-sm text-slate-400">No friends yet. Send a request to start chatting.</p>
+        </div>
+        <div class="mt-6 space-y-4">
+            <div>
+                <div class="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
+                    <span>Incoming requests</span>
+                    <span id="incoming-count" class="rounded-full bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-300">0</span>
+                </div>
+                <div id="incoming-requests" class="scrollbar-thin mt-3 max-h-40 space-y-3 overflow-y-auto">
+                    <p class="text-xs text-slate-500">No pending requests.</p>
+                </div>
+            </div>
+            <div>
+                <p class="text-xs uppercase tracking-wide text-slate-500">Sent requests</p>
+                <div id="outgoing-requests" class="scrollbar-thin mt-3 max-h-32 space-y-3 overflow-y-auto">
+                    <p class="text-xs text-slate-500">No outgoing requests.</p>
+                </div>
+            </div>
         </div>
     </aside>
     <div class="card-surface flex h-full flex-col rounded-3xl border border-slate-800/60 bg-slate-950/60">
@@ -17,7 +37,7 @@
                 <h2 class="text-base font-semibold text-white">Select a conversation</h2>
                 <p class="text-xs text-slate-500">Choose someone from the sidebar to start chatting.</p>
             </div>
-            <span class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Secure</span>
+            <span id="lock-indicator" class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Locked</span>
         </header>
         <div id="message-thread" class="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-6 py-6">
             <div class="rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
@@ -28,14 +48,14 @@
             <div class="flex flex-col gap-4 md:flex-row md:items-end">
                 <div class="flex-1">
                     {{ components.forms.textarea("message", label="Message", placeholder="Say hello…", rows=2, required=True) | safe }}
+                    <p id="message-recipient" class="mt-2 text-xs text-slate-500">Select a friend to unlock messaging.</p>
                 </div>
                 <div class="flex flex-col gap-3 md:w-48">
-                    {{ components.forms.text_input("chat_id", label="Chat ID", placeholder="team-alpha", required=False) | safe }}
-                    {{ components.forms.text_input("recipient_id", label="Recipient ID", placeholder="UUID", required=False) | safe }}
                     <button
                         id="message-send"
                         type="submit"
-                        class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                        class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled
                     >
                         <span class="text-base">➤</span><span>Send</span>
                     </button>

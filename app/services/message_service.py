@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..models import GroupChat, Message, User
 from ..schemas import GroupChatCreate, MessageSendRequest
+from .friendship_service import require_friendship
 
 
 def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> GroupChat:
@@ -61,13 +62,19 @@ def send_message(
 ) -> Message:
     """Persist a message to PostgreSQL."""
 
-    if not payload.chat_id and payload.recipient_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="chat_id or recipient_id required")
+    if not payload.chat_id and payload.friend_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="friend_id or chat_id required")
 
     group_chat_id: UUID | None = None
     chat_identifier = payload.chat_id
 
-    if payload.chat_id:
+    recipient_id: UUID | None = None
+
+    if payload.friend_id is not None:
+        friendship, friend = require_friendship(db, user=sender, friend_id=payload.friend_id)
+        chat_identifier = friendship.thread_id
+        recipient_id = friend.id
+    elif payload.chat_id:
         try:
             group_chat_uuid = UUID(payload.chat_id)
         except ValueError:
@@ -80,9 +87,8 @@ def send_message(
             group_chat_id = chat.id
             chat_identifier = str(chat.id)
 
-    recipient_id: UUID | None = payload.recipient_id
-    if recipient_id is not None and db.get(User, recipient_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+    if recipient_id is None and payload.friend_id is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Friendship required")
 
     message = Message(
         chat_id=chat_identifier,

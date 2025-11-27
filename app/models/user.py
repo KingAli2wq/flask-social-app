@@ -10,6 +10,8 @@ from sqlalchemy.sql import func
 
 from app.database import Base
 from .associations import group_chat_members
+from .friend_request import FriendRequest
+from .friendship import Friendship
 
 
 class User(Base):
@@ -53,6 +55,30 @@ class User(Base):
     owned_group_chats = relationship("GroupChat", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupChat", secondary=group_chat_members, back_populates="members")
     media_assets = relationship("MediaAsset", back_populates="uploader", cascade="all, delete-orphan")
+    friendships_a = relationship(
+        "Friendship",
+        foreign_keys="Friendship.user_a_id",
+        back_populates="user_a",
+        cascade="all, delete-orphan",
+    )
+    friendships_b = relationship(
+        "Friendship",
+        foreign_keys="Friendship.user_b_id",
+        back_populates="user_b",
+        cascade="all, delete-orphan",
+    )
+    friend_requests_sent = relationship(
+        "FriendRequest",
+        foreign_keys="FriendRequest.sender_id",
+        back_populates="sender",
+        cascade="all, delete-orphan",
+    )
+    friend_requests_received = relationship(
+        "FriendRequest",
+        foreign_keys="FriendRequest.recipient_id",
+        back_populates="recipient",
+        cascade="all, delete-orphan",
+    )
 
 
 __all__ = ["User"]

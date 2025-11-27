@@ -9,10 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MessageSendRequest(BaseModel):
-    chat_id: str | None = Field(None, description="Unique identifier for the chat thread")
-    recipient_id: UUID | None = Field(
-        None, description="Recipient user identifier for direct messages"
-    )
+    chat_id: str | None = Field(None, description="Unique identifier for a group chat thread")
+    friend_id: UUID | None = Field(None, description="Direct message recipient derived from friendships")
     content: str = Field(..., min_length=1, max_length=2000)
     attachments: List[str] = Field(default_factory=list)
 
@@ -31,6 +29,14 @@ class MessageResponse(BaseModel):
 
 class MessageThreadResponse(BaseModel):
     chat_id: str | None
+    messages: List[MessageResponse]
+
+
+class DirectThreadResponse(BaseModel):
+    friend_id: UUID
+    friend_username: str
+    friend_avatar_url: str | None
+    lock_code: str
     messages: List[MessageResponse]
 
 

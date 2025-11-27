@@ -1,19 +1,28 @@
 """Messaging API routes."""
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import GroupChat, Message, User
 from ..schemas import (
+    DirectThreadResponse,
     GroupChatCreate,
     GroupChatResponse,
     MessageResponse,
     MessageSendRequest,
     MessageThreadResponse,
 )
-from ..services import create_group_chat, get_current_user, list_messages, send_message
+from ..services import (
+    create_group_chat,
+    get_current_user,
+    list_messages,
+    require_friendship,
+    send_message,
+)
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -70,6 +79,23 @@ async def thread_endpoint(
 ) -> MessageThreadResponse:
     messages = list_messages(db, chat_id=chat_id)
     return MessageThreadResponse(chat_id=chat_id, messages=[_to_message_response(item) for item in messages])
+
+
+@router.get("/direct/{friend_id}", response_model=DirectThreadResponse)
+async def direct_thread_endpoint(
+    friend_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> DirectThreadResponse:
+    friendship, friend = require_friendship(db, user=current_user, friend_id=friend_id)
+    messages = list_messages(db, chat_id=friendship.thread_id)
+    return DirectThreadResponse(
+        friend_id=friend.id,
+        friend_username=friend.username,
+        friend_avatar_url=friend.avatar_url,
+        lock_code=friendship.lock_code,
+        messages=[_to_message_response(item) for item in messages],
+    )
 
 
 @router.post("/groups", response_model=GroupChatResponse, status_code=status.HTTP_201_CREATED)

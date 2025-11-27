@@ -6,6 +6,13 @@ from .auth_service import (
     register_user,
 )
 from .cleanup_service import CleanupError, CleanupSummary, run_cleanup
+from .friendship_service import (
+    list_friend_requests,
+    list_friends,
+    respond_to_request,
+    require_friendship,
+    send_friend_request,
+)
 from .media_service import delete_old_media, list_media_for_user
 from .message_service import create_group_chat, delete_old_messages, list_messages, send_message
 from .notification_service import add_notification, delete_old_notifications, list_notifications, mark_all_read
@@ -22,6 +29,11 @@ __all__ = [
     "list_messages",
     "send_message",
     "delete_old_messages",
+    "list_friends",
+    "list_friend_requests",
+    "send_friend_request",
+    "respond_to_request",
+    "require_friendship",
     "list_media_for_user",
     "delete_old_media",
     "CleanupError",
