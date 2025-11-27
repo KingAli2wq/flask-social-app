@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -23,12 +23,14 @@ def _existing_friendship(db: Session, user_id: UUID, friend_id: UUID) -> Friends
     return db.scalars(stmt).first()
 
 
-def list_friends(db: Session, *, user: User) -> Sequence[Friendship]:
-    stmt = select(Friendship).where(or_(Friendship.user_a_id == user.id, Friendship.user_b_id == user.id)).order_by(Friendship.created_at.asc())
-    return db.scalars(stmt).all()
+def list_friends(db: Session, *, user: User) -> list[Friendship]:
+    user_id = cast(UUID, user.id)
+    stmt = select(Friendship).where(or_(Friendship.user_a_id == user_id, Friendship.user_b_id == user_id)).order_by(Friendship.created_at.asc())
+    return list(db.scalars(stmt))
 
 
 def send_friend_request(db: Session, *, sender: User, recipient_username: str) -> FriendRequest:
+    sender_id = cast(UUID, sender.id)
     candidate = recipient_username.strip().lower()
     if not candidate:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username required")
@@ -36,24 +38,25 @@ def send_friend_request(db: Session, *, sender: User, recipient_username: str) -
     recipient = db.scalar(select(User).where(User.username.ilike(candidate)))
     if recipient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if recipient.id == sender.id:
+    recipient_id = cast(UUID, recipient.id)
+    if recipient_id == sender_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot befriend yourself")
 
-    if _existing_friendship(db, sender.id, recipient.id):
+    if _existing_friendship(db, sender_id, recipient_id):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already friends")
 
     pending = db.scalar(
         select(FriendRequest).where(
             or_(
-                and_(FriendRequest.sender_id == sender.id, FriendRequest.recipient_id == recipient.id, FriendRequest.status == "pending"),
-                and_(FriendRequest.sender_id == recipient.id, FriendRequest.recipient_id == sender.id, FriendRequest.status == "pending"),
+                and_(FriendRequest.sender_id == sender_id, FriendRequest.recipient_id == recipient_id, FriendRequest.status == "pending"),
+                and_(FriendRequest.sender_id == recipient_id, FriendRequest.recipient_id == sender_id, FriendRequest.status == "pending"),
             )
         )
     )
-    if pending:
+    if pending is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Pending request already exists")
 
-    request = FriendRequest(sender_id=sender.id, recipient_id=recipient.id)
+    request = FriendRequest(sender_id=sender_id, recipient_id=recipient_id)
     try:
         db.add(request)
         db.commit()
@@ -66,10 +69,11 @@ def send_friend_request(db: Session, *, sender: User, recipient_username: str) -
 
 
 def list_friend_requests(db: Session, *, user: User) -> tuple[list[FriendRequest], list[FriendRequest]]:
-    incoming_stmt = select(FriendRequest).where(FriendRequest.recipient_id == user.id, FriendRequest.status == "pending")
-    outgoing_stmt = select(FriendRequest).where(FriendRequest.sender_id == user.id, FriendRequest.status == "pending")
-    incoming = db.scalars(incoming_stmt).all()
-    outgoing = db.scalars(outgoing_stmt).all()
+    user_id = cast(UUID, user.id)
+    incoming_stmt = select(FriendRequest).where(FriendRequest.recipient_id == user_id, FriendRequest.status == "pending")
+    outgoing_stmt = select(FriendRequest).where(FriendRequest.sender_id == user_id, FriendRequest.status == "pending")
+    incoming = list(db.scalars(incoming_stmt))
+    outgoing = list(db.scalars(outgoing_stmt))
     return incoming, outgoing
 
 
@@ -88,13 +92,18 @@ def _create_friendship(db: Session, first: UUID, second: UUID) -> Friendship:
 
 def respond_to_request(db: Session, *, request_id: UUID, recipient: User, accept: bool) -> Friendship | None:
     request = db.get(FriendRequest, request_id)
-    if request is None or request.recipient_id != recipient.id:
+    recipient_id = cast(UUID, recipient.id)
+    if request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
-    if request.status != "pending":
+    stored_recipient_id = cast(UUID, request.recipient_id)
+    if stored_recipient_id != recipient_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
+    status_value = cast(str, request.status)
+    if status_value != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Request already processed")
 
-    request.status = "accepted" if accept else "declined"
-    request.responded_at = datetime.now(timezone.utc)
+    setattr(request, "status", "accepted" if accept else "declined")
+    setattr(request, "responded_at", datetime.now(timezone.utc))
 
     try:
         db.commit()
@@ -104,9 +113,10 @@ def respond_to_request(db: Session, *, request_id: UUID, recipient: User, accept
     db.refresh(request)
 
     if accept:
-        friendship = _existing_friendship(db, request.sender_id, request.recipient_id)
+        sender_id = cast(UUID, request.sender_id)
+        friendship = _existing_friendship(db, sender_id, stored_recipient_id)
         if friendship is None:
-            friendship = _create_friendship(db, request.sender_id, request.recipient_id)
+            friendship = _create_friendship(db, sender_id, stored_recipient_id)
         return friendship
     return None
 
@@ -115,7 +125,9 @@ def require_friendship(db: Session, *, user: User, friend_id: UUID) -> tuple[Fri
     friend = db.get(User, friend_id)
     if friend is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Friend not found")
-    friendship = _existing_friendship(db, user.id, friend.id)
+    user_id = cast(UUID, user.id)
+    friend_uuid = cast(UUID, friend.id)
+    friendship = _existing_friendship(db, user_id, friend_uuid)
     if friendship is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Friendship required")
     return friendship, friend

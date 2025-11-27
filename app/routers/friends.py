@@ -1,6 +1,7 @@
 """Friend management API routes."""
 from __future__ import annotations
 
+from typing import cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -26,13 +27,15 @@ router = APIRouter(prefix="/friends", tags=["friends"])
 
 
 def _friend_summary(friendship: Friendship, viewer: User) -> FriendSummary:
-    friend = friendship.user_b if friendship.user_a_id == viewer.id else friendship.user_a
+    viewer_id = cast(UUID, viewer.id)
+    user_a_id = cast(UUID, friendship.user_a_id)
+    friend = friendship.user_b if user_a_id == viewer_id else friendship.user_a
     return FriendSummary(
-        id=friend.id,
+        id=cast(UUID, friend.id),
         username=friend.username,
         avatar_url=friend.avatar_url,
-        chat_id=friendship.thread_id,
-        lock_code=friendship.lock_code,
+        chat_id=str(friendship.thread_id),
+        lock_code=str(friendship.lock_code),
     )
 
 
