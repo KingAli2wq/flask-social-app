@@ -930,7 +930,23 @@
     panel.classList.add('opacity-70');
     try {
       const response = await apiFetch(`/posts/${encodeURIComponent(postId)}/comments`);
-      store.items = Array.isArray(response.items) ? response.items : [];
+      const fetched = Array.isArray(response.items) ? response.items : [];
+      if (store.loaded && Array.isArray(store.items) && store.items.length) {
+        const merged = new Map();
+        store.items.forEach(item => {
+          if (item?.id) {
+            merged.set(String(item.id), item);
+          }
+        });
+        fetched.forEach(item => {
+          if (item?.id) {
+            merged.set(String(item.id), item);
+          }
+        });
+        store.items = Array.from(merged.values());
+      } else {
+        store.items = fetched;
+      }
       store.loaded = true;
       renderCommentList(postId, store.items, list);
     } catch (error) {
@@ -945,10 +961,16 @@
     const form = panel.querySelector('[data-role="comment-form"]');
     const pill = panel.querySelector('[data-role="comment-reply-pill"]');
     const usernameNode = panel.querySelector('[data-role="comment-reply-username"]');
+    const previewNode = panel.querySelector('[data-role="comment-reply-preview"]');
     if (!form || !pill || !usernameNode) return;
     form.dataset.replyId = comment.id;
     usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
+    if (previewNode) {
+      const preview = (comment.content || '').trim();
+      previewNode.textContent = preview ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '') : 'No text available.';
+    }
     pill.classList.remove('hidden');
+    focusCommentInput(panel);
   }
 
   function resetCommentReply(panel) {
@@ -957,6 +979,10 @@
     if (form) delete form.dataset.replyId;
     const pill = panel.querySelector('[data-role="comment-reply-pill"]');
     if (pill) pill.classList.add('hidden');
+    const usernameNode = panel.querySelector('[data-role="comment-reply-username"]');
+    if (usernameNode) usernameNode.textContent = '@commenter';
+    const previewNode = panel.querySelector('[data-role="comment-reply-preview"]');
+    if (previewNode) previewNode.textContent = '';
   }
 
   function appendCommentRecord(postId, comment) {
@@ -1053,6 +1079,80 @@
     }
   }
 
+  function focusCommentInput(panel) {
+    if (!panel) return;
+    const textarea = panel.querySelector('textarea');
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+  }
+
+  function toggleCommentPanel(button, panel, post) {
+    if (!button || !panel || !post?.id) return;
+    const isOpen = button.dataset.open === 'true';
+    const nextState = !isOpen;
+    button.dataset.open = nextState ? 'true' : 'false';
+    panel.classList.toggle('hidden', !nextState);
+    const label = button.querySelector('[data-role="comment-toggle-label"]');
+    if (label) label.textContent = nextState ? 'Hide' : 'Comment';
+    if (nextState) {
+      loadCommentsForPost(post.id, panel);
+      focusCommentInput(panel);
+    } else {
+      resetCommentReply(panel);
+    }
+  }
+
+  async function submitCommentForm(post, panel, form) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!post?.id || !panel || !form) return;
+    const textarea = form.querySelector('textarea');
+    const content = String(textarea?.value || '').trim();
+    if (!content) {
+      showToast('Write a comment before posting.', 'warning');
+      return;
+    }
+    const submitButton = form.querySelector('button[type="submit"]');
+    form.classList.add('opacity-70');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const payload = {
+        content,
+        parent_id: form.dataset.replyId || null,
+      };
+      const comment = await apiFetch(`/posts/${encodeURIComponent(post.id)}/comments`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      appendCommentRecord(post.id, comment);
+      const store = getCommentStore(post.id);
+      store.loaded = true;
+      const list = panel.querySelector('[data-role="comment-list"]');
+      renderCommentList(post.id, store.items, list);
+      if (textarea) textarea.value = '';
+      resetCommentReply(panel);
+      post.comment_count = (post.comment_count || 0) + 1;
+      const snapshot = {
+        post_id: post.id,
+        like_count: typeof post.like_count === 'number' ? post.like_count : 0,
+        comment_count: post.comment_count,
+        viewer_has_liked: Boolean(post.viewer_has_liked),
+      };
+      setPostEngagementSnapshot(snapshot);
+      showToast('Comment added.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to add comment.', 'error');
+    } finally {
+      form.classList.remove('opacity-70');
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
   function resetButtonListeners(buttonId) {
     const original = document.getElementById(buttonId);
     if (!original) return null;
@@ -1066,6 +1166,7 @@
     const el = document.createElement('article');
     el.className =
       'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
+    const postId = post?.id;
     const rawCurrentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
     const currentUsername = rawCurrentUsername ? String(rawCurrentUsername).replace(/^@/, '') : null;
     const currentUserId = typeof currentUserMeta === 'object' ? currentUserMeta?.userId : null;
@@ -1084,6 +1185,9 @@
     const media = mediaUrl
       ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="">`
       : '';
+    const likeCount = typeof post.like_count === 'number' ? post.like_count : 0;
+    const commentCount = typeof post.comment_count === 'number' ? post.comment_count : 0;
+    const viewerHasLiked = Boolean(post.viewer_has_liked);
     const showFollowButton = Boolean(hasAuthToken && !isCurrentUser);
     const initialFollowing = Boolean(post.is_following_author);
     const followButtonMarkup = showFollowButton
@@ -1098,6 +1202,61 @@
           <span aria-hidden="true">🗑</span>
           <span>Delete</span>
         </button>`
+      : '';
+    const commentPanelMarkup = postId
+      ? `
+        <section
+          data-role="comment-panel"
+          data-post-id="${postId}"
+          class="mt-5 hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 shadow-inner shadow-black/20"
+        >
+          <div data-role="comments-empty" class="text-sm text-slate-400">
+            No comments yet. Be the first to say something nice.
+          </div>
+          <div data-role="comment-list" class="mt-4 space-y-3"></div>
+          <form data-role="comment-form" class="mt-4 space-y-3">
+            <div
+              data-role="comment-reply-pill"
+              class="hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2 text-xs text-indigo-100"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="font-semibold text-indigo-200">
+                    Replying to <span data-role="comment-reply-username" class="text-white">@commenter</span>
+                  </p>
+                  <p data-role="comment-reply-preview" class="mt-1 text-[11px] text-slate-300"></p>
+                </div>
+                <button
+                  type="button"
+                  data-role="comment-reply-cancel"
+                  class="text-[11px] font-semibold text-indigo-200 transition hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+            <textarea
+              data-role="comment-input"
+              rows="3"
+              class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+              placeholder="Share your thoughts…"
+              required
+            ></textarea>
+            <div class="flex items-center justify-between gap-3">
+              <button type="button" data-role="comment-reset" class="text-xs font-semibold text-slate-400 hover:text-white">
+                Clear
+              </button>
+              <button
+                type="submit"
+                class="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
+              >
+                <span class="text-base">➤</span>
+                <span>Post comment</span>
+              </button>
+            </div>
+          </form>
+        </section>
+      `
       : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
@@ -1117,15 +1276,35 @@
       <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.caption || ''}</p>
       ${media}
       <footer class="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-        <button class="like-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>❤</span><span>Like</span></button>
-        <button class="comment-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>💬</span><span>Comment</span></button>
+        <button
+          data-role="like-button"
+          data-post-id="${post.id}"
+          class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold"
+        >
+          <span aria-hidden="true">❤</span>
+          <span data-role="like-label">${viewerHasLiked ? 'Liked' : 'Like'}</span>
+          <span data-role="like-count" class="text-[11px] text-slate-300">${likeCount}</span>
+        </button>
+        <button
+          data-role="comment-toggle"
+          data-post-id="${post.id}"
+          data-open="false"
+          class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-800/80 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600"
+        >
+          <span aria-hidden="true">💬</span>
+          <span data-role="comment-toggle-label">Comment</span>
+          <span
+            data-role="comment-count"
+            data-post-id="${post.id}"
+            class="text-[11px] text-slate-200"
+          >${commentCount}</span>
+        </button>
         <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>Share</span></button>
         ${deleteButtonMarkup}
       </footer>
+      ${commentPanelMarkup}
     `;
-    el.querySelectorAll('.like-btn, .comment-btn, .share-btn').forEach(btn => {
-      btn.addEventListener('click', () => showToast('Action coming soon 🎉', 'info'));
-    });
+    registerPostInstance(post);
     const avatarImg = el.querySelector('[data-role="post-avatar"]');
     applyAvatarToImg(avatarImg, avatarUrl);
     const followButton = el.querySelector('[data-role="follow-button"]');
@@ -1168,6 +1347,45 @@
         event.preventDefault();
         handleDeletePost(post, el, deleteButton);
       });
+    }
+    const likeButton = el.querySelector('[data-role="like-button"]');
+    if (likeButton) {
+      applyLikeButtonState(likeButton, viewerHasLiked, likeCount);
+      likeButton.addEventListener('click', event => {
+        event.preventDefault();
+        togglePostLike(post, likeButton);
+      });
+    }
+    const commentToggle = el.querySelector('[data-role="comment-toggle"]');
+    const commentPanel = el.querySelector('[data-role="comment-panel"]');
+    if (commentToggle && commentPanel) {
+      commentToggle.addEventListener('click', event => {
+        event.preventDefault();
+        toggleCommentPanel(commentToggle, commentPanel, post);
+      });
+      const commentForm = commentPanel.querySelector('[data-role="comment-form"]');
+      if (commentForm) {
+        commentForm.addEventListener('submit', event => {
+          event.preventDefault();
+          submitCommentForm(post, commentPanel, commentForm);
+        });
+        const resetButton = commentForm.querySelector('[data-role="comment-reset"]');
+        if (resetButton) {
+          resetButton.addEventListener('click', () => {
+            const textarea = commentForm.querySelector('textarea');
+            if (textarea) textarea.value = '';
+            resetCommentReply(commentPanel);
+          });
+        }
+      }
+      const replyCancel = commentPanel.querySelector('[data-role="comment-reply-cancel"]');
+      if (replyCancel) {
+        replyCancel.addEventListener('click', () => resetCommentReply(commentPanel));
+      }
+    }
+    const shareButton = el.querySelector('.share-btn');
+    if (shareButton) {
+      shareButton.addEventListener('click', () => showToast('Link copied! Share coming soon.', 'info'));
     }
     return el;
   }
@@ -1435,6 +1653,68 @@
   // -----------------------------------------------------------------------
   // Messages
   // -----------------------------------------------------------------------
+
+  function initMessageReplyBanner() {
+    if (state.messageReplyElements && state.messageReplyElements.initialized) {
+      return state.messageReplyElements;
+    }
+    const banner = document.getElementById('message-reply-banner');
+    const usernameNode = document.getElementById('message-reply-username');
+    const previewNode = document.getElementById('message-reply-preview');
+    const cancelButton = document.getElementById('message-reply-cancel');
+    if (cancelButton && cancelButton.dataset.bound !== 'true') {
+      cancelButton.dataset.bound = 'true';
+      cancelButton.addEventListener('click', event => {
+        event.preventDefault();
+        clearMessageReplyTarget();
+      });
+    }
+    state.messageReplyElements = {
+      banner,
+      usernameNode,
+      previewNode,
+      cancelButton,
+      initialized: true,
+    };
+    return state.messageReplyElements;
+  }
+
+  function focusMessageComposer() {
+    const textarea = document.querySelector('#message-form textarea[name="message"]');
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+  }
+
+  function setMessageReplyTarget(message) {
+    if (!message || !message.id) return;
+    const elements = initMessageReplyBanner();
+    const authId = getAuth().userId;
+    let username = message.sender_username;
+    if (!username) {
+      const isSelf = authId && String(message.sender_id) === String(authId);
+      username = isSelf ? 'you' : 'this user';
+    }
+    const previewSource = message.is_deleted ? 'Message deleted' : (message.content || 'No preview available.');
+    state.messageReplyTarget = {
+      id: String(message.id),
+      username,
+      preview: previewSource,
+    };
+    if (elements.banner) elements.banner.classList.remove('hidden');
+    if (elements.usernameNode) elements.usernameNode.textContent = `@${username}`;
+    if (elements.previewNode) elements.previewNode.textContent = previewSource.slice(0, 160);
+    focusMessageComposer();
+  }
+
+  function clearMessageReplyTarget() {
+    state.messageReplyTarget = null;
+    const elements = state.messageReplyElements;
+    if (elements?.banner) elements.banner.classList.add('hidden');
+    if (elements?.usernameNode) elements.usernameNode.textContent = '@friend';
+    if (elements?.previewNode) elements.previewNode.textContent = '';
+  }
 
   async function initMessagesPage() {
     initThemeToggle();
@@ -1734,6 +2014,7 @@
       state.activeChatId = null;
       state.activeMessages = [];
       disconnectMessageSocket();
+      clearMessageReplyTarget();
     }
     state.activeFriendId = friendId;
     updateFriendSelection();
@@ -1836,6 +2117,7 @@
     state.activeChatId = null;
     state.activeMessages = [];
     disconnectMessageSocket();
+    clearMessageReplyTarget();
     const header = document.getElementById('chat-header');
     const thread = document.getElementById('message-thread');
     if (header) {
@@ -1878,6 +2160,7 @@
     const form = document.getElementById('message-form');
     const feedback = document.getElementById('message-feedback');
     if (!form) return;
+    initMessageReplyBanner();
     form.addEventListener('submit', async event => {
       event.preventDefault();
       const textarea = form.querySelector('textarea[name="message"]');
@@ -1895,14 +2178,21 @@
         return;
       }
       try {
+        const payload = {
+          content,
+          friend_id: state.activeFriendId,
+          attachments: [],
+          reply_to_id: state.messageReplyTarget?.id || null,
+        };
         const message = await apiFetch('/messages/send', {
           method: 'POST',
-          body: JSON.stringify({ content, friend_id: state.activeFriendId, attachments: [] })
+          body: JSON.stringify(payload)
         });
         showToast('Message sent!', 'success');
         form.reset();
+        clearMessageReplyTarget();
         handleIncomingMessage(message, { skipToast: true });
-        textarea?.focus();
+        focusMessageComposer();
       } catch (error) {
         if (feedback) {
           feedback.textContent = error.message || 'Failed to send message';
@@ -1912,38 +2202,124 @@
     });
   }
 
-  function createMessageBubble(message, currentUserId) {
-    const el = document.createElement('div');
-    const outbound = message.sender_id === currentUserId;
-    el.className = `flex ${outbound ? 'justify-end' : 'justify-start'}`;
-    el.innerHTML = `
-      <div class="max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-lg ${
-        outbound ? 'bg-indigo-600 text-white' : 'bg-slate-800/90 text-slate-100'
-      }">
-        <p class="whitespace-pre-line leading-relaxed">${message.content}</p>
-        <span class="mt-2 block text-right text-xs text-white/70">${formatDate(message.created_at)}</span>
+  function renderMessageReplyContext(replyTo, outbound) {
+    if (!replyTo) return '';
+    const author = replyTo.sender_username ? `@${replyTo.sender_username}` : 'This user';
+    const text = replyTo.is_deleted ? 'Message deleted' : (replyTo.content || 'No preview available.');
+    const baseClasses = outbound
+      ? 'mb-3 rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-xs text-white/80'
+      : 'mb-3 rounded-2xl border border-slate-700/60 bg-slate-900/60 px-3 py-2 text-xs text-slate-200';
+    return `
+      <div class="${baseClasses}">
+        <p class="text-[10px] uppercase tracking-wide opacity-80">${author}</p>
+        <p class="mt-1 whitespace-pre-line text-xs opacity-90">${text.slice(0, 160)}</p>
       </div>
     `;
+  }
+
+  function createMessageBubble(message, currentUserId) {
+    const el = document.createElement('div');
+    const outbound = String(message.sender_id) === String(currentUserId);
+    el.className = `flex ${outbound ? 'justify-end' : 'justify-start'}`;
+    const bubble = document.createElement('div');
+    bubble.className = `max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-lg ${
+      outbound ? 'bg-indigo-600 text-white' : 'bg-slate-800/90 text-slate-100'
+    }`;
+    if (message.id) {
+      bubble.dataset.messageId = String(message.id);
+    }
+    const replyMarkup = renderMessageReplyContext(message.reply_to, outbound);
+    const bodyMarkup = message.is_deleted
+      ? '<p class="italic text-white/80">Message deleted</p>'
+      : `<p class="whitespace-pre-line leading-relaxed">${message.content || ''}</p>`;
+    const timestamp = `<span class="mt-2 block text-right text-[11px] ${outbound ? 'text-white/80' : 'text-slate-400'}">${formatDate(
+      message.created_at
+    )}</span>`;
+    const actions = !message.is_deleted
+      ? `
+        <div class="mt-3 flex items-center gap-3 text-[11px] ${outbound ? 'text-white/80' : 'text-slate-300'}">
+          <button type="button" data-role="message-reply-trigger" class="font-semibold hover:text-white">
+            Reply
+          </button>
+          ${
+            outbound
+              ? '<button type="button" data-role="message-delete" class="font-semibold hover:text-white">Delete</button>'
+              : ''
+          }
+        </div>
+      `
+      : '';
+    bubble.innerHTML = `${replyMarkup}${bodyMarkup}${timestamp}${actions}`;
+    if (!message.is_deleted) {
+      const replyButton = bubble.querySelector('[data-role="message-reply-trigger"]');
+      if (replyButton) {
+        replyButton.addEventListener('click', () => setMessageReplyTarget(message));
+      }
+      if (outbound) {
+        const deleteButton = bubble.querySelector('[data-role="message-delete"]');
+        if (deleteButton) {
+          deleteButton.addEventListener('click', () => handleDeleteMessage(message, deleteButton));
+        }
+      }
+    }
+    el.appendChild(bubble);
     return el;
+  }
+
+  async function handleDeleteMessage(message, trigger) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!message?.id) return;
+    const button = trigger || null;
+    if (button) {
+      button.disabled = true;
+      button.classList.add('opacity-70');
+    }
+    try {
+      const response = await apiFetch(`/messages/${encodeURIComponent(message.id)}`, {
+        method: 'DELETE',
+      });
+      handleIncomingMessage(response, { skipToast: true });
+      showToast('Message deleted.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to delete message.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.classList.remove('opacity-70');
+      }
+    }
   }
 
   function handleIncomingMessage(message, options = {}) {
     if (!message) return;
+    const { skipToast = false } = options;
     const chatId = message.chat_id ? String(message.chat_id) : null;
     if (!chatId) return;
     const activeChatId = state.activeChatId ? String(state.activeChatId) : null;
-    const isActiveChat = chatId && activeChatId && chatId === activeChatId;
-    if (isActiveChat) {
+    if (chatId && activeChatId && chatId === activeChatId) {
       const messageId = message.id ? String(message.id) : null;
-      const duplicate =
-        messageId && state.activeMessages.some(item => String(item.id) === messageId);
-      if (duplicate) return;
-      state.activeMessages.push(message);
+      if (messageId) {
+        const existingIndex = state.activeMessages.findIndex(item => String(item.id) === messageId);
+        if (existingIndex >= 0) {
+          state.activeMessages[existingIndex] = message;
+        } else {
+          state.activeMessages.push(message);
+        }
+      } else {
+        state.activeMessages.push(message);
+      }
       renderMessageThread();
       return;
     }
-    if (!options.skipToast) {
-      showToast('New message received in another conversation.', 'info');
+    if (!skipToast) {
+      const text = message.is_deleted
+        ? 'A message was removed in another conversation.'
+        : 'New message received in another conversation.';
+      showToast(text, 'info');
     }
   }
 
@@ -2069,6 +2445,9 @@
     switch (type) {
       case 'message.created':
         handleIncomingMessage(payload.message || {});
+        break;
+      case 'message.deleted':
+        handleIncomingMessage(payload.message || {}, { skipToast: true });
         break;
       case 'ready':
         break;
