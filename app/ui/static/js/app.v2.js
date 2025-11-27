@@ -25,6 +25,10 @@
     activeFriendId: null,
     activeFriendMeta: null,
     activeThreadLock: null,
+    friendSearch: {
+      query: '',
+      results: [],
+    },
     threadLoading: false,
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
     avatarCache: {},               // user_id -> resolved avatar URL
@@ -984,28 +988,7 @@
       return;
     }
     setupMessageForm();
-    setupFriendActions();
     await refreshFriendsDirectory();
-  }
-
-  function setupFriendActions() {
-    const button = document.getElementById('friend-add');
-    if (button) {
-      button.addEventListener('click', async () => {
-        const username = prompt('Enter the username you want to invite:');
-        if (!username) return;
-        try {
-          await apiFetch('/friends/requests', {
-            method: 'POST',
-            body: JSON.stringify({ username: username.trim() })
-          });
-          showToast(`Friend request sent to ${username.trim()}.`, 'success');
-          await refreshFriendsDirectory();
-        } catch (error) {
-          showToast(error.message || 'Unable to send friend request.', 'error');
-        }
-      });
-    }
   }
 
   async function refreshFriendsDirectory() {
@@ -1346,6 +1329,170 @@
   }
 
   // -----------------------------------------------------------------------
+  // Friend search page
+  // -----------------------------------------------------------------------
+
+  async function initFriendSearchPage() {
+    initThemeToggle();
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    setupFriendSearchForm();
+    const input = document.getElementById('friend-search-input');
+    if (input) {
+      input.focus();
+    }
+  }
+
+  function setupFriendSearchForm() {
+    const form = document.getElementById('friend-search-form');
+    const input = document.getElementById('friend-search-input');
+    if (!form) return;
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const query = String(formData.get('query') || input?.value || '').trim();
+      performFriendSearch(query);
+    });
+  }
+
+  async function performFriendSearch(query) {
+    const feedback = document.getElementById('friend-search-feedback');
+    if (feedback) {
+      feedback.classList.add('hidden');
+      feedback.textContent = '';
+    }
+    state.friendSearch.query = query;
+    const container = document.getElementById('friend-search-results');
+    if (!query || query.length < 2) {
+      state.friendSearch.results = [];
+      if (container) {
+        container.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-800/70 bg-slate-950/60 p-6 text-sm text-slate-400">Type at least two characters to search.</div>';
+      }
+      return;
+    }
+    if (container) {
+      container.innerHTML = '<div class="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-6 text-sm text-slate-300">Searching…</div>';
+    }
+    try {
+      const response = await apiFetch(`/friends/search?query=${encodeURIComponent(query)}`);
+      state.friendSearch.results = response.results || [];
+      renderFriendSearchResults();
+    } catch (error) {
+      if (feedback) {
+        feedback.textContent = error.message || 'Unable to search right now.';
+        feedback.classList.remove('hidden');
+      }
+      if (container) {
+        container.innerHTML = '<div class="rounded-2xl border border-rose-500/40 bg-rose-500/10 p-6 text-sm text-rose-200">Search failed. Try again.</div>';
+      }
+    }
+  }
+
+  function renderFriendSearchResults() {
+    const container = document.getElementById('friend-search-results');
+    if (!container) return;
+    const results = state.friendSearch.results || [];
+    if (!results.length) {
+      container.innerHTML = '<div class="rounded-2xl border border-dashed border-slate-800/70 bg-slate-950/60 p-6 text-sm text-slate-400">No matching usernames yet.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    results.forEach(result => {
+      container.appendChild(createFriendSearchCard(result));
+    });
+  }
+
+  function createFriendSearchCard(result) {
+    const card = document.createElement('div');
+    card.className = 'flex flex-col gap-4 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5 shadow-md shadow-black/10';
+    const statusMeta = friendStatusDescriptor(result.status);
+    card.innerHTML = `
+      <div class="flex items-center gap-4">
+        <div class="h-12 w-12 overflow-hidden rounded-full border border-slate-800/60 bg-slate-900/60">
+          <img alt="${result.username}" class="h-full w-full object-cover" data-search-avatar="${result.id}" />
+        </div>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-white">@${result.username}</p>
+          <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] ${statusMeta.className}">${statusMeta.label}</span>
+        </div>
+      </div>
+      <p class="text-sm text-slate-400">${result.bio ? result.bio : 'No bio provided yet.'}</p>
+    `;
+    const avatarNode = card.querySelector(`[data-search-avatar="${result.id}"]`);
+    applyAvatarToImg(avatarNode, result.avatar_url);
+
+    if (result.status === 'available') {
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-indigo-500/30 transition hover:bg-indigo-500 disabled:opacity-50';
+      action.textContent = 'Send request';
+      action.addEventListener('click', () => sendFriendRequestFromSearch(result.username, action));
+      card.appendChild(action);
+    } else if (result.status === 'incoming') {
+      const note = document.createElement('p');
+      note.className = 'text-xs text-amber-200';
+      note.textContent = 'This user already sent you a request — respond from Messages.';
+      card.appendChild(note);
+    } else if (result.status === 'outgoing') {
+      const note = document.createElement('p');
+      note.className = 'text-xs text-indigo-200';
+      note.textContent = 'Request sent. Waiting for them to respond.';
+      card.appendChild(note);
+    } else if (result.status === 'friend') {
+      const note = document.createElement('p');
+      note.className = 'text-xs text-emerald-200';
+      note.textContent = 'Already connected — chat from the Messages tab.';
+      card.appendChild(note);
+    }
+
+    return card;
+  }
+
+  function friendStatusDescriptor(status) {
+    switch (status) {
+      case 'friend':
+        return { label: 'Friends', className: 'bg-emerald-500/20 text-emerald-200' };
+      case 'incoming':
+        return { label: 'Request received', className: 'bg-amber-500/20 text-amber-100' };
+      case 'outgoing':
+        return { label: 'Request sent', className: 'bg-indigo-500/20 text-indigo-100' };
+      case 'available':
+        return { label: 'Not connected', className: 'bg-slate-800/60 text-slate-200' };
+      case 'self':
+      default:
+        return { label: 'This is you', className: 'bg-slate-800/60 text-slate-300' };
+    }
+  }
+
+  async function sendFriendRequestFromSearch(username, button) {
+    if (!username) return;
+    if (button) {
+      button.disabled = true;
+    }
+    try {
+      await apiFetch('/friends/requests', {
+        method: 'POST',
+        body: JSON.stringify({ username })
+      });
+      showToast(`Friend request sent to ${username}.`, 'success');
+      const match = state.friendSearch.results.find(result => result.username === username);
+      if (match) {
+        match.status = 'outgoing';
+      }
+      renderFriendSearchResults();
+    } catch (error) {
+      showToast(error.message || 'Unable to send friend request.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Notifications
   // -----------------------------------------------------------------------
 
@@ -1527,6 +1674,7 @@
     initRegisterPage,
     initProfilePage,
     initMessagesPage,
+    initFriendSearchPage,
     initNotificationsPage,
     initMediaPage
   };

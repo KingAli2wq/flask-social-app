@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from .pages import auth, home, media, messages, notifications, profile
+from .pages import auth, friends, home, media, messages, notifications, profile
 
 router = APIRouter(include_in_schema=False)
 
 router.include_router(home.router)
 router.include_router(auth.router)
+router.include_router(friends.router)
 router.include_router(profile.router)
 router.include_router(messages.router)
 router.include_router(notifications.router)
