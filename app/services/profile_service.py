@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -7,9 +9,16 @@ from sqlalchemy.orm import Session
 from ..models import User
 from ..schemas import ProfileUpdateRequest
 
-def get_profile(db: Session, user_id: UUID) -> User:
-    """Return profile for a user by id (raises 404 if not found)."""
-    user = db.get(User, user_id)
+def get_profile(db: Session, user_ref: UUID | str) -> User:
+    """Return a profile by ``user_ref`` which may be a UUID or username."""
+    if isinstance(user_ref, UUID):
+        user = db.get(User, user_ref)
+    else:
+        user = (
+            db.query(User)
+            .filter(User.username == user_ref)
+            .first()
+        )
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
