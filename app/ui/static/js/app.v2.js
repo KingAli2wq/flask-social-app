@@ -1826,13 +1826,22 @@
     const avatarNode = card.querySelector(`[data-search-avatar="${result.id}"]`);
     applyAvatarToImg(avatarNode, result.avatar_url);
 
+    const actionRow = document.createElement('div');
+    actionRow.className = 'flex flex-wrap items-center gap-3';
+    const profileLink = document.createElement('a');
+    profileLink.href = `/people/${encodeURIComponent(result.username)}`;
+    profileLink.className = 'rounded-full border border-slate-700/70 px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200';
+    profileLink.textContent = 'View profile';
+    actionRow.appendChild(profileLink);
+    card.appendChild(actionRow);
+
     if (result.status === 'available') {
       const action = document.createElement('button');
       action.type = 'button';
       action.className = 'rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow shadow-indigo-500/30 transition hover:bg-indigo-500 disabled:opacity-50';
       action.textContent = 'Send request';
       action.addEventListener('click', () => sendFriendRequestFromSearch(result.username, action));
-      card.appendChild(action);
+      actionRow.appendChild(action);
     } else if (result.status === 'incoming') {
       const note = document.createElement('p');
       note.className = 'text-xs text-amber-200';
