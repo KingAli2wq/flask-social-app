@@ -111,6 +111,9 @@ async def search_users(
     viewer_id = cast(UUID, current_user.id)
     for candidate in candidates:
         candidate_id = cast(UUID, candidate.id)
+        username = cast(str, candidate.username)
+        avatar_url = cast(str | None, candidate.avatar_url)
+        bio = cast(str | None, candidate.bio)
         if candidate_id == viewer_id:
             status_label = "self"
         elif candidate_id in friend_ids:
@@ -124,9 +127,9 @@ async def search_users(
         results.append(
             FriendSearchResult(
                 id=candidate_id,
-                username=candidate.username,
-                avatar_url=candidate.avatar_url,
-                bio=candidate.bio,
+                username=username,
+                avatar_url=avatar_url,
+                bio=bio,
                 status=status_label,
             )
         )
