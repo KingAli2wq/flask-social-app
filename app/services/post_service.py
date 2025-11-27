@@ -96,8 +96,13 @@ async def create_post_record(
     return post
 
 
-def list_feed_records(db: Session, *, viewer_id: UUID | None = None) -> list[dict[str, Any]]:
-    """Return the latest posts ordered by personalised priority when possible."""
+def list_feed_records(
+    db: Session,
+    *,
+    viewer_id: UUID | None = None,
+    author_id: UUID | None = None,
+) -> list[dict[str, Any]]:
+    """Return posts ordered by personalised priority, optionally filtered by author."""
 
     base_columns = [
         Post,
@@ -105,6 +110,8 @@ def list_feed_records(db: Session, *, viewer_id: UUID | None = None) -> list[dic
         User.avatar_url.label("avatar_url"),
     ]
     statement = select(*base_columns).join(User, Post.user_id == User.id)
+    if author_id is not None:
+        statement = statement.where(Post.user_id == author_id)
 
     include_follow_weight = viewer_id is not None
     follow_match_col = None

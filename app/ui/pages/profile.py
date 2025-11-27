@@ -16,3 +16,16 @@ async def profile(request: Request) -> HTMLResponse:
             "active_nav": "/profile",
         },
     )
+
+
+@router.get("/people/{username}", response_class=HTMLResponse)
+async def public_profile(request: Request, username: str) -> HTMLResponse:
+    return render_template(
+        request,
+        "public_profile.html",
+        {
+            "page_title": f"@{username}",
+            "active_nav": "/friends/search",
+            "profile_username": username,
+        },
+    )

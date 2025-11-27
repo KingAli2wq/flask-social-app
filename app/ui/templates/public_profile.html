@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="mx-auto flex max-w-5xl flex-col gap-8">
+    <article class="rounded-3xl border border-slate-800/70 bg-slate-900/80 p-8 shadow-2xl shadow-black/20">
+        <div class="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+            <div class="flex flex-1 items-center gap-4">
+                <div class="h-20 w-20 overflow-hidden rounded-full border border-slate-800/70 bg-slate-950/70">
+                    <img id="public-profile-avatar" class="h-full w-full object-cover" src="" alt="Profile avatar" />
+                </div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.35em] text-indigo-300">Profile</p>
+                    <h1 id="public-profile-username" class="text-2xl font-semibold text-white">@{{ profile_username }}</h1>
+                    <p id="public-profile-bio" class="text-sm text-slate-400">Loading bio…</p>
+                </div>
+            </div>
+            <div class="flex flex-col gap-3 text-sm text-slate-400">
+                <div class="flex gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Followers</p>
+                        <p id="public-profile-followers" class="text-xl font-semibold text-white">—</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Following</p>
+                        <p id="public-profile-following" class="text-xl font-semibold text-white">—</p>
+                    </div>
+                </div>
+                <button id="public-profile-follow-button" class="hidden"></button>
+            </div>
+        </div>
+        <div class="mt-6 grid gap-3 text-sm text-slate-400 md:grid-cols-2">
+            <p><span class="text-slate-500">Location:</span> <span id="public-profile-location" class="text-slate-200">—</span></p>
+            <p><span class="text-slate-500">Website:</span> <a id="public-profile-website" href="#" target="_blank" rel="noopener" class="text-indigo-300 hover:text-indigo-200">—</a></p>
+        </div>
+    </article>
+
+    <section class="rounded-3xl border border-slate-800/70 bg-slate-900/70 p-8 shadow-xl shadow-black/20">
+        <header class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-white">Posts</h2>
+            <span id="public-profile-post-count" class="text-xs text-slate-400">Fetching…</span>
+        </header>
+        <div id="public-profile-posts-loading" class="mt-6 flex items-center gap-3 text-sm text-slate-400">
+            <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
+            <span>Loading posts…</span>
+        </div>
+        <div id="public-profile-posts-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-8 text-center text-sm text-slate-500">
+            No posts yet.
+        </div>
+        <div id="public-profile-posts" class="mt-6 grid gap-5"></div>
+    </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        window.UI.initPublicProfilePage({ username: "{{ profile_username }}" });
+    });
+</script>
+{% endblock %}

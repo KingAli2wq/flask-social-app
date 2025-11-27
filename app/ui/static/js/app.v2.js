@@ -53,6 +53,8 @@
       retryDelay: 1000,
       pingHandle: null,
     },
+    publicProfile: null,
+    publicProfileStats: null,
   };
 
   // -----------------------------------------------------------------------
@@ -715,6 +717,32 @@
     }
   }
 
+  async function submitFollowMutation(targetUserId, shouldFollow) {
+    const endpoint = `/follows/${encodeURIComponent(targetUserId)}`;
+    return apiFetch(endpoint, { method: shouldFollow ? 'POST' : 'DELETE' });
+  }
+
+  function applyPublicProfileStats(stats) {
+    state.publicProfileStats = stats || null;
+    const followers = document.getElementById('public-profile-followers');
+    const following = document.getElementById('public-profile-following');
+    if (followers) {
+      followers.textContent = stats ? String(stats.followers_count ?? '0') : '—';
+    }
+    if (following) {
+      following.textContent = stats ? String(stats.following_count ?? '0') : '—';
+    }
+  }
+
+  function resetButtonListeners(buttonId) {
+    const original = document.getElementById(buttonId);
+    if (!original) return null;
+    if (!original.parentNode) return original;
+    const clone = original.cloneNode(true);
+    original.parentNode.replaceChild(clone, original);
+    return clone;
+  }
+
   function createPostCard(post, currentUserMeta, avatarUrl) {
     const el = document.createElement('article');
     el.className =
@@ -782,10 +810,12 @@
         followButton.disabled = true;
         followButton.classList.add('opacity-70');
         try {
-          const endpoint = `/follows/${encodeURIComponent(targetUserId)}`;
-          const response = await apiFetch(endpoint, { method: shouldFollow ? 'POST' : 'DELETE' });
+          const response = await submitFollowMutation(targetUserId, shouldFollow);
           const statusText = response?.status || (shouldFollow ? 'followed' : 'unfollowed');
           syncFollowStateForUser(targetUserId, shouldFollow);
+          if (state.publicProfile && String(state.publicProfile.id) === String(targetUserId) && response) {
+            applyPublicProfileStats(response);
+          }
           if (statusText !== 'noop') {
             showToast(shouldFollow ? 'Followed user.' : 'Unfollowed user.', 'success');
           }
@@ -1093,6 +1123,126 @@
     } finally {
       if (container) container.classList.remove('opacity-70');
     }
+  }
+
+  async function initPublicProfilePage(options = {}) {
+    initThemeToggle();
+    const username = options.username;
+    if (!username) {
+      showToast('Missing profile handle.', 'error');
+      return;
+    }
+    await loadPublicProfile(username);
+  }
+
+  async function loadPublicProfile(username) {
+    const loading = document.getElementById('public-profile-posts-loading');
+    const empty = document.getElementById('public-profile-posts-empty');
+    const list = document.getElementById('public-profile-posts');
+    const countBadge = document.getElementById('public-profile-post-count');
+    if (loading) loading.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (list) list.innerHTML = '';
+
+    try {
+      const profile = await apiFetch(`/profiles/${encodeURIComponent(username)}`);
+      state.publicProfile = profile;
+      applyAvatarToImg(document.getElementById('public-profile-avatar'), profile.avatar_url);
+      const usernameNode = document.getElementById('public-profile-username');
+      if (usernameNode) usernameNode.textContent = `@${profile.username}`;
+      const bioNode = document.getElementById('public-profile-bio');
+      if (bioNode) bioNode.textContent = profile.bio || 'No bio provided yet.';
+      const locationNode = document.getElementById('public-profile-location');
+      if (locationNode) locationNode.textContent = profile.location || 'Unknown';
+      const websiteNode = document.getElementById('public-profile-website');
+      if (websiteNode) {
+        if (profile.website) {
+          websiteNode.textContent = profile.website;
+          websiteNode.href = profile.website;
+        } else {
+          websiteNode.textContent = 'Not set';
+          websiteNode.removeAttribute('href');
+        }
+      }
+
+      let followStats = null;
+      try {
+        followStats = await apiFetch(`/follows/stats/${profile.id}`);
+      } catch (error) {
+        console.warn('[public-profile] failed to load follow stats', error);
+      }
+      if (followStats) {
+        applyPublicProfileStats(followStats);
+      }
+
+      const followButton = resetButtonListeners('public-profile-follow-button');
+      const authMeta = getAuth();
+      const isSelf = authMeta?.userId && String(authMeta.userId) === String(profile.id);
+      if (followButton) {
+        if (isSelf) {
+          followButton.classList.add('hidden');
+        } else {
+          followButton.classList.remove('hidden');
+          followButton.dataset.userId = profile.id;
+          applyFollowButtonState(followButton, Boolean(followStats?.is_following));
+          followButton.addEventListener('click', async event => {
+            event.preventDefault();
+            try {
+              ensureAuthenticated();
+            } catch {
+              return;
+            }
+            const shouldFollow = followButton.dataset.following !== 'true';
+            followButton.disabled = true;
+            followButton.classList.add('opacity-70');
+            try {
+              const response = await submitFollowMutation(profile.id, shouldFollow);
+              if (response) {
+                applyFollowButtonState(followButton, shouldFollow);
+                syncFollowStateForUser(profile.id, shouldFollow);
+                applyPublicProfileStats(response);
+                showToast(
+                  response.status === 'noop'
+                    ? 'No changes made.'
+                    : shouldFollow
+                    ? 'Now following this user.'
+                    : 'Unfollowed successfully.',
+                  'success'
+                );
+              }
+            } catch (error) {
+              showToast(error.message || 'Unable to update follow state.', 'error');
+            } finally {
+              followButton.disabled = false;
+              followButton.classList.remove('opacity-70');
+            }
+          });
+        }
+      }
+
+      const postsResponse = await apiFetch(`/posts/by-user/${encodeURIComponent(username)}`);
+      const posts = Array.isArray(postsResponse.items) ? postsResponse.items : [];
+      if (countBadge) countBadge.textContent = `${posts.length} posts`;
+      renderPublicProfilePosts(posts, profile);
+      if (empty) empty.classList.toggle('hidden', posts.length !== 0);
+    } catch (error) {
+      showToast(error.message || 'Unable to load profile.', 'error');
+    } finally {
+      if (loading) loading.classList.add('hidden');
+    }
+  }
+
+  function renderPublicProfilePosts(posts, profile) {
+    const list = document.getElementById('public-profile-posts');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!posts.length) return;
+    const authMeta = getAuth();
+    posts.forEach(post => {
+      updateAvatarCacheEntry(post.user_id, post.avatar_url || profile.avatar_url);
+      const avatarUrl = state.avatarCache[String(post.user_id)] || resolveAvatarUrl(post.avatar_url || profile.avatar_url);
+      list.appendChild(createPostCard(post, authMeta, avatarUrl));
+    });
   }
 
   function reconcileActiveFriend() {
@@ -1925,6 +2075,7 @@
     initLoginPage,
     initRegisterPage,
     initProfilePage,
+    initPublicProfilePage,
     initMessagesPage,
     initFriendSearchPage,
     initNotificationsPage,

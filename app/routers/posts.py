@@ -6,6 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_session
@@ -79,6 +80,25 @@ async def feed_endpoint(
 ) -> PostFeedResponse:
     viewer_id = current_user.id if current_user else None
     posts = [PostResponse.model_validate(item) for item in list_feed_records(db, viewer_id=viewer_id)]
+    return PostFeedResponse(items=posts)
+
+
+@router.get("/by-user/{username}", response_model=PostFeedResponse)
+async def posts_by_user_endpoint(
+    username: str,
+    db: Session = Depends(get_session),
+    current_user: User | None = Depends(get_optional_user),
+) -> PostFeedResponse:
+    stmt = select(User).where(User.username == username)
+    user = db.scalars(stmt).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    viewer_id = current_user.id if current_user else None
+    posts = [
+        PostResponse.model_validate(item)
+        for item in list_feed_records(db, viewer_id=viewer_id, author_id=user.id)
+    ]
     return PostFeedResponse(items=posts)
 
 
