@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from ..database import get_session
 from ..models import User
 from ..schemas import PostFeedResponse, PostResponse
-from ..services import create_post_record, delete_post_record, get_current_user, list_feed_records
+from ..services import (
+    create_post_record,
+    delete_post_record,
+    get_current_user,
+    get_optional_user,
+    list_feed_records,
+)
 from ..services.realtime import feed_updates_manager
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -67,8 +73,12 @@ async def create_post_endpoint(
 
 
 @router.get("/feed", response_model=PostFeedResponse)
-async def feed_endpoint(db: Session = Depends(get_session)) -> PostFeedResponse:
-    posts = [PostResponse.model_validate(item) for item in list_feed_records(db)]
+async def feed_endpoint(
+    db: Session = Depends(get_session),
+    current_user: User | None = Depends(get_optional_user),
+) -> PostFeedResponse:
+    viewer_id = current_user.id if current_user else None
+    posts = [PostResponse.model_validate(item) for item in list_feed_records(db, viewer_id=viewer_id)]
     return PostFeedResponse(items=posts)
 
 

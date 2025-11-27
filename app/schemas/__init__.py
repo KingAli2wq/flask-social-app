@@ -1,6 +1,7 @@
 """Convenience exports for schema layer."""
 from .auth import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
 from .friends import FriendSearchResponse, FriendSearchResult
+from .follow import FollowActionResponse, FollowStatsResponse
 from .media import MediaUploadResponse
 from .messages import (
     DirectThreadResponse,
@@ -22,6 +23,8 @@ __all__ = [
     "MediaUploadResponse",
     "FriendSearchResult",
     "FriendSearchResponse",
+    "FollowActionResponse",
+    "FollowStatsResponse",
     "DirectThreadResponse",
     "GroupChatCreate",
     "GroupChatResponse",

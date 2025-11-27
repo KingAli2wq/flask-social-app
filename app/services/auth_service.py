@@ -150,6 +150,23 @@ async def get_current_user(
     return user
 
 
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_security),
+    db: Session = Depends(get_session),
+) -> User | None:
+    """Return the authenticated user when a bearer token is provided."""
+
+    if not credentials or credentials.scheme.lower() != "bearer":
+        return None
+
+    try:
+        user_id = decode_access_token(credentials.credentials)
+    except HTTPException:
+        return None
+
+    return db.get(User, user_id)
+
+
 __all__ = [
     "register_user",
     "authenticate_user",
@@ -158,4 +175,5 @@ __all__ = [
     "hash_password",
     "verify_password",
     "get_current_user",
+    "get_optional_user",
 ]

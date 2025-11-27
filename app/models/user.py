@@ -12,6 +12,7 @@ from app.database import Base
 from .associations import group_chat_members
 from .friend_request import FriendRequest
 from .friendship import Friendship
+from .follow import Follow
 
 
 class User(Base):
@@ -77,6 +78,18 @@ class User(Base):
         "FriendRequest",
         foreign_keys="FriendRequest.recipient_id",
         back_populates="recipient",
+        cascade="all, delete-orphan",
+    )
+    follower_relations = relationship(
+        "Follow",
+        foreign_keys="Follow.following_id",
+        back_populates="following",
+        cascade="all, delete-orphan",
+    )
+    following_relations = relationship(
+        "Follow",
+        foreign_keys="Follow.follower_id",
+        back_populates="follower",
         cascade="all, delete-orphan",
     )
 

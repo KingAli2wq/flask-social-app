@@ -6,11 +6,11 @@ from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, case
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import MediaAsset, Post, User
+from ..models import Follow, MediaAsset, Post, User
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
 
@@ -96,35 +96,65 @@ async def create_post_record(
     return post
 
 
-def list_feed_records(db: Session) -> list[dict[str, Any]]:
-    """Return the latest posts along with author metadata."""
+def list_feed_records(db: Session, *, viewer_id: UUID | None = None) -> list[dict[str, Any]]:
+    """Return the latest posts ordered by personalised priority when possible."""
 
-    statement = (
-        select(
-            Post,
-            User.username.label("username"),
-            User.avatar_url.label("avatar_url"),
+    base_columns = [
+        Post,
+        User.username.label("username"),
+        User.avatar_url.label("avatar_url"),
+    ]
+    statement = select(*base_columns).join(User, Post.user_id == User.id)
+
+    include_follow_weight = viewer_id is not None
+    follow_match_col = None
+    follow_priority_col = None
+
+    if include_follow_weight and viewer_id is not None:
+        follow_subquery = (
+            select(Follow.following_id.label("following_id"))
+            .where(Follow.follower_id == viewer_id)
+            .subquery()
         )
-        .join(User, Post.user_id == User.id)
-        .order_by(Post.created_at.desc())
-    )
+        follow_match_col = case((follow_subquery.c.following_id.isnot(None), 1), else_=0).label("follow_match")
+        self_match_col = case((Post.user_id == viewer_id, 1), else_=0)
+        follow_priority_col = (self_match_col * 2 + follow_match_col).label("follow_priority")
+        statement = (
+            statement.add_columns(follow_match_col, follow_priority_col)
+            .outerjoin(follow_subquery, follow_subquery.c.following_id == Post.user_id)
+            .order_by(follow_priority_col.desc(), Post.created_at.desc())
+        )
+    else:
+        statement = statement.order_by(Post.created_at.desc())
 
     records: list[dict[str, Any]] = []
-    for post, username_value, avatar_value in db.execute(statement).all():
+    rows = db.execute(statement).all()
+    for row in rows:
+        post = row[0]
+        username_value = row[1]
+        avatar_value = row[2]
+        follow_match_value = row[3] if include_follow_weight and follow_match_col is not None else None
+        follow_priority_value = row[4] if include_follow_weight and follow_priority_col is not None else None
+
         username = cast(str | None, username_value)
         avatar_url = cast(str | None, avatar_value)
-        records.append(
-            {
-                "id": post.id,
-                "user_id": post.user_id,
-                "caption": post.caption,
-                "media_url": post.media_url,
-                "media_asset_id": post.media_asset_id,
-                "created_at": post.created_at,
-                "username": username,
-                "avatar_url": avatar_url,
-            }
-        )
+        record: dict[str, Any] = {
+            "id": post.id,
+            "user_id": post.user_id,
+            "caption": post.caption,
+            "media_url": post.media_url,
+            "media_asset_id": post.media_asset_id,
+            "created_at": post.created_at,
+            "username": username,
+            "avatar_url": avatar_url,
+        }
+
+        if include_follow_weight:
+            record["is_following_author"] = bool(follow_match_value)
+            record["follow_priority"] = int(follow_priority_value or 0)
+
+        records.append(record)
+
     return records
 
 

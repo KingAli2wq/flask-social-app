@@ -17,6 +17,7 @@ from .database import create_session, init_db
 from .routers import (
     auth_router,
     friends_router,
+    follows_router,
     media_router,
     messages_router,
     notifications_router,
@@ -56,6 +57,7 @@ app.add_middleware(
 app.include_router(ui_router)
 app.include_router(auth_router)
 app.include_router(friends_router)
+app.include_router(follows_router)
 app.include_router(media_router)
 app.include_router(posts_router)
 app.include_router(messages_router)

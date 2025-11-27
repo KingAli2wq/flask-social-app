@@ -2,6 +2,7 @@
 from .associations import group_chat_members
 from .friend_request import FriendRequest
 from .friendship import Friendship
+from .follow import Follow
 from .group_chat import GroupChat
 from .media import MediaAsset
 from .message import Message
@@ -13,6 +14,7 @@ __all__ = [
     "group_chat_members",
     "FriendRequest",
     "Friendship",
+    "Follow",
     "GroupChat",
     "MediaAsset",
     "Message",

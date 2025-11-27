@@ -4,9 +4,11 @@ from .auth_service import (
     create_access_token,
     decode_access_token,
     get_current_user,
+    get_optional_user,
     register_user,
 )
 from .cleanup_service import CleanupError, CleanupSummary, run_cleanup
+from .follow_service import FollowStats, follow_user, get_follow_stats, unfollow_user
 from .friendship_service import (
     list_friend_requests,
     list_friends,
@@ -27,6 +29,7 @@ __all__ = [
     "create_access_token",
     "decode_access_token",
     "get_current_user",
+    "get_optional_user",
     "create_group_chat",
     "list_messages",
     "send_message",
@@ -49,6 +52,10 @@ __all__ = [
     "delete_post_record",
     "delete_old_posts",
     "list_feed_records",
+    "FollowStats",
+    "follow_user",
+    "unfollow_user",
+    "get_follow_stats",
     "get_profile",
     "update_profile",
     "SpacesConfigurationError",

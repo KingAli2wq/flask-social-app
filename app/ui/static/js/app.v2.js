@@ -689,12 +689,39 @@
     }
   }
 
+  function syncFollowStateForUser(userId, isFollowing) {
+    if (!userId) return;
+    const key = String(userId);
+    state.feedItems.forEach(item => {
+      if (String(item.user_id) === key) {
+        item.is_following_author = isFollowing;
+      }
+    });
+    document.querySelectorAll(`[data-role="follow-button"][data-user-id="${key}"]`).forEach(button => {
+      applyFollowButtonState(button, isFollowing);
+    });
+  }
+
+  function applyFollowButtonState(button, isFollowing) {
+    if (!button) return;
+    button.dataset.following = isFollowing ? 'true' : 'false';
+    const baseClasses = 'follow-toggle inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
+    if (isFollowing) {
+      button.className = `${baseClasses} border-emerald-400/70 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25`;
+      button.innerHTML = '<span>✓</span><span>Following</span>';
+    } else {
+      button.className = `${baseClasses} border-indigo-500/60 bg-indigo-600 text-white hover:bg-indigo-500`;
+      button.innerHTML = '<span>+</span><span>Follow</span>';
+    }
+  }
+
   function createPostCard(post, currentUserMeta, avatarUrl) {
     const el = document.createElement('article');
     el.className =
       'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
     const currentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
     const currentUserId = typeof currentUserMeta === 'object' ? currentUserMeta?.userId : null;
+    const hasAuthToken = typeof currentUserMeta === 'object' && Boolean(currentUserMeta?.token);
     const isCurrentUser = currentUserId && String(post.user_id) === String(currentUserId);
     const displayName = post.username
       ? `@${post.username}`
@@ -706,17 +733,25 @@
     const media = mediaUrl
       ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="">`
       : '';
+    const showFollowButton = Boolean(hasAuthToken && !isCurrentUser);
+    const initialFollowing = Boolean(post.is_following_author);
+    const followButtonMarkup = showFollowButton
+      ? `<button data-role="follow-button" data-user-id="${post.user_id}" data-following="${initialFollowing ? 'true' : 'false'}"></button>`
+      : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
-        <img data-role="post-avatar"
-             data-user-id="${post.user_id}"
-             src="${DEFAULT_AVATAR}"
-             class="h-12 w-12 rounded-full object-cover"
-             alt="Post avatar" />
-        <div>
-          <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
-          <p class="text-xs text-slate-400">${timestamp}</p>
+        <div class="flex flex-1 items-center gap-4">
+          <img data-role="post-avatar"
+               data-user-id="${post.user_id}"
+               src="${DEFAULT_AVATAR}"
+               class="h-12 w-12 rounded-full object-cover"
+               alt="Post avatar" />
+          <div>
+            <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
+            <p class="text-xs text-slate-400">${timestamp}</p>
+          </div>
         </div>
+        ${followButtonMarkup}
       </header>
       <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.caption || ''}</p>
       ${media}
@@ -731,6 +766,38 @@
     });
     const avatarImg = el.querySelector('[data-role="post-avatar"]');
     applyAvatarToImg(avatarImg, avatarUrl);
+    const followButton = el.querySelector('[data-role="follow-button"]');
+    if (followButton) {
+      applyFollowButtonState(followButton, initialFollowing);
+      followButton.addEventListener('click', async event => {
+        event.preventDefault();
+        try {
+          ensureAuthenticated();
+        } catch {
+          return;
+        }
+        if (followButton.disabled) return;
+        const targetUserId = followButton.dataset.userId;
+        const shouldFollow = followButton.dataset.following !== 'true';
+        followButton.disabled = true;
+        followButton.classList.add('opacity-70');
+        try {
+          const endpoint = `/follows/${encodeURIComponent(targetUserId)}`;
+          const response = await apiFetch(endpoint, { method: shouldFollow ? 'POST' : 'DELETE' });
+          const statusText = response?.status || (shouldFollow ? 'followed' : 'unfollowed');
+          syncFollowStateForUser(targetUserId, shouldFollow);
+          if (statusText !== 'noop') {
+            showToast(shouldFollow ? 'Followed user.' : 'Unfollowed user.', 'success');
+          }
+        } catch (error) {
+          showToast(error.message || 'Unable to update follow state.', 'error');
+          applyFollowButtonState(followButton, !shouldFollow);
+        } finally {
+          followButton.disabled = false;
+          followButton.classList.remove('opacity-70');
+        }
+      });
+    }
     return el;
   }
 

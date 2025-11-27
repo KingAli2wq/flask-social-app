@@ -29,6 +29,8 @@ class PostResponse(BaseModel):
     created_at: datetime
     username: str | None = None
     avatar_url: str | None = None
+    follow_priority: int | None = None
+    is_following_author: bool | None = None
 
 
 class PostFeedResponse(BaseModel):
