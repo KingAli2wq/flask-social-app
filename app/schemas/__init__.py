@@ -2,6 +2,7 @@
 from .auth import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
 from .media import MediaUploadResponse
 from .messages import (
+    DirectThreadResponse,
     GroupChatCreate,
     GroupChatResponse,
     MessageResponse,
@@ -18,6 +19,7 @@ __all__ = [
     "RegisterRequest",
     "UserPublicProfile",
     "MediaUploadResponse",
+    "DirectThreadResponse",
     "GroupChatCreate",
     "GroupChatResponse",
     "MessageResponse",
