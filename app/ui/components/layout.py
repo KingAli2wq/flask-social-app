@@ -1,9 +1,11 @@
 """Layout building blocks shared across pages."""
 from __future__ import annotations
 
-from markupsafe import Markup
+import os
+
 from markupsafe import Markup
 
+STATIC_VERSION = os.getenv("STATIC_ASSET_VERSION", "20251126")
 
 NAV_LINKS = (
     ("Feed", "/"),
@@ -12,7 +14,7 @@ NAV_LINKS = (
     ("Notifications", "/notifications"),
     ("Media", "/media"),
 )
-LOGO_IMAGE = "/assets/img/social-sphere-logo.png"
+LOGO_IMAGE = f"/assets/img/social-sphere-logo.png?v={STATIC_VERSION}"
 
 
 def navbar(*, active: str | None = None) -> Markup:
