@@ -1,6 +1,7 @@
 """Post related API routes backed by PostgreSQL and DigitalOcean Spaces."""
 from __future__ import annotations
 
+import logging
 from typing import Optional
 from uuid import UUID
 
@@ -11,8 +12,11 @@ from ..database import get_session
 from ..models import User
 from ..schemas import PostFeedResponse, PostResponse
 from ..services import create_post_record, delete_post_record, get_current_user, list_feed_records
+from ..services.realtime import feed_updates_manager
 
 router = APIRouter(prefix="/posts", tags=["posts"])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
@@ -46,6 +50,19 @@ async def create_post_endpoint(
         media_asset_id=media_asset_id,
         file=file,
     )
+
+    try:
+        await feed_updates_manager.broadcast(
+            {
+                "type": "post_created",
+                "post_id": str(post.id),
+                "user_id": str(current_user.id),
+                "created_at": post.created_at.isoformat() if getattr(post, "created_at", None) else None,
+            }
+        )
+    except Exception:  # pragma: no cover - best effort logging
+        logger.exception("Failed to broadcast feed update")
+
     return PostResponse.model_validate(post)
 
 

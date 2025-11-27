@@ -6,6 +6,7 @@
   const CONVERSATIONS_KEY = 'socialsphere:conversations';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const FEED_BATCH_SIZE = 5;
+  const REALTIME_WS_PATH = '/ws/feed';
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -26,7 +27,13 @@
     currentProfileAvatar: null,    // raw URL from backend for current user
     feedRefreshHandle: null,
     feedLoading: false,
-    feedSignature: null
+    feedSignature: null,
+    realtime: {
+      socket: null,
+      reconnectHandle: null,
+      retryDelay: 1000,
+      pendingRefresh: false,
+    },
   };
 
   // -----------------------------------------------------------------------
@@ -326,7 +333,8 @@
     initThemeToggle();
     await loadFeed();
     setupComposer();
-    startFeedAutoRefresh();
+    startFeedAutoRefresh(60000);
+    initRealtimeUpdates();
   }
 
   function setupComposer() {
@@ -381,7 +389,7 @@
     });
   }
 
-  function startFeedAutoRefresh(intervalMs = 15000) {
+  function startFeedAutoRefresh(intervalMs = 60000) {
     if (state.feedRefreshHandle) {
       clearInterval(state.feedRefreshHandle);
     }
@@ -401,6 +409,83 @@
       },
       { once: true }
     );
+  }
+
+  function initRealtimeUpdates() {
+    if (typeof window === 'undefined') return;
+    if (state.realtime.socket) return;
+    connectRealtimeFeed();
+  }
+
+  function connectRealtimeFeed() {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${protocol}://${window.location.host}${REALTIME_WS_PATH}`;
+    if (state.realtime.reconnectHandle) {
+      clearTimeout(state.realtime.reconnectHandle);
+      state.realtime.reconnectHandle = null;
+    }
+    let socket;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      console.warn('[realtime] failed to create socket', error);
+      scheduleRealtimeReconnect();
+      return;
+    }
+
+    state.realtime.socket = socket;
+    socket.addEventListener('open', () => {
+      state.realtime.retryDelay = 1000;
+      console.log('[realtime] connected');
+    });
+    socket.addEventListener('message', event => handleRealtimeMessage(event.data));
+    socket.addEventListener('close', () => {
+      state.realtime.socket = null;
+      scheduleRealtimeReconnect();
+    });
+    socket.addEventListener('error', error => {
+      console.warn('[realtime] socket error', error);
+      try {
+        socket.close();
+      } catch (_) {
+        /* noop */
+      }
+    });
+  }
+
+  function scheduleRealtimeReconnect() {
+    if (state.realtime.reconnectHandle) return;
+    const delay = Math.min(state.realtime.retryDelay, 30000);
+    state.realtime.reconnectHandle = window.setTimeout(() => {
+      state.realtime.reconnectHandle = null;
+      state.realtime.retryDelay = Math.min(state.realtime.retryDelay * 2, 30000);
+      connectRealtimeFeed();
+    }, delay);
+  }
+
+  function handleRealtimeMessage(raw) {
+    let payload;
+    try {
+      payload = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(String(raw));
+    } catch (error) {
+      console.warn('[realtime] failed to parse payload', error, raw);
+      return;
+    }
+
+    if (payload?.type === 'post_created') {
+      requestRealtimeFeedRefresh();
+    }
+  }
+
+  function requestRealtimeFeedRefresh() {
+    if (state.realtime.pendingRefresh) return;
+    state.realtime.pendingRefresh = true;
+    window.setTimeout(() => {
+      state.realtime.pendingRefresh = false;
+      loadFeed({ forceRefresh: true, silent: true, onlyOnChange: true }).catch(error => {
+        console.warn('[realtime] feed refresh failed', error);
+      });
+    }, 250);
   }
 
   function computeFeedSignature(items) {
