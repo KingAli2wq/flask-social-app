@@ -724,13 +724,107 @@
 
   function applyPublicProfileStats(stats) {
     state.publicProfileStats = stats || null;
-    const followers = document.getElementById('public-profile-followers');
-    const following = document.getElementById('public-profile-following');
-    if (followers) {
-      followers.textContent = stats ? String(stats.followers_count ?? '0') : '—';
+    const followerTargets = [
+      document.getElementById('public-profile-followers'),
+      document.getElementById('profile-followers-count')
+    ];
+    followerTargets.forEach(node => {
+      if (!node) return;
+      const fallback = node.dataset?.emptyLabel || '—';
+      node.textContent = stats ? String(stats.followers_count ?? '0') : fallback;
+    });
+
+    const followingTargets = [
+      document.getElementById('public-profile-following'),
+      document.getElementById('profile-following-count')
+    ];
+    followingTargets.forEach(node => {
+      if (!node) return;
+      const fallback = node.dataset?.emptyLabel || '—';
+      node.textContent = stats ? String(stats.following_count ?? '0') : fallback;
+    });
+  }
+
+  function updatePostCountBadges() {
+    const profileFeed = document.getElementById('profile-feed');
+    if (profileFeed) {
+      const total = profileFeed.querySelectorAll('article').length;
+      const counter = document.getElementById('profile-post-count');
+      if (counter) counter.textContent = String(total);
+      const empty = document.getElementById('profile-feed-empty');
+      if (empty) empty.classList.toggle('hidden', total > 0);
     }
-    if (following) {
-      following.textContent = stats ? String(stats.following_count ?? '0') : '—';
+
+    const publicFeed = document.getElementById('public-profile-posts');
+    if (publicFeed) {
+      const total = publicFeed.querySelectorAll('article').length;
+      const badge = document.getElementById('public-profile-post-count');
+      if (badge) badge.textContent = `${total} posts`;
+      const empty = document.getElementById('public-profile-posts-empty');
+      if (empty) empty.classList.toggle('hidden', total > 0);
+    }
+  }
+
+  function prunePostFromCollections(postId) {
+    if (!postId) return;
+    const targetId = String(postId);
+    const removalIndex = state.feedItems.findIndex(item => String(item.id) === targetId);
+    state.feedItems = state.feedItems.filter(item => String(item.id) !== targetId);
+    if (removalIndex !== -1 && state.feedCursor > removalIndex) {
+      state.feedCursor = Math.max(state.feedCursor - 1, 0);
+    }
+    state.feedCursor = Math.min(state.feedCursor, state.feedItems.length);
+    const countBadge = document.getElementById('feed-count');
+    if (countBadge) {
+      countBadge.textContent = `${state.feedItems.length} posts`;
+    }
+    const loadMore = document.getElementById('feed-load-more');
+    if (loadMore) {
+      loadMore.classList.toggle('hidden', state.feedCursor >= state.feedItems.length);
+    }
+  }
+
+  function removePostCard(cardElement) {
+    if (!cardElement) return;
+    const parent = cardElement.parentElement;
+    cardElement.classList.add('opacity-0', 'translate-y-2');
+    window.setTimeout(() => {
+      cardElement.remove();
+      if (parent && parent.id === 'feed-list' && parent.children.length === 0) {
+        const empty = document.getElementById('feed-empty');
+        if (empty) empty.classList.remove('hidden');
+      }
+      updatePostCountBadges();
+    }, 180);
+  }
+
+  async function handleDeletePost(post, cardElement, trigger) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!post?.id) {
+      showToast('Missing post identifier.', 'error');
+      return;
+    }
+    const confirmed = window.confirm('Delete this post? This cannot be undone.');
+    if (!confirmed) return;
+    if (trigger) {
+      trigger.disabled = true;
+      trigger.classList.add('opacity-60', 'cursor-not-allowed');
+    }
+    try {
+      await apiFetch(`/posts/${encodeURIComponent(post.id)}`, { method: 'DELETE' });
+      showToast('Post deleted.', 'success');
+      prunePostFromCollections(post.id);
+      removePostCard(cardElement);
+    } catch (error) {
+      showToast(error.message || 'Unable to delete post.', 'error');
+      if (trigger) {
+        trigger.disabled = false;
+        trigger.classList.remove('opacity-60', 'cursor-not-allowed');
+      }
     }
   }
 
@@ -747,12 +841,16 @@
     const el = document.createElement('article');
     el.className =
       'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
-    const currentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
+    const rawCurrentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
+    const currentUsername = rawCurrentUsername ? String(rawCurrentUsername).replace(/^@/, '') : null;
     const currentUserId = typeof currentUserMeta === 'object' ? currentUserMeta?.userId : null;
     const hasAuthToken = typeof currentUserMeta === 'object' && Boolean(currentUserMeta?.token);
-    const isCurrentUser = currentUserId && String(post.user_id) === String(currentUserId);
+    const normalizedPostUsername = post?.username ? String(post.username).replace(/^@/, '') : null;
+    const isCurrentUser =
+      (currentUserId && String(post.user_id) === String(currentUserId)) ||
+      (currentUsername && normalizedPostUsername && currentUsername.toLowerCase() === normalizedPostUsername.toLowerCase());
     const displayName = post.username
-      ? `@${post.username}`
+      ? `@${normalizedPostUsername || post.username}`
       : isCurrentUser && currentUsername
       ? `@${currentUsername}`
       : `User ${String(post.user_id).slice(0, 8)}`;
@@ -765,6 +863,16 @@
     const initialFollowing = Boolean(post.is_following_author);
     const followButtonMarkup = showFollowButton
       ? `<button data-role="follow-button" data-user-id="${post.user_id}" data-following="${initialFollowing ? 'true' : 'false'}"></button>`
+      : '';
+    const deleteButtonMarkup = isCurrentUser
+      ? `<button
+          data-role="delete-post"
+          data-post-id="${post.id}"
+          class="inline-flex items-center gap-2 rounded-full border border-rose-500/40 px-4 py-2 text-xs font-semibold text-rose-200 transition hover:border-rose-400 hover:bg-rose-500/10 hover:text-white"
+        >
+          <span aria-hidden="true">🗑</span>
+          <span>Delete</span>
+        </button>`
       : '';
     el.innerHTML = `
       <header class="flex items-center gap-4">
@@ -787,6 +895,7 @@
         <button class="like-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>❤</span><span>Like</span></button>
         <button class="comment-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>💬</span><span>Comment</span></button>
         <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>Share</span></button>
+        ${deleteButtonMarkup}
       </footer>
     `;
     el.querySelectorAll('.like-btn, .comment-btn, .share-btn').forEach(btn => {
@@ -826,6 +935,13 @@
           followButton.disabled = false;
           followButton.classList.remove('opacity-70');
         }
+      });
+    }
+    const deleteButton = el.querySelector('[data-role="delete-post"]');
+    if (deleteButton) {
+      deleteButton.addEventListener('click', event => {
+        event.preventDefault();
+        handleDeletePost(post, el, deleteButton);
       });
     }
     return el;
@@ -927,6 +1043,14 @@
       const profile = prefetchedProfile || await fetchCurrentUserProfile();
       cacheProfile(profile);
       state.currentProfileAvatar = profile.avatar_url || null;
+
+      try {
+        const followStats = await apiFetch(`/follows/stats/${profile.id}`);
+        applyPublicProfileStats(followStats);
+      } catch (error) {
+        console.warn('[profile] failed to load follow stats', error);
+        applyPublicProfileStats(null);
+      }
 
       const { username } = profile;
       if (usernameEl) usernameEl.textContent = `@${username}`;
