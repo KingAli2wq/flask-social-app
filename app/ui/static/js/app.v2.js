@@ -33,6 +33,7 @@
       reconnectHandle: null,
       retryDelay: 1000,
       pendingRefresh: false,
+      pingHandle: null,
     },
   };
 
@@ -333,8 +334,8 @@
     initThemeToggle();
     await loadFeed();
     setupComposer();
-    startFeedAutoRefresh(60000);
     initRealtimeUpdates();
+    startFeedAutoRefresh(15000);
   }
 
   function setupComposer() {
@@ -389,11 +390,22 @@
     });
   }
 
-  function startFeedAutoRefresh(intervalMs = 60000) {
+  function startFeedAutoRefresh(intervalMs = 0) {
     if (state.feedRefreshHandle) {
       clearInterval(state.feedRefreshHandle);
+      state.feedRefreshHandle = null;
     }
+
+    if (!intervalMs || intervalMs <= 0) {
+      return;
+    }
+
     state.feedRefreshHandle = window.setInterval(() => {
+      const socket = state.realtime.socket;
+      const hasLiveSocket = typeof WebSocket !== 'undefined' && socket && socket.readyState === WebSocket.OPEN;
+      if (hasLiveSocket) {
+        return;
+      }
       loadFeed({ forceRefresh: true, silent: true, onlyOnChange: true }).catch(error => {
         console.warn('[feed] auto refresh failed', error);
       });
@@ -412,7 +424,10 @@
   }
 
   function initRealtimeUpdates() {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || typeof window.WebSocket === 'undefined') {
+      console.warn('[realtime] WebSocket unsupported; relying on polling');
+      return;
+    }
     if (state.realtime.socket) return;
     connectRealtimeFeed();
   }
@@ -424,11 +439,13 @@
       clearTimeout(state.realtime.reconnectHandle);
       state.realtime.reconnectHandle = null;
     }
+
     let socket;
     try {
       socket = new WebSocket(url);
     } catch (error) {
       console.warn('[realtime] failed to create socket', error);
+      startFeedAutoRefresh(15000);
       scheduleRealtimeReconnect();
       return;
     }
@@ -437,20 +454,51 @@
     socket.addEventListener('open', () => {
       state.realtime.retryDelay = 1000;
       console.log('[realtime] connected');
+      startFeedAutoRefresh(0);
+      safeRealtimeSend({ type: 'hello', at: Date.now() });
+      startRealtimePing();
     });
     socket.addEventListener('message', event => handleRealtimeMessage(event.data));
     socket.addEventListener('close', () => {
+      clearRealtimePing();
       state.realtime.socket = null;
+      startFeedAutoRefresh(15000);
       scheduleRealtimeReconnect();
     });
     socket.addEventListener('error', error => {
       console.warn('[realtime] socket error', error);
+      clearRealtimePing();
       try {
         socket.close();
       } catch (_) {
         /* noop */
       }
     });
+  }
+
+  function safeRealtimeSend(payload) {
+    const socket = state.realtime.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(JSON.stringify(payload));
+    } catch (error) {
+      console.warn('[realtime] failed to send payload', error);
+    }
+  }
+
+  function startRealtimePing(intervalMs = 30000) {
+    clearRealtimePing();
+    safeRealtimeSend({ type: 'ping', at: Date.now() });
+    state.realtime.pingHandle = window.setInterval(() => {
+      safeRealtimeSend({ type: 'ping', at: Date.now() });
+    }, intervalMs);
+  }
+
+  function clearRealtimePing() {
+    if (state.realtime.pingHandle) {
+      clearInterval(state.realtime.pingHandle);
+      state.realtime.pingHandle = null;
+    }
   }
 
   function scheduleRealtimeReconnect() {
@@ -472,8 +520,17 @@
       return;
     }
 
-    if (payload?.type === 'post_created') {
-      requestRealtimeFeedRefresh();
+    switch ((payload?.type || '').toLowerCase()) {
+      case 'post_created':
+        requestRealtimeFeedRefresh();
+        break;
+      case 'ready':
+        console.log('[realtime] server acknowledged subscription');
+        break;
+      case 'pong':
+        break;
+      default:
+        break;
     }
   }
 
