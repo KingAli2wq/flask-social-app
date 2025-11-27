@@ -3,9 +3,9 @@
 from alembic import op
 import sqlalchemy as sa
 
-# revision identifiers, used by Alembic.
-revision = "<put new revision ID here>"
-down_revision = "e243ab1ae13a"   # This is your current head
+revision = "e57c9c4de3fb"
+down_revision = "20241120_add_bio_media_asset"
+
 branch_labels = None
 depends_on = None
 
