@@ -33,6 +33,7 @@ class MessageThreadResponse(BaseModel):
 
 
 class DirectThreadResponse(BaseModel):
+    chat_id: str | None
     friend_id: UUID
     friend_username: str
     friend_avatar_url: str | None
@@ -58,6 +59,7 @@ __all__ = [
     "MessageSendRequest",
     "MessageResponse",
     "MessageThreadResponse",
+    "DirectThreadResponse",
     "GroupChatCreate",
     "GroupChatResponse",
 ]

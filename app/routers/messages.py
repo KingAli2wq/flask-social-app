@@ -1,13 +1,16 @@
 """Messaging API routes."""
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.websockets import WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..models import GroupChat, Message, User
+from ..models import Friendship, GroupChat, Message, User
 from ..schemas import (
     DirectThreadResponse,
     GroupChatCreate,
@@ -18,11 +21,13 @@ from ..schemas import (
 )
 from ..services import (
     create_group_chat,
+    decode_access_token,
     get_current_user,
     list_messages,
     require_friendship,
     send_message,
 )
+from ..services.message_stream import message_stream_manager
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -68,7 +73,9 @@ async def send_message_endpoint(
     db: Session = Depends(get_session),
 ) -> MessageResponse:
     record = send_message(db, sender=current_user, payload=payload)
-    return _to_message_response(record)
+    response = _to_message_response(record)
+    await _broadcast_message(response)
+    return response
 
 
 @router.get("/{chat_id}", response_model=MessageThreadResponse)
@@ -90,6 +97,7 @@ async def direct_thread_endpoint(
     friendship, friend = require_friendship(db, user=current_user, friend_id=friend_id)
     messages = list_messages(db, chat_id=friendship.thread_id)
     return DirectThreadResponse(
+        chat_id=friendship.thread_id,
         friend_id=friend.id,
         friend_username=friend.username,
         friend_avatar_url=friend.avatar_url,
@@ -106,3 +114,58 @@ async def create_group_endpoint(
 ) -> GroupChatResponse:
     chat = create_group_chat(db, current_user, payload)
     return _to_group_response(chat)
+
+
+@router.websocket("/ws/{chat_id}")
+async def message_thread_socket(
+    websocket: WebSocket,
+    chat_id: str,
+    token: str = Query(..., alias="token"),
+    db: Session = Depends(get_session),
+) -> None:
+    try:
+        user_id = decode_access_token(token)
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    if not _user_can_access_chat(db, chat_id, user_id):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await message_stream_manager.connect(chat_id, websocket)
+    await websocket.send_text(json.dumps({"type": "ready", "chat_id": chat_id}))
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+            if payload.strip().lower() == "ping":
+                await websocket.send_text(json.dumps({"type": "pong", "chat_id": chat_id}))
+    finally:
+        await message_stream_manager.disconnect(websocket)
+
+
+def _user_can_access_chat(db: Session, chat_id: str, user_id: UUID) -> bool:
+    friendship = db.scalar(select(Friendship).where(Friendship.thread_id == chat_id))
+    if friendship is not None and friendship.involves(user_id):
+        return True
+    try:
+        chat_uuid = UUID(chat_id)
+    except ValueError:
+        return False
+    membership_stmt = select(GroupChat.id).where(GroupChat.id == chat_uuid, GroupChat.members.any(User.id == user_id))
+    chat = db.scalar(membership_stmt)
+    return chat is not None
+
+
+async def _broadcast_message(message: MessageResponse) -> None:
+    await message_stream_manager.broadcast(
+        message.chat_id,
+        {
+            "type": "message.created",
+            "chat_id": message.chat_id,
+            "message": message.model_dump(),
+        },
+    )

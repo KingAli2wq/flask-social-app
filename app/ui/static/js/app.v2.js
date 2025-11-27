@@ -6,6 +6,7 @@
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const FEED_BATCH_SIZE = 5;
   const REALTIME_WS_PATH = '/ws/feed';
+  const MESSAGES_WS_PREFIX = '/messages/ws';
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -25,6 +26,8 @@
     activeFriendId: null,
     activeFriendMeta: null,
     activeThreadLock: null,
+    activeChatId: null,
+    activeMessages: [],
     friendSearch: {
       query: '',
       results: [],
@@ -41,6 +44,13 @@
       reconnectHandle: null,
       retryDelay: 1000,
       pendingRefresh: false,
+      pingHandle: null,
+    },
+    messageRealtime: {
+      socket: null,
+      chatId: null,
+      reconnectHandle: null,
+      retryDelay: 1000,
       pingHandle: null,
     },
   };
@@ -987,6 +997,13 @@
     } catch {
       return;
     }
+    window.addEventListener(
+      'beforeunload',
+      () => {
+        disconnectMessageSocket();
+      },
+      { once: true }
+    );
     setupMessageForm();
     await refreshFriendsDirectory();
   }
@@ -1017,6 +1034,9 @@
       state.activeFriendId = null;
       state.activeFriendMeta = null;
       state.activeThreadLock = null;
+      state.activeChatId = null;
+      state.activeMessages = [];
+      disconnectMessageSocket();
       clearThreadView();
     }
     if (!state.activeFriendId && state.friends.length) {
@@ -1140,8 +1160,14 @@
 
   function selectFriend(friendId) {
     if (!friendId) return;
-    if (String(state.activeFriendId) === String(friendId) && state.threadLoading) {
+    const sameFriend = String(state.activeFriendId) === String(friendId);
+    if (sameFriend && state.threadLoading) {
       return;
+    }
+    if (!sameFriend) {
+      state.activeChatId = null;
+      state.activeMessages = [];
+      disconnectMessageSocket();
     }
     state.activeFriendId = friendId;
     updateFriendSelection();
@@ -1200,9 +1226,12 @@
         avatar_url: data.friend_avatar_url
       };
       state.activeThreadLock = data.lock_code;
+      state.activeChatId = data.chat_id || null;
+      state.activeMessages = Array.isArray(data.messages) ? [...data.messages] : [];
       updateChatHeader();
       updateRecipientHint();
-      renderMessageThread(data.messages);
+      renderMessageThread(state.activeMessages);
+      connectMessageSocket(state.activeChatId);
     } catch (error) {
       showToast(error.message || 'Unable to load chat.', 'error');
     } finally {
@@ -1238,6 +1267,9 @@
   function clearThreadView() {
     state.activeFriendMeta = null;
     state.activeThreadLock = null;
+    state.activeChatId = null;
+    state.activeMessages = [];
+    disconnectMessageSocket();
     const header = document.getElementById('chat-header');
     const thread = document.getElementById('message-thread');
     if (header) {
@@ -1260,16 +1292,17 @@
     updateSendAvailability();
   }
 
-  function renderMessageThread(messages) {
+  function renderMessageThread(messages = state.activeMessages) {
     const thread = document.getElementById('message-thread');
     if (!thread) return;
     thread.innerHTML = '';
-    if (!messages || !messages.length) {
+    const payload = Array.isArray(messages) ? messages : [];
+    if (!payload.length) {
       thread.innerHTML = '<p class="text-center text-sm text-slate-500">No messages yet. Say hello!</p>';
       return;
     }
     const currentUser = getAuth().userId;
-    messages.forEach(message => {
+    payload.forEach(message => {
       thread.appendChild(createMessageBubble(message, currentUser));
     });
     thread.scrollTop = thread.scrollHeight;
@@ -1296,13 +1329,13 @@
         return;
       }
       try {
-        await apiFetch('/messages/send', {
+        const message = await apiFetch('/messages/send', {
           method: 'POST',
           body: JSON.stringify({ content, friend_id: state.activeFriendId, attachments: [] })
         });
         showToast('Message sent!', 'success');
         form.reset();
-        await loadDirectThread(state.activeFriendId);
+        handleIncomingMessage(message, { skipToast: true });
         textarea?.focus();
       } catch (error) {
         if (feedback) {
@@ -1326,6 +1359,158 @@
       </div>
     `;
     return el;
+  }
+
+  function handleIncomingMessage(message, options = {}) {
+    if (!message) return;
+    const chatId = message.chat_id ? String(message.chat_id) : null;
+    if (!chatId) return;
+    const activeChatId = state.activeChatId ? String(state.activeChatId) : null;
+    const isActiveChat = chatId && activeChatId && chatId === activeChatId;
+    if (isActiveChat) {
+      const messageId = message.id ? String(message.id) : null;
+      const duplicate =
+        messageId && state.activeMessages.some(item => String(item.id) === messageId);
+      if (duplicate) return;
+      state.activeMessages.push(message);
+      renderMessageThread();
+      return;
+    }
+    if (!options.skipToast) {
+      showToast('New message received in another conversation.', 'info');
+    }
+  }
+
+  function connectMessageSocket(chatId) {
+    if (typeof window === 'undefined' || typeof window.WebSocket === 'undefined') {
+      return;
+    }
+    if (!chatId) {
+      disconnectMessageSocket();
+      return;
+    }
+    const { token } = getAuth();
+    if (!token) return;
+    const controller = state.messageRealtime;
+    if (
+      controller.socket &&
+      controller.chatId === chatId &&
+      controller.socket.readyState === WebSocket.OPEN
+    ) {
+      return;
+    }
+    disconnectMessageSocket();
+    controller.chatId = chatId;
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${protocol}://${window.location.host}${MESSAGES_WS_PREFIX}/${encodeURIComponent(chatId)}?token=${encodeURIComponent(token)}`;
+    let socket;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      console.warn('[messages/ws] failed to open socket', error);
+      scheduleMessageSocketReconnect();
+      return;
+    }
+    controller.socket = socket;
+    socket.addEventListener('open', () => {
+      controller.retryDelay = 1000;
+      startMessagePing();
+    });
+    socket.addEventListener('message', event => handleMessageSocketMessage(event.data));
+    socket.addEventListener('close', () => {
+      clearMessagePing();
+      controller.socket = null;
+      if (state.activeChatId && controller.chatId === state.activeChatId) {
+        scheduleMessageSocketReconnect();
+      }
+    });
+    socket.addEventListener('error', error => {
+      console.warn('[messages/ws] socket error', error);
+      clearMessagePing();
+      try {
+        socket.close();
+      } catch (_) {
+        /* noop */
+      }
+    });
+  }
+
+  function disconnectMessageSocket() {
+    const controller = state.messageRealtime;
+    if (controller.reconnectHandle) {
+      clearTimeout(controller.reconnectHandle);
+      controller.reconnectHandle = null;
+    }
+    clearMessagePing();
+    if (controller.socket) {
+      try {
+        controller.socket.close();
+      } catch (_) {
+        /* noop */
+      }
+      controller.socket = null;
+    }
+    controller.chatId = null;
+    controller.retryDelay = 1000;
+  }
+
+  function scheduleMessageSocketReconnect() {
+    const controller = state.messageRealtime;
+    if (!controller.chatId || controller.reconnectHandle) return;
+    const delay = Math.min(controller.retryDelay, 30000);
+    controller.reconnectHandle = window.setTimeout(() => {
+      controller.reconnectHandle = null;
+      controller.retryDelay = Math.min(controller.retryDelay * 2, 30000);
+      connectMessageSocket(controller.chatId);
+    }, delay);
+  }
+
+  function safeMessageSocketSend(payload) {
+    const socket = state.messageRealtime.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(payload);
+    } catch (error) {
+      console.warn('[messages/ws] failed to send payload', error);
+    }
+  }
+
+  function startMessagePing(intervalMs = 45000) {
+    clearMessagePing();
+    safeMessageSocketSend('ping');
+    state.messageRealtime.pingHandle = window.setInterval(() => {
+      safeMessageSocketSend('ping');
+    }, intervalMs);
+  }
+
+  function clearMessagePing() {
+    const handle = state.messageRealtime.pingHandle;
+    if (handle) {
+      clearInterval(handle);
+      state.messageRealtime.pingHandle = null;
+    }
+  }
+
+  function handleMessageSocketMessage(raw) {
+    let payload;
+    try {
+      payload = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(String(raw));
+    } catch (error) {
+      console.warn('[messages/ws] failed to parse payload', error, raw);
+      return;
+    }
+    const type = String(payload?.type || '').toLowerCase();
+    switch (type) {
+      case 'message.created':
+        handleIncomingMessage(payload.message || {});
+        break;
+      case 'ready':
+        break;
+      case 'pong':
+        break;
+      default:
+        break;
+    }
   }
 
   // -----------------------------------------------------------------------
