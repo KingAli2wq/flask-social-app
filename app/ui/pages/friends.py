@@ -16,7 +16,7 @@ async def friends_search(request: Request) -> HTMLResponse:
         "friends_search.html",
         {
             "page_title": "Find friends",
-            "active_nav": "/messages",
+            "active_nav": "/friends/search",
         },
     )
 

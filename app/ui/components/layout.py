@@ -10,6 +10,7 @@ STATIC_VERSION = os.getenv("STATIC_ASSET_VERSION", "20251126")
 NAV_LINKS = (
     ("Feed", "/"),
     ("Profile", "/profile"),
+    ("Search", "/friends/search"),
     ("Messages", "/messages"),
     ("Notifications", "/notifications"),
     ("Media", "/media"),
