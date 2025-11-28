@@ -27,6 +27,48 @@
         body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.92) !important; color: #0f172a; box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.35); border-color: rgba(148, 163, 184, 0.25) !important; }
         body.light-theme .text-slate-400 { color: #475569 !important; }
         body.light-theme .text-slate-500 { color: #64748b !important; }
+        .input-field {
+            width: 100%;
+            border-radius: 0.75rem;
+            border: 1px solid rgba(51,65,85,0.6);
+            background: rgba(15,23,42,0.7);
+            padding: 0.625rem 1rem;
+            font-size: 0.875rem;
+            color: #f8fafc;
+        }
+        .input-field::placeholder { color: rgba(148,163,184,0.7); }
+        .input-field:focus {
+            outline: none;
+            border-color: rgb(99,102,241);
+            box-shadow: 0 0 0 2px rgba(99,102,241,0.35);
+        }
+        .toggle-input {
+            appearance: none;
+            width: 44px;
+            height: 22px;
+            border-radius: 9999px;
+            background: rgba(51,65,85,0.6);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        .toggle-input::after {
+            content: "";
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 9999px;
+            background: #fff;
+            transition: transform 0.2s ease;
+        }
+        .toggle-input:checked {
+            background: rgb(16,185,129);
+        }
+        .toggle-input:checked::after {
+            transform: translateX(22px);
+        }
         ::selection { background-color: rgba(129,140,248,0.4); }
         .scrollbar-thin::-webkit-scrollbar { width: 6px; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background-color: rgba(148,163,184,0.4); border-radius: 9999px; }

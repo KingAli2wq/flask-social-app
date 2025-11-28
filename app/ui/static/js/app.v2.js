@@ -3056,6 +3056,24 @@
   }
 
   // -----------------------------------------------------------------------
+  // Settings page
+  // -----------------------------------------------------------------------
+
+  function initSettingsPage() {
+    initThemeToggle();
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    // Placeholder wiring until backend endpoints are ready.
+    const emailStatus = document.getElementById('settings-email-status');
+    if (emailStatus) {
+      emailStatus.textContent = 'Email verification coming soon';
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
 
@@ -3071,7 +3089,8 @@
     initMessagesPage,
     initFriendSearchPage,
     initNotificationsPage,
-    initMediaPage
+    initMediaPage,
+    initSettingsPage,
   };
 
   document.addEventListener('DOMContentLoaded', initThemeToggle);

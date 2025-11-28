@@ -13,6 +13,7 @@ NAV_LINKS = (
     ("Search", "/friends/search"),
     ("Messages", "/messages"),
     ("Notifications", "/notifications"),
+    ("Settings", "/settings"),
     ("Media", "/media"),
 )
 LOGO_IMAGE = f"/assets/img/social-sphere-logo.png?v={STATIC_VERSION}"

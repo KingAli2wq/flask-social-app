@@ -23,6 +23,15 @@ from .posts import (
     PostResponse,
 )
 from .profiles import ProfileResponse, ProfileUpdateRequest
+from .settings import (
+    EmailVerificationConfirmRequest,
+    EmailVerificationResponse,
+    SettingsContactUpdate,
+    SettingsPasswordUpdate,
+    SettingsPreferencesUpdate,
+    SettingsProfileUpdate,
+    SettingsResponse,
+)
 
 __all__ = [
     "AuthResponse",
@@ -44,6 +53,13 @@ __all__ = [
     "NotificationListResponse",
     "NotificationResponse",
     "NotificationSummaryResponse",
+    "EmailVerificationConfirmRequest",
+    "EmailVerificationResponse",
+    "SettingsContactUpdate",
+    "SettingsPasswordUpdate",
+    "SettingsPreferencesUpdate",
+    "SettingsProfileUpdate",
+    "SettingsResponse",
     "PostCommentCreate",
     "PostCommentResponse",
     "PostCommentListResponse",

@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Boolean, Column, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, expression
 
 from app.database import Base
 from .associations import group_chat_members
@@ -21,11 +21,18 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String(150), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=True)
+    display_name = Column(String(150), nullable=True)
     hashed_password = Column(String(255), nullable=False)
     bio = Column(String(500), nullable=True)
     location = Column(String(255), nullable=True)
     website = Column(String(255), nullable=True)
     avatar_url = Column(String(1024), nullable=True)
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    email_verification_code = Column(String(12), nullable=True)
+    email_verification_sent_at = Column(DateTime(timezone=True), nullable=True)
+    email_dm_notifications = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
+    allow_friend_requests = Column(Boolean, nullable=False, server_default=expression.true(), default=True)
+    dm_followers_only = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_active_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
