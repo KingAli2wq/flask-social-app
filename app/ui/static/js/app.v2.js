@@ -7,6 +7,7 @@
   const FEED_BATCH_SIZE = 5;
   const REALTIME_WS_PATH = '/ws/feed';
   const MESSAGES_WS_PREFIX = '/messages/ws';
+  const NOTIFICATION_WS_PATH = '/notifications/ws';
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -59,6 +60,15 @@
     postComments: {},           // post_id -> { items, loaded }
     messageReplyTarget: null,
     messageReplyElements: null,
+    notifications: {
+      unread: 0,
+      pollHandle: null,
+      socket: null,
+      reconnectHandle: null,
+      retryDelay: 1000,
+      pingHandle: null,
+      active: false,
+    },
   };
 
   // -----------------------------------------------------------------------
@@ -234,12 +244,235 @@
           window.location.href = '/';
         }
       };
+      startNotificationIndicator();
     } else {
       authBtn.textContent = 'Login';
       authBtn.href = '/login';
       authBtn.classList.remove('border-emerald-500/40', 'text-emerald-300');
       authBtn.onclick = null;
+      stopNotificationIndicator();
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Notification indicator + websocket
+  // -----------------------------------------------------------------------
+
+  function startNotificationIndicator() {
+    if (typeof window === 'undefined') return;
+    const { token } = getAuth();
+    if (!token) return;
+    const controller = state.notifications;
+    if (controller.active) return;
+    controller.active = true;
+    refreshNotificationSummary();
+    if (!controller.pollHandle) {
+      controller.pollHandle = window.setInterval(() => {
+        refreshNotificationSummary();
+      }, 60000);
+    }
+    connectNotificationSocket();
+  }
+
+  function stopNotificationIndicator() {
+    const controller = state.notifications;
+    controller.active = false;
+    if (controller.pollHandle) {
+      clearInterval(controller.pollHandle);
+      controller.pollHandle = null;
+    }
+    disconnectNotificationSocket();
+    updateNotificationBadge(0);
+  }
+
+  async function refreshNotificationSummary() {
+    const { token } = getAuth();
+    if (!token) return;
+    try {
+      const summary = await apiFetch('/notifications/summary');
+      updateNotificationBadge(summary.unread_count || 0);
+    } catch (error) {
+      console.warn('[notifications] summary fetch failed', error);
+    }
+  }
+
+  function updateNotificationBadge(nextCount) {
+    const controller = state.notifications;
+    const value = Math.max(0, Number.isFinite(nextCount) ? Number(nextCount) : controller.unread || 0);
+    controller.unread = value;
+    const badge = document.getElementById('nav-notifications-indicator');
+    if (!badge) return;
+    if (value <= 0) {
+      badge.textContent = '';
+      badge.classList.add('hidden');
+      return;
+    }
+    badge.textContent = value > 99 ? '99+' : String(value);
+    badge.classList.remove('hidden');
+  }
+
+  function connectNotificationSocket() {
+    if (typeof window === 'undefined' || typeof window.WebSocket === 'undefined') {
+      return;
+    }
+    const { token } = getAuth();
+    if (!token) return;
+    const controller = state.notifications;
+    if (controller.socket && controller.socket.readyState === WebSocket.OPEN) {
+      return;
+    }
+    disconnectNotificationSocket();
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = `${protocol}://${window.location.host}${NOTIFICATION_WS_PATH}?token=${encodeURIComponent(token)}`;
+    let socket;
+    try {
+      socket = new WebSocket(url);
+    } catch (error) {
+      console.warn('[notifications/ws] failed to create socket', error);
+      scheduleNotificationSocketReconnect();
+      return;
+    }
+    controller.socket = socket;
+    socket.addEventListener('open', () => {
+      controller.retryDelay = 1000;
+      startNotificationPing();
+    });
+    socket.addEventListener('message', event => handleNotificationSocketMessage(event.data));
+    socket.addEventListener('close', () => {
+      clearNotificationPing();
+      controller.socket = null;
+      scheduleNotificationSocketReconnect();
+    });
+    socket.addEventListener('error', error => {
+      console.warn('[notifications/ws] socket error', error);
+      clearNotificationPing();
+      try {
+        socket.close();
+      } catch (_) {
+        /* noop */
+      }
+    });
+  }
+
+  function disconnectNotificationSocket() {
+    const controller = state.notifications;
+    if (controller.reconnectHandle) {
+      clearTimeout(controller.reconnectHandle);
+      controller.reconnectHandle = null;
+    }
+    clearNotificationPing();
+    if (controller.socket) {
+      try {
+        controller.socket.close();
+      } catch (_) {
+        /* noop */
+      }
+      controller.socket = null;
+    }
+    controller.retryDelay = 1000;
+  }
+
+  function scheduleNotificationSocketReconnect() {
+    const controller = state.notifications;
+    if (!controller.active || controller.reconnectHandle) return;
+    const delay = Math.min(controller.retryDelay, 30000);
+    controller.reconnectHandle = window.setTimeout(() => {
+      controller.reconnectHandle = null;
+      if (!controller.active) return;
+      controller.retryDelay = Math.min(controller.retryDelay * 2, 30000);
+      connectNotificationSocket();
+    }, delay);
+  }
+
+  function safeNotificationSocketSend(payload) {
+    const socket = state.notifications.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    try {
+      socket.send(payload);
+    } catch (error) {
+      console.warn('[notifications/ws] failed to send payload', error);
+    }
+  }
+
+  function startNotificationPing(intervalMs = 45000) {
+    clearNotificationPing();
+    safeNotificationSocketSend('ping');
+    state.notifications.pingHandle = window.setInterval(() => {
+      safeNotificationSocketSend('ping');
+    }, intervalMs);
+  }
+
+  function clearNotificationPing() {
+    const handle = state.notifications.pingHandle;
+    if (handle) {
+      clearInterval(handle);
+      state.notifications.pingHandle = null;
+    }
+  }
+
+  function handleNotificationSocketMessage(raw) {
+    let payload;
+    try {
+      payload = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(String(raw));
+    } catch (error) {
+      console.warn('[notifications/ws] failed to parse payload', error, raw);
+      return;
+    }
+    const type = String(payload?.type || '').toLowerCase();
+    switch (type) {
+      case 'notification.created':
+        handleIncomingNotification(payload.notification || null);
+        break;
+      case 'notification.read_all':
+        updateNotificationBadge(0);
+        syncNotificationsListReadState();
+        break;
+      case 'ready':
+        break;
+      case 'pong':
+        break;
+      default:
+        break;
+    }
+  }
+
+  function handleIncomingNotification(record) {
+    if (!record) return;
+    if (!record.read) {
+      updateNotificationBadge(state.notifications.unread + 1);
+    } else {
+      refreshNotificationSummary();
+    }
+    injectNotificationIntoList(record);
+    if (record.type === 'message.received') {
+      showToast(record.content || 'New message received.', 'info');
+    }
+  }
+
+  function injectNotificationIntoList(record) {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+    const empty = document.getElementById('notifications-empty');
+    if (empty) empty.classList.add('hidden');
+    const item = createNotificationItem(record);
+    list.prepend(item);
+    const count = document.getElementById('notifications-count');
+    if (count) {
+      count.textContent = `${Math.max(state.notifications.unread, 0)} unread`;
+    }
+  }
+
+  function syncNotificationsListReadState() {
+    const list = document.getElementById('notifications-list');
+    if (!list) return;
+    list.querySelectorAll('[data-notification-item]').forEach(item => {
+      item.classList.remove('border', 'border-indigo-400/30', 'bg-indigo-500/10');
+      item.classList.add('bg-slate-900/70');
+      const status = item.querySelector('[data-notification-status]');
+      if (status) {
+        status.textContent = 'Read';
+      }
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -2642,13 +2875,14 @@
     } catch {
       return;
     }
-    await loadNotifications();
+    await loadNotifications({ autoMarkRead: true });
     const markButton = document.getElementById('notifications-mark');
     if (markButton) {
       markButton.addEventListener('click', async () => {
         try {
           await apiFetch('/notifications/mark-read', { method: 'POST' });
           showToast('Notifications marked as read.', 'success');
+          updateNotificationBadge(0);
           await loadNotifications();
         } catch (error) {
           showToast(error.message || 'Unable to update notifications.', 'error');
@@ -2657,7 +2891,8 @@
     }
   }
 
-  async function loadNotifications() {
+  async function loadNotifications(options = {}) {
+    const { autoMarkRead = false } = options;
     const loading = document.getElementById('notifications-loading');
     const list = document.getElementById('notifications-list');
     const empty = document.getElementById('notifications-empty');
@@ -2671,11 +2906,29 @@
       let unread = 0;
       items.forEach(notification => {
         if (!notification.read) unread += 1;
+        if (autoMarkRead) {
+          notification.read = true;
+        }
         list.appendChild(createNotificationItem(notification));
       });
-      if (count) count.textContent = `${unread} unread`;
+      if (count) {
+        const displayUnread = autoMarkRead ? 0 : unread;
+        count.textContent = `${displayUnread} unread`;
+      }
+      if (!autoMarkRead) {
+        updateNotificationBadge(unread);
+      }
       if (items.length === 0 && empty) empty.classList.remove('hidden');
       else if (empty) empty.classList.add('hidden');
+      if (autoMarkRead && unread > 0) {
+        try {
+          await apiFetch('/notifications/mark-read', { method: 'POST' });
+          updateNotificationBadge(0);
+          syncNotificationsListReadState();
+        } catch (error) {
+          console.warn('[notifications] auto mark read failed', error);
+        }
+      }
     } catch (error) {
       showToast(error.message || 'Unable to load notifications.', 'error');
     } finally {
@@ -2685,13 +2938,15 @@
 
   function createNotificationItem(notification) {
     const li = document.createElement('li');
+    const isRead = Boolean(notification.read);
     li.className = `card-surface rounded-2xl p-5 shadow-md shadow-black/10 transition hover:shadow-indigo-500/20 ${
-      notification.read ? 'bg-slate-900/70' : 'bg-indigo-500/10 border border-indigo-400/30'
+      isRead ? 'bg-slate-900/70' : 'bg-indigo-500/10 border border-indigo-400/30'
     }`;
+    li.setAttribute('data-notification-item', 'true');
     li.innerHTML = `
       <div class="flex items-center justify-between">
-        <span class="rounded-full bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-300">${
-          notification.read ? 'Read' : 'New'
+        <span data-notification-status class="rounded-full bg-slate-800/80 px-3 py-1 text-xs font-semibold text-slate-300">${
+          isRead ? 'Read' : 'New'
         }</span>
         <time class="text-xs text-slate-400">${formatDate(notification.created_at)}</time>
       </div>

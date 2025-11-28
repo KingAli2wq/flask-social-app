@@ -22,8 +22,14 @@ def navbar(*, active: str | None = None) -> Markup:
     links_html = []
     for label, href in NAV_LINKS:
         is_active = "text-white" if active == href else "text-slate-300"
+        extra_classes = " relative" if label == "Notifications" else ""
+        indicator = (
+            '<span id="nav-notifications-indicator" class="absolute -top-1 -right-2 hidden rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow-lg shadow-rose-500/40">0</span>'
+            if label == "Notifications"
+            else ""
+        )
         links_html.append(
-            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white {is_active}\">{label}</a>"
+            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white{extra_classes} {is_active}\">{label}{indicator}</a>"
         )
     links = "".join(links_html)
 
