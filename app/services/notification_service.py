@@ -79,6 +79,7 @@ def add_notification(
         type=str(type_),
         content=content,
         payload=payload,
+        created_at=datetime.now(timezone.utc),
     )
     db.add(notification)
     db.commit()
