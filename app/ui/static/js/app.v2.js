@@ -69,6 +69,10 @@
       pingHandle: null,
       active: false,
     },
+    settingsPage: {
+      data: null,
+      verificationCooldownHandle: null,
+    },
   };
 
   // -----------------------------------------------------------------------
@@ -3059,18 +3063,432 @@
   // Settings page
   // -----------------------------------------------------------------------
 
-  function initSettingsPage() {
+  function toggleInteractiveState(element, disabled) {
+    if (!element) return;
+    element.disabled = disabled;
+    element.classList.toggle('opacity-50', disabled);
+    element.classList.toggle('pointer-events-none', disabled);
+  }
+
+  function clearVerificationCooldown() {
+    if (state.settingsPage.verificationCooldownHandle) {
+      clearInterval(state.settingsPage.verificationCooldownHandle);
+      state.settingsPage.verificationCooldownHandle = null;
+    }
+  }
+
+  function resetVerificationButton(button) {
+    if (!button) return;
+    clearVerificationCooldown();
+    const baseLabel = button.dataset.label || 'Resend code';
+    button.textContent = baseLabel;
+    toggleInteractiveState(button, false);
+  }
+
+  function startVerificationCooldown(seconds) {
+    const resendButton = document.getElementById('settings-resend-email');
+    if (!resendButton) return;
+    clearVerificationCooldown();
+    const baseLabel = resendButton.dataset.label || resendButton.textContent || 'Resend code';
+    resendButton.dataset.label = baseLabel;
+    let remaining = Math.max(0, Math.floor(seconds || 0));
+    if (remaining <= 0) {
+      resetVerificationButton(resendButton);
+      return;
+    }
+    toggleInteractiveState(resendButton, true);
+    resendButton.textContent = `Resend (${remaining}s)`;
+    state.settingsPage.verificationCooldownHandle = window.setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        resetVerificationButton(resendButton);
+      } else {
+        resendButton.textContent = `Resend (${remaining}s)`;
+      }
+    }, 1000);
+  }
+
+  function updateSettingsEmailStatus(data) {
+    const badge = document.getElementById('settings-email-status');
+    if (!badge) return;
+    const baseClasses = 'mt-1 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs';
+    if (!data.email) {
+      badge.className = `${baseClasses} bg-rose-500/10 text-rose-200`;
+      badge.innerHTML = '<span aria-hidden="true">⚠️</span><span>Add an email to secure your account.</span>';
+      return;
+    }
+    if (data.email_verified) {
+      badge.className = `${baseClasses} bg-emerald-500/10 text-emerald-300`;
+      badge.innerHTML = '<span aria-hidden="true">✅</span><span>Email verified</span>';
+      return;
+    }
+    const pendingCopy = data.email_verification_sent_at
+      ? 'Check your inbox for the latest code.'
+      : 'Verify your address to unlock alerts.';
+    badge.className = `${baseClasses} bg-amber-500/10 text-amber-400`;
+    badge.innerHTML = `<span aria-hidden="true">⚠️</span><span>${pendingCopy}</span>`;
+  }
+
+  function hydrateSettings(data) {
+    if (!data) return;
+    state.settingsPage.data = data;
+
+    const nameInput = document.getElementById('settings-name');
+    if (nameInput) nameInput.value = data.display_name || '';
+
+    const usernameInput = document.getElementById('settings-username');
+    if (usernameInput) usernameInput.value = data.username || '';
+
+    const bioInput = document.getElementById('settings-bio');
+    if (bioInput) bioInput.value = data.bio || '';
+
+    const emailInput = document.getElementById('settings-email-input');
+    if (emailInput) emailInput.value = data.email || '';
+
+    const displayName = document.getElementById('settings-display-name');
+    if (displayName) displayName.textContent = data.display_name || `@${data.username}`;
+
+    const emailLabel = document.getElementById('settings-email');
+    if (emailLabel) emailLabel.textContent = data.email || 'Add an email';
+
+    const emailDmToggle = document.getElementById('settings-pref-email-dm');
+    if (emailDmToggle) emailDmToggle.checked = Boolean(data.email_dm_notifications);
+
+    const friendToggle = document.getElementById('settings-pref-friend-requests');
+    if (friendToggle) friendToggle.checked = Boolean(data.allow_friend_requests);
+
+    const dmToggle = document.getElementById('settings-pref-follower-dms');
+    if (dmToggle) dmToggle.checked = Boolean(data.dm_followers_only);
+
+    const verifyBtn = document.getElementById('settings-verify-email');
+    if (verifyBtn) {
+      const shouldDisable = !data.email || data.email_verified;
+      toggleInteractiveState(verifyBtn, shouldDisable);
+    }
+
+    const resendBtn = document.getElementById('settings-resend-email');
+    if (resendBtn) {
+      if (!data.email || data.email_verified) {
+        resetVerificationButton(resendBtn);
+      } else if (!state.settingsPage.verificationCooldownHandle) {
+        toggleInteractiveState(resendBtn, false);
+        resendBtn.textContent = resendBtn.dataset.label || 'Resend code';
+      }
+    }
+
+    const panel = document.getElementById('settings-verify-panel');
+    if (panel) {
+      if (!data.email || data.email_verified) {
+        panel.classList.add('hidden');
+        const codeInput = document.getElementById('settings-verify-code');
+        if (codeInput) codeInput.value = '';
+      } else if (data.email_verification_sent_at) {
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+    }
+
+    updateSettingsEmailStatus(data);
+    refreshNavAuthState();
+  }
+
+  async function loadSettingsData() {
+    try {
+      const settings = await apiFetch('/settings/me');
+      hydrateSettings(settings);
+      setAuth({ username: settings.username });
+    } catch (error) {
+      showToast(error.message || 'Failed to load settings.', 'error');
+    }
+  }
+
+  async function handleSettingsAvatarUpload(file) {
+    if (!file) return;
+    const avatarEl = document.getElementById('settings-avatar');
+    if (avatarEl) {
+      const reader = new FileReader();
+      reader.onload = e => applyAvatarToImg(avatarEl, e.target.result);
+      reader.readAsDataURL(file);
+    }
+
+    const payload = new FormData();
+    payload.append('file', file);
+
+    try {
+      const uploadResult = await apiFetch('/media/upload', {
+        method: 'POST',
+        body: payload
+      });
+
+      if (!uploadResult.url) {
+        throw new Error('Upload failed.');
+      }
+
+      await apiFetch('/profiles/me', {
+        method: 'PUT',
+        body: JSON.stringify({ avatar_url: uploadResult.url })
+      });
+
+      await fetchCurrentUserProfile();
+      applyAvatarToImg(avatarEl, uploadResult.url);
+      showToast('Avatar updated successfully.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Failed to update avatar.', 'error');
+    }
+  }
+
+  function bindPreferenceToggle(elementId, field) {
+    const checkbox = document.getElementById(elementId);
+    if (!checkbox || checkbox.dataset.bound === 'true') return;
+    checkbox.dataset.bound = 'true';
+    checkbox.addEventListener('change', () => handlePreferenceToggle(checkbox, field));
+  }
+
+  function bindSettingsEvents() {
+    const logoutBtn = document.getElementById('settings-logout');
+    if (logoutBtn && logoutBtn.dataset.bound !== 'true') {
+      logoutBtn.dataset.bound = 'true';
+      logoutBtn.addEventListener('click', () => {
+        clearAuth();
+        window.location.href = '/login';
+      });
+    }
+
+    const profileSave = document.getElementById('settings-profile-save');
+    if (profileSave && profileSave.dataset.bound !== 'true') {
+      profileSave.dataset.bound = 'true';
+      profileSave.addEventListener('click', handleSettingsProfileSave);
+    }
+
+    const contactSave = document.getElementById('settings-contact-save');
+    if (contactSave && contactSave.dataset.bound !== 'true') {
+      contactSave.dataset.bound = 'true';
+      contactSave.addEventListener('click', handleSettingsContactSave);
+    }
+
+    const passwordForm = document.getElementById('settings-password-form');
+    if (passwordForm && passwordForm.dataset.bound !== 'true') {
+      passwordForm.dataset.bound = 'true';
+      passwordForm.addEventListener('submit', handleSettingsPasswordSubmit);
+    }
+
+    bindPreferenceToggle('settings-pref-email-dm', 'email_dm_notifications');
+    bindPreferenceToggle('settings-pref-friend-requests', 'allow_friend_requests');
+    bindPreferenceToggle('settings-pref-follower-dms', 'dm_followers_only');
+
+    const verifyBtn = document.getElementById('settings-verify-email');
+    if (verifyBtn && verifyBtn.dataset.bound !== 'true') {
+      verifyBtn.dataset.bound = 'true';
+      verifyBtn.addEventListener('click', event => {
+        event.preventDefault();
+        handleEmailVerificationRequest(verifyBtn);
+      });
+    }
+
+    const resendBtn = document.getElementById('settings-resend-email');
+    if (resendBtn && resendBtn.dataset.bound !== 'true') {
+      resendBtn.dataset.bound = 'true';
+      resendBtn.dataset.label = resendBtn.textContent || 'Resend code';
+      resendBtn.addEventListener('click', event => {
+        event.preventDefault();
+        handleEmailVerificationRequest(resendBtn);
+      });
+    }
+
+    const verifySubmit = document.getElementById('settings-verify-submit');
+    if (verifySubmit && verifySubmit.dataset.bound !== 'true') {
+      verifySubmit.dataset.bound = 'true';
+      verifySubmit.addEventListener('click', handleEmailVerificationConfirm);
+    }
+
+    const avatarTrigger = document.getElementById('settings-avatar-trigger');
+    const avatarInput = document.getElementById('settings-avatar-file');
+    if (avatarTrigger && avatarInput && avatarTrigger.dataset.bound !== 'true') {
+      avatarTrigger.dataset.bound = 'true';
+      avatarTrigger.addEventListener('click', event => {
+        event.preventDefault();
+        avatarInput.click();
+      });
+      avatarInput.addEventListener('change', async () => {
+        const file = avatarInput.files && avatarInput.files[0];
+        if (!file) return;
+        await handleSettingsAvatarUpload(file);
+        avatarInput.value = '';
+      });
+    }
+  }
+
+  async function handleSettingsProfileSave(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    const nameInput = document.getElementById('settings-name');
+    const usernameInput = document.getElementById('settings-username');
+    const bioInput = document.getElementById('settings-bio');
+
+    const usernameValue = (usernameInput && usernameInput.value ? usernameInput.value : '').trim().replace(/^@/, '');
+    if (!usernameValue) {
+      showToast('Username is required.', 'warning');
+      return;
+    }
+
+    const payload = {
+      display_name: nameInput && nameInput.value ? nameInput.value.trim() || null : null,
+      username: usernameValue,
+      bio: bioInput && bioInput.value ? bioInput.value.trim() || null : null,
+    };
+
+    toggleInteractiveState(button, true);
+    try {
+      const updated = await apiFetch('/settings/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      });
+      hydrateSettings(updated);
+      setAuth({ username: updated.username });
+      showToast('Profile updated successfully.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to update profile.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handleSettingsContactSave(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    const emailInput = document.getElementById('settings-email-input');
+    const emailValue = (emailInput && emailInput.value ? emailInput.value : '').trim().toLowerCase();
+    if (!emailValue) {
+      showToast('Email cannot be empty.', 'warning');
+      return;
+    }
+
+    toggleInteractiveState(button, true);
+    try {
+      const updated = await apiFetch('/settings/contact', {
+        method: 'PATCH',
+        body: JSON.stringify({ email: emailValue })
+      });
+      hydrateSettings(updated);
+      showToast('Email updated successfully.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to update email.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handleSettingsPasswordSubmit(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = document.getElementById('settings-password-save');
+    const current = form.elements['current_password']?.value || '';
+    const next = form.elements['new_password']?.value || '';
+    const confirm = form.elements['confirm_password']?.value || '';
+
+    if (!current || !next || !confirm) {
+      showToast('Fill in all password fields.', 'warning');
+      return;
+    }
+
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch('/settings/password', {
+        method: 'POST',
+        body: JSON.stringify({
+          current_password: current,
+          new_password: next,
+          confirm_password: confirm,
+        })
+      });
+      form.reset();
+      showToast('Password updated successfully.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to update password.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handlePreferenceToggle(checkbox, field) {
+    const desiredValue = checkbox.checked;
+    try {
+      const updated = await apiFetch('/settings/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ [field]: desiredValue })
+      });
+      hydrateSettings(updated);
+      showToast('Preference updated.', 'success');
+    } catch (error) {
+      checkbox.checked = !desiredValue;
+      showToast(error.message || 'Unable to update preference.', 'error');
+    }
+  }
+
+  async function handleEmailVerificationRequest(button) {
+    if (!button) return;
+    toggleInteractiveState(button, true);
+    try {
+      const result = await apiFetch('/settings/email/request', {
+        method: 'POST'
+      });
+      if (result.cooldown_seconds) {
+        startVerificationCooldown(result.cooldown_seconds);
+      }
+      if (result.expires_at) {
+        showToast('Verification email sent.', 'success');
+      } else {
+        showToast('Please wait before requesting another code.', 'warning');
+      }
+      await loadSettingsData();
+    } catch (error) {
+      showToast(error.message || 'Unable to send verification email.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handleEmailVerificationConfirm(event) {
+    event.preventDefault();
+    const button = event.currentTarget;
+    const codeInput = document.getElementById('settings-verify-code');
+    const code = (codeInput && codeInput.value ? codeInput.value : '').trim();
+    if (code.length !== 6) {
+      showToast('Enter the 6-digit code.', 'warning');
+      return;
+    }
+
+    toggleInteractiveState(button, true);
+    try {
+      const updated = await apiFetch('/settings/email/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ code })
+      });
+      if (codeInput) codeInput.value = '';
+      hydrateSettings(updated);
+      showToast('Email verified successfully.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Invalid verification code.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function initSettingsPage() {
     initThemeToggle();
     try {
       ensureAuthenticated();
     } catch {
       return;
     }
-    // Placeholder wiring until backend endpoints are ready.
-    const emailStatus = document.getElementById('settings-email-status');
-    if (emailStatus) {
-      emailStatus.textContent = 'Email verification coming soon';
+    bindSettingsEvents();
+    try {
+      await fetchCurrentUserProfile();
+    } catch (error) {
+      console.warn('[settings] failed to hydrate avatar', error);
     }
+    await loadSettingsData();
   }
 
   // -----------------------------------------------------------------------

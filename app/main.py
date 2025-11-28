@@ -24,6 +24,7 @@ from .routers import (
     posts_router,
     profiles_router,
     realtime_router,
+    settings_router,
     uploads_router,
 )
 from .services import CleanupError, run_cleanup
@@ -64,6 +65,7 @@ app.include_router(messages_router)
 app.include_router(notifications_router)
 app.include_router(profiles_router)
 app.include_router(realtime_router)
+app.include_router(settings_router)
 app.include_router(uploads_router)
 
 _CLEANUP_INTERVAL = timedelta(hours=24)

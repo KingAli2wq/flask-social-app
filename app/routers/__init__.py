@@ -8,6 +8,7 @@ from .notifications import router as notifications_router
 from .posts import router as posts_router
 from .profiles import router as profiles_router
 from .realtime import router as realtime_router
+from .settings import router as settings_router
 from .uploads import router as uploads_router
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "posts_router",
     "profiles_router",
     "realtime_router",
+    "settings_router",
     "uploads_router",
 ]

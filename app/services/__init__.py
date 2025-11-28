@@ -36,6 +36,15 @@ from .post_service import (
     set_post_like_state,
 )
 from .profile_service import get_profile, update_profile
+from .settings_service import (
+    build_settings_response,
+    confirm_email_verification,
+    request_email_verification,
+    update_contact_settings,
+    update_password,
+    update_preferences,
+    update_profile_settings,
+)
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, get_spaces_client, upload_file_to_spaces
 
 __all__ = [
@@ -79,6 +88,13 @@ __all__ = [
     "get_follow_stats",
     "get_profile",
     "update_profile",
+    "build_settings_response",
+    "update_profile_settings",
+    "update_contact_settings",
+    "update_preferences",
+    "update_password",
+    "request_email_verification",
+    "confirm_email_verification",
     "SpacesConfigurationError",
     "SpacesUploadError",
     "get_spaces_client",
