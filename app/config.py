@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import EmailStr, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve the project root
@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     droplet_host: str = Field(default="159.203.7.101", alias="DROPLET_HOST")
     app_name: str = Field(default="Social Backend", alias="APP_NAME")
     api_version: str = Field(default="0.1.0", alias="API_VERSION")
+    public_base_url: str = Field(default="https://socialsphere.fly.dev", alias="PUBLIC_BASE_URL")
+
+    email_host: str | None = Field(default=None, alias="EMAIL_HOST")
+    email_port: int = Field(default=587, alias="EMAIL_PORT")
+    email_username: str | None = Field(default=None, alias="EMAIL_USERNAME")
+    email_password: str | None = Field(default=None, alias="EMAIL_PASSWORD")
+    email_from_address: EmailStr | None = Field(default=None, alias="EMAIL_FROM_ADDRESS")
+    email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_PATH),

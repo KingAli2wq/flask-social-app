@@ -18,7 +18,14 @@ from .friendship_service import (
 )
 from .media_service import delete_old_media, list_media_for_user
 from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
-from .notification_service import add_notification, delete_old_notifications, list_notifications, mark_all_read
+from .notification_service import (
+    NotificationType,
+    add_notification,
+    count_unread_notifications,
+    delete_old_notifications,
+    list_notifications,
+    mark_all_read,
+)
 from .post_service import (
     create_post_comment,
     create_post_record,
@@ -53,7 +60,9 @@ __all__ = [
     "CleanupError",
     "CleanupSummary",
     "run_cleanup",
+    "NotificationType",
     "add_notification",
+    "count_unread_notifications",
     "list_notifications",
     "mark_all_read",
     "delete_old_notifications",

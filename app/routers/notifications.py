@@ -1,13 +1,23 @@
 """Notification API routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import Notification, User
-from ..schemas import NotificationListResponse, NotificationResponse
-from ..services import add_notification, get_current_user, list_notifications, mark_all_read
+from ..schemas import NotificationListResponse, NotificationResponse, NotificationSummaryResponse
+from ..services import (
+    add_notification,
+    count_unread_notifications,
+    decode_access_token,
+    get_current_user,
+    list_notifications,
+    mark_all_read,
+)
+from ..services.notification_stream import notification_stream_manager
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -52,3 +62,37 @@ async def mark_notifications_read(
     db: Session = Depends(get_session),
 ) -> None:
     mark_all_read(db, current_user.id)
+
+
+@router.get("/summary", response_model=NotificationSummaryResponse)
+async def notification_summary_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> NotificationSummaryResponse:
+    unread = count_unread_notifications(db, current_user.id)
+    return NotificationSummaryResponse(unread_count=unread)
+
+
+@router.websocket("/ws")
+async def notifications_socket(
+    websocket: WebSocket,
+    token: str = Query(..., alias="token"),
+) -> None:
+    try:
+        user_id = decode_access_token(token)
+    except Exception:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    await notification_stream_manager.connect(str(user_id), websocket)
+    await websocket.send_text(json.dumps({"type": "ready"}))
+    try:
+        while True:
+            try:
+                payload = await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+            if payload.strip().lower() == "ping":
+                await websocket.send_text(json.dumps({"type": "pong"}))
+    finally:
+        await notification_stream_manager.disconnect(websocket)

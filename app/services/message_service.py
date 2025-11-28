@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from ..models import GroupChat, Message, User
 from ..schemas import GroupChatCreate, MessageSendRequest
 from .friendship_service import require_friendship
+from .notification_service import NotificationType, add_notification
 
 
 def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> GroupChat:
@@ -118,6 +119,9 @@ def send_message(
 
     db.refresh(message)
 
+    if recipient_id is not None:
+        _notify_direct_message(db, sender=sender, recipient_id=recipient_id, message=message)
+
     return message
 
 
@@ -183,3 +187,25 @@ __all__ = [
     "delete_message",
     "delete_old_messages",
 ]
+
+
+def _notify_direct_message(db: Session, *, sender: User, recipient_id: UUID, message: Message) -> None:
+    if recipient_id == sender.id:
+        return
+    preview = (message.content or "").strip()
+    sender_id = cast(UUID, sender.id)
+    chat_identifier = cast(str | None, message.chat_id)
+    payload = {
+        "message_id": str(message.id),
+        "chat_id": chat_identifier,
+        "preview": preview[:160],
+    }
+    add_notification(
+        db,
+        recipient_id=recipient_id,
+        sender_id=sender_id,
+        content=f"@{sender.username or 'A user'} sent you a new message.",
+        type_=NotificationType.MESSAGE_RECEIVED,
+        payload=payload,
+        send_email_notification=True,
+    )
