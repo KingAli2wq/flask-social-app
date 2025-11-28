@@ -12,7 +12,7 @@ from .messages import (
     MessageSendRequest,
     MessageThreadResponse,
 )
-from .notifications import NotificationListResponse, NotificationResponse
+from .notifications import NotificationListResponse, NotificationResponse, NotificationSummaryResponse
 from .posts import (
     PostCommentCreate,
     PostCommentListResponse,
@@ -43,6 +43,7 @@ __all__ = [
     "MessageThreadResponse",
     "NotificationListResponse",
     "NotificationResponse",
+    "NotificationSummaryResponse",
     "PostCommentCreate",
     "PostCommentResponse",
     "PostCommentListResponse",
