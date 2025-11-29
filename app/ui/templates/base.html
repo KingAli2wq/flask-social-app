@@ -22,8 +22,31 @@
         }
     </script>
     <style>
-        body { font-family: 'Inter', system-ui, sans-serif; }
-        body.light-theme { background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%); color: #0f172a; }
+        html { min-height: 100%; }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            position: relative;
+            min-height: 100%;
+            background-color: #020617;
+            background-repeat: no-repeat;
+            background-size: cover;
+            background-attachment: fixed;
+        }
+        /* Fixed gradient canvas so the background never tiles while scrolling */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background: linear-gradient(180deg, #020617 0%, #0b1120 50%, #020617 100%);
+        }
+        body.light-theme {
+            color: #0f172a;
+        }
+        body.light-theme::before {
+            background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+        }
         body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.92) !important; color: #0f172a; box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.35); border-color: rgba(148, 163, 184, 0.25) !important; }
         body.light-theme .text-slate-400 { color: #475569 !important; }
         body.light-theme .text-slate-500 { color: #64748b !important; }
