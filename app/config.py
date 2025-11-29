@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     email_password: str | None = Field(default=None, alias="EMAIL_PASSWORD")
     email_from_address: EmailStr | None = Field(default=None, alias="EMAIL_FROM_ADDRESS")
     email_use_tls: bool = Field(default=True, alias="EMAIL_USE_TLS")
+    mailgun_api_key: str | None = Field(default=None, alias="MAILGUN_API_KEY")
+    mailgun_domain: str | None = Field(default=None, alias="MAILGUN_DOMAIN")
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_PATH),
