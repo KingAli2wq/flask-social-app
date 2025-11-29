@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="card-surface grid h-[75vh] gap-8 rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
-    <aside class="flex h-full flex-col">
+<section class="card-surface grid h-[78vh] min-h-[560px] gap-8 overflow-hidden rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
+    <aside class="flex h-full min-h-0 flex-col overflow-hidden">
         <header class="flex items-center justify-between">
             <div>
                 <p class="text-xs uppercase tracking-wide text-slate-500">Inbox</p>
@@ -31,7 +31,7 @@
             </div>
         </div>
     </aside>
-    <div class="card-surface flex h-full flex-col rounded-3xl border border-slate-800/60 bg-slate-950/60">
+    <div class="card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60">
         <header id="chat-header" class="flex items-center justify-between border-b border-slate-800/60 px-6 py-4">
             <div>
                 <h2 class="text-base font-semibold text-white">Select a conversation</h2>
