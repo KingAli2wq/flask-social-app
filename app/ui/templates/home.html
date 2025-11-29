@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid gap-8 lg:grid-cols-[2fr,1fr]">
-    <div class="flex flex-col gap-8">
+<section class="mx-auto grid w-full max-w-6xl gap-8 lg:grid-cols-[minmax(0,_700px)_minmax(0,_360px)] lg:items-start lg:justify-center">
+    <div class="flex w-full max-w-2xl flex-col gap-8 justify-self-center lg:justify-self-start">
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
             <header class="flex items-center justify-between">
                 <div>
@@ -46,7 +46,7 @@
             </div>
         </section>
     </div>
-    <aside class="flex flex-col gap-6">
+    <aside class="flex w-full max-w-sm flex-col gap-6 justify-self-center lg:justify-self-start">
         <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
             <h2 class="text-base font-semibold text-white">Trending tags</h2>
             <ul id="trends" class="mt-4 space-y-3 text-sm text-indigo-300">
