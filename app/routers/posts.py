@@ -27,6 +27,7 @@ from ..services import (
     get_optional_user,
     list_post_comments,
     list_feed_records,
+    set_post_dislike_state,
     set_post_like_state,
 )
 from ..services.realtime import feed_updates_manager
@@ -133,6 +134,26 @@ async def unlike_post_endpoint(
 
 
 @router.get("/{post_id}/comments", response_model=PostCommentListResponse)
+@router.post("/{post_id}/dislikes", response_model=PostEngagementResponse)
+async def dislike_post_endpoint(
+    post_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostEngagementResponse:
+    payload = set_post_dislike_state(db, post_id=post_id, user_id=current_user.id, should_dislike=True)
+    return PostEngagementResponse(**payload)
+
+
+@router.delete("/{post_id}/dislikes", response_model=PostEngagementResponse)
+async def remove_dislike_endpoint(
+    post_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostEngagementResponse:
+    payload = set_post_dislike_state(db, post_id=post_id, user_id=current_user.id, should_dislike=False)
+    return PostEngagementResponse(**payload)
+
+
 async def list_post_comments_endpoint(
     post_id: UUID,
     db: Session = Depends(get_session),

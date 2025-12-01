@@ -100,6 +100,7 @@ class User(Base):
         cascade="all, delete-orphan",
     )
     post_likes = relationship("PostLike", back_populates="user", cascade="all, delete-orphan")
+    post_dislikes = relationship("PostDislike", back_populates="user", cascade="all, delete-orphan")
     post_comments = relationship("PostComment", back_populates="user", cascade="all, delete-orphan")
 
 

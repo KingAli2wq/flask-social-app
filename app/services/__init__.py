@@ -33,6 +33,7 @@ from .post_service import (
     delete_post_record,
     list_feed_records,
     list_post_comments,
+    set_post_dislike_state,
     set_post_like_state,
 )
 from .profile_service import get_profile, update_profile
@@ -81,6 +82,7 @@ __all__ = [
     "delete_old_posts",
     "list_feed_records",
     "list_post_comments",
+    "set_post_dislike_state",
     "set_post_like_state",
     "FollowStats",
     "follow_user",

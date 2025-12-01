@@ -32,8 +32,10 @@ class PostResponse(BaseModel):
     follow_priority: int | None = None
     is_following_author: bool | None = None
     like_count: int = 0
+    dislike_count: int = 0
     comment_count: int = 0
     viewer_has_liked: bool = False
+    viewer_has_disliked: bool = False
 
 
 class PostFeedResponse(BaseModel):
@@ -47,8 +49,10 @@ class PostEngagementResponse(BaseModel):
 
     post_id: UUID
     like_count: int
+    dislike_count: int
     comment_count: int
     viewer_has_liked: bool
+    viewer_has_disliked: bool
 
 
 class PostCommentCreate(BaseModel):

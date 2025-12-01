@@ -10,7 +10,7 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import Follow, MediaAsset, Post, PostComment, PostLike, User
+from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
 
@@ -122,11 +122,14 @@ def list_feed_records(
     like_count_subquery = (
         select(func.count(PostLike.id)).where(PostLike.post_id == Post.id).scalar_subquery()
     )
+    dislike_count_subquery = (
+        select(func.count(PostDislike.id)).where(PostDislike.post_id == Post.id).scalar_subquery()
+    )
     comment_count_subquery = (
         select(func.count(PostComment.id)).where(PostComment.post_id == Post.id).scalar_subquery()
     )
 
-    statement = statement.add_columns(like_count_subquery, comment_count_subquery)
+    statement = statement.add_columns(like_count_subquery, dislike_count_subquery, comment_count_subquery)
     if author_id is not None:
         statement = statement.where(Post.user_id == author_id)
 
@@ -134,6 +137,7 @@ def list_feed_records(
     follow_match_col = None
     follow_priority_col = None
     viewer_like_col = None
+    viewer_dislike_col = None
 
     if viewer_id is not None:
         viewer_like_col = (
@@ -141,7 +145,12 @@ def list_feed_records(
             .where(PostLike.post_id == Post.id, PostLike.user_id == viewer_id)
             .scalar_subquery()
         )
-        statement = statement.add_columns(viewer_like_col)
+        viewer_dislike_col = (
+            select(func.count(PostDislike.id))
+            .where(PostDislike.post_id == Post.id, PostDislike.user_id == viewer_id)
+            .scalar_subquery()
+        )
+        statement = statement.add_columns(viewer_like_col, viewer_dislike_col)
 
     if include_follow_weight and viewer_id is not None:
         follow_subquery = (
@@ -155,10 +164,9 @@ def list_feed_records(
         statement = (
             statement.add_columns(follow_match_col, follow_priority_col)
             .outerjoin(follow_subquery, follow_subquery.c.following_id == Post.user_id)
-            .order_by(follow_priority_col.desc(), Post.created_at.desc())
         )
-    else:
-        statement = statement.order_by(Post.created_at.desc())
+
+    statement = statement.order_by(Post.created_at.desc())
 
     records: list[dict[str, Any]] = []
     rows = db.execute(statement).all()
@@ -172,11 +180,17 @@ def list_feed_records(
         idx += 1
         like_count_value = row[idx]
         idx += 1
+        dislike_count_value = row[idx]
+        idx += 1
         comment_count_value = row[idx]
         idx += 1
         viewer_like_value = None
+        viewer_dislike_value = None
         if viewer_like_col is not None:
             viewer_like_value = row[idx]
+            idx += 1
+        if viewer_dislike_col is not None:
+            viewer_dislike_value = row[idx]
             idx += 1
         follow_match_value = None
         follow_priority_value = None
@@ -198,8 +212,10 @@ def list_feed_records(
             "username": username,
             "avatar_url": avatar_url,
             "like_count": int(like_count_value or 0),
+            "dislike_count": int(dislike_count_value or 0),
             "comment_count": int(comment_count_value or 0),
             "viewer_has_liked": bool(viewer_like_value) if viewer_like_col is not None else False,
+            "viewer_has_disliked": bool(viewer_dislike_value) if viewer_dislike_col is not None else False,
         }
 
         if include_follow_weight:
@@ -220,8 +236,10 @@ def _get_post_or_404(db: Session, post_id: UUID) -> Post:
 
 def _post_engagement_snapshot(db: Session, post_id: UUID, viewer_id: UUID | None) -> dict[str, Any]:
     like_count = db.scalar(select(func.count(PostLike.id)).where(PostLike.post_id == post_id)) or 0
+    dislike_count = db.scalar(select(func.count(PostDislike.id)).where(PostDislike.post_id == post_id)) or 0
     comment_count = db.scalar(select(func.count(PostComment.id)).where(PostComment.post_id == post_id)) or 0
     viewer_has_liked = False
+    viewer_has_disliked = False
     if viewer_id is not None:
         viewer_has_liked = (
             db.scalar(
@@ -229,11 +247,19 @@ def _post_engagement_snapshot(db: Session, post_id: UUID, viewer_id: UUID | None
             )
             is not None
         )
+        viewer_has_disliked = (
+            db.scalar(
+                select(PostDislike.id).where(PostDislike.post_id == post_id, PostDislike.user_id == viewer_id).limit(1)
+            )
+            is not None
+        )
     return {
         "post_id": post_id,
         "like_count": int(like_count),
+        "dislike_count": int(dislike_count),
         "comment_count": int(comment_count),
         "viewer_has_liked": viewer_has_liked,
+        "viewer_has_disliked": viewer_has_disliked,
     }
 
 
@@ -247,17 +273,52 @@ def set_post_like_state(
     _get_post_or_404(db, post_id)
 
     existing = db.scalar(select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id))
+    existing_dislike = db.scalar(
+        select(PostDislike).where(PostDislike.post_id == post_id, PostDislike.user_id == user_id)
+    )
 
     if should_like and existing is None:
         db.add(PostLike(post_id=post_id, user_id=user_id))
     elif not should_like and existing is not None:
         db.delete(existing)
 
+    if should_like and existing_dislike is not None:
+        db.delete(existing_dislike)
+
     try:
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update like") from exc
+
+    return _post_engagement_snapshot(db, post_id, user_id)
+
+
+def set_post_dislike_state(
+    db: Session,
+    *,
+    post_id: UUID,
+    user_id: UUID,
+    should_dislike: bool,
+) -> dict[str, Any]:
+    _get_post_or_404(db, post_id)
+
+    existing = db.scalar(select(PostDislike).where(PostDislike.post_id == post_id, PostDislike.user_id == user_id))
+    existing_like = db.scalar(select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id))
+
+    if should_dislike and existing is None:
+        db.add(PostDislike(post_id=post_id, user_id=user_id))
+    elif not should_dislike and existing is not None:
+        db.delete(existing)
+
+    if should_dislike and existing_like is not None:
+        db.delete(existing_like)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update dislike") from exc
 
     return _post_engagement_snapshot(db, post_id, user_id)
 
@@ -369,6 +430,7 @@ __all__ = [
     "create_post_record",
     "list_feed_records",
     "set_post_like_state",
+    "set_post_dislike_state",
     "list_post_comments",
     "create_post_comment",
     "delete_post_record",

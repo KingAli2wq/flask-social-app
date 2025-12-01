@@ -24,6 +24,7 @@ class Post(Base):
     author = relationship("User", back_populates="posts")
     media_asset = relationship("MediaAsset", back_populates="posts")
     likes = relationship("PostLike", back_populates="post", cascade="all, delete-orphan")
+    dislikes = relationship("PostDislike", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("PostComment", back_populates="post", cascade="all, delete-orphan")
 
 
@@ -39,6 +40,20 @@ class PostLike(Base):
     user = relationship("User", back_populates="post_likes")
 
     __table_args__ = (UniqueConstraint("post_id", "user_id", name="uq_post_likes_post_user"),)
+
+
+class PostDislike(Base):
+    __tablename__ = "post_dislikes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    post = relationship("Post", back_populates="dislikes")
+    user = relationship("User", back_populates="post_dislikes")
+
+    __table_args__ = (UniqueConstraint("post_id", "user_id", name="uq_post_dislikes_post_user"),)
 
 
 class PostComment(Base):
@@ -57,4 +72,4 @@ class PostComment(Base):
     replies = relationship("PostComment", back_populates="parent", cascade="all, delete-orphan")
 
 
-__all__ = ["Post", "PostLike", "PostComment"]
+__all__ = ["Post", "PostLike", "PostDislike", "PostComment"]
