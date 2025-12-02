@@ -1267,24 +1267,54 @@
     });
   }
 
+  function applyDislikeButtonState(button, isDisliked, dislikeCount) {
+    if (!button) return;
+    const baseClasses = 'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
+    button.dataset.disliked = isDisliked ? 'true' : 'false';
+    button.className = isDisliked
+      ? `${baseClasses} border-amber-400/60 bg-amber-500/20 text-amber-100 hover:bg-amber-500/30`
+      : `${baseClasses} border-slate-700/60 bg-slate-800/80 text-white hover:border-rose-500/60 hover:bg-rose-600/70`;
+    const label = button.querySelector('[data-role="dislike-label"]');
+    const count = button.querySelector('[data-role="dislike-count"]');
+    if (label) label.textContent = isDisliked ? 'Disliked' : 'Dislike';
+    if (count) count.textContent = String(dislikeCount ?? 0);
+  }
+
+  function updateDislikeButtonsForPost(postId, isDisliked, dislikeCount) {
+    document.querySelectorAll(`[data-role="dislike-button"][data-post-id="${postId}"]`).forEach(button => {
+      applyDislikeButtonState(button, isDisliked, dislikeCount);
+    });
+  }
+
   function setPostEngagementSnapshot(snapshot) {
     if (!snapshot || !snapshot.post_id) return;
     const key = String(snapshot.post_id);
-    const { like_count = 0, comment_count = 0, viewer_has_liked = false } = snapshot;
+    const {
+      like_count = 0,
+      dislike_count = 0,
+      comment_count = 0,
+      viewer_has_liked = false,
+      viewer_has_disliked = false,
+    } = snapshot;
     const cached = state.postRegistry[key];
     if (cached) {
       cached.like_count = like_count;
       cached.comment_count = comment_count;
       cached.viewer_has_liked = viewer_has_liked;
+      cached.dislike_count = dislike_count;
+      cached.viewer_has_disliked = viewer_has_disliked;
     }
     state.feedItems.forEach(item => {
       if (String(item.id) === key) {
         item.like_count = like_count;
         item.comment_count = comment_count;
         item.viewer_has_liked = viewer_has_liked;
+        item.dislike_count = dislike_count;
+        item.viewer_has_disliked = viewer_has_disliked;
       }
     });
     updateLikeButtonsForPost(key, viewer_has_liked, like_count);
+    updateDislikeButtonsForPost(key, viewer_has_disliked, dislike_count);
     updateCommentCountDisplays(key, comment_count);
   }
 
@@ -1305,11 +1335,43 @@
       setPostEngagementSnapshot(snapshot);
       post.viewer_has_liked = snapshot.viewer_has_liked;
       post.like_count = snapshot.like_count;
+      post.viewer_has_disliked = snapshot.viewer_has_disliked;
+      post.dislike_count = snapshot.dislike_count;
       if (!shouldUnlike) {
         showToast('Post liked.', 'success');
       }
     } catch (error) {
       showToast(error.message || 'Unable to update like.', 'error');
+    } finally {
+      button.disabled = false;
+      button.classList.remove('opacity-70');
+    }
+  }
+
+  async function togglePostDislike(post, button) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!post?.id || !button || button.disabled) return;
+    const shouldUndislike = button.dataset.disliked === 'true';
+    button.disabled = true;
+    button.classList.add('opacity-70');
+    try {
+      const snapshot = await apiFetch(`/posts/${encodeURIComponent(post.id)}/dislikes`, {
+        method: shouldUndislike ? 'DELETE' : 'POST'
+      });
+      setPostEngagementSnapshot(snapshot);
+      post.viewer_has_disliked = snapshot.viewer_has_disliked;
+      post.dislike_count = snapshot.dislike_count;
+      post.viewer_has_liked = snapshot.viewer_has_liked;
+      post.like_count = snapshot.like_count;
+      if (!shouldUndislike) {
+        showToast('Post disliked.', 'info');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update dislike.', 'error');
     } finally {
       button.disabled = false;
       button.classList.remove('opacity-70');
@@ -1377,8 +1439,10 @@
       const snapshot = {
         post_id: post.id,
         like_count: typeof post.like_count === 'number' ? post.like_count : 0,
+        dislike_count: typeof post.dislike_count === 'number' ? post.dislike_count : 0,
         comment_count: post.comment_count,
         viewer_has_liked: Boolean(post.viewer_has_liked),
+        viewer_has_disliked: Boolean(post.viewer_has_disliked),
       };
       setPostEngagementSnapshot(snapshot);
       showToast('Comment added.', 'success');
@@ -1423,8 +1487,10 @@
       ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="">`
       : '';
     const likeCount = typeof post.like_count === 'number' ? post.like_count : 0;
+    const dislikeCount = typeof post.dislike_count === 'number' ? post.dislike_count : 0;
     const commentCount = typeof post.comment_count === 'number' ? post.comment_count : 0;
     const viewerHasLiked = Boolean(post.viewer_has_liked);
+    const viewerHasDisliked = Boolean(post.viewer_has_disliked);
     const showFollowButton = Boolean(hasAuthToken && !isCurrentUser);
     const initialFollowing = Boolean(post.is_following_author);
     const followButtonMarkup = showFollowButton
@@ -1523,6 +1589,15 @@
           <span data-role="like-count" class="text-[11px] text-slate-300">${likeCount}</span>
         </button>
         <button
+          data-role="dislike-button"
+          data-post-id="${post.id}"
+          class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold"
+        >
+          <span aria-hidden="true">👎</span>
+          <span data-role="dislike-label">${viewerHasDisliked ? 'Disliked' : 'Dislike'}</span>
+          <span data-role="dislike-count" class="text-[11px] text-slate-300">${dislikeCount}</span>
+        </button>
+        <button
           data-role="comment-toggle"
           data-post-id="${post.id}"
           data-open="false"
@@ -1591,6 +1666,14 @@
       likeButton.addEventListener('click', event => {
         event.preventDefault();
         togglePostLike(post, likeButton);
+      });
+    }
+    const dislikeButton = el.querySelector('[data-role="dislike-button"]');
+    if (dislikeButton) {
+      applyDislikeButtonState(dislikeButton, viewerHasDisliked, dislikeCount);
+      dislikeButton.addEventListener('click', event => {
+        event.preventDefault();
+        togglePostDislike(post, dislikeButton);
       });
     }
     const commentToggle = el.querySelector('[data-role="comment-toggle"]');
@@ -1708,6 +1791,7 @@
   }
 
   async function loadProfileData(prefetchedProfile = null) {
+    const displayNameEl = document.getElementById('profile-display-name');
     const usernameEl = document.getElementById('profile-username');
     const bioEl = document.getElementById('profile-bio');
     const websiteEl = document.getElementById('profile-website');
@@ -1733,7 +1817,8 @@
       }
 
       const { username } = profile;
-      if (usernameEl) usernameEl.textContent = `@${username}`;
+      if (displayNameEl) displayNameEl.textContent = profile.display_name || username || 'Your name';
+      if (usernameEl) usernameEl.textContent = username ? `@${username}` : '@username';
       if (bioEl) bioEl.textContent = profile.bio || 'Add a short bio to introduce yourself.';
       if (locationEl) locationEl.textContent = profile.location || 'Location not set';
       if (websiteEl) {
