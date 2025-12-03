@@ -156,7 +156,6 @@ async def unlike_post_endpoint(
     return PostEngagementResponse(**payload)
 
 
-@router.get("/{post_id}/comments", response_model=PostCommentListResponse)
 @router.post("/{post_id}/dislikes", response_model=PostEngagementResponse)
 async def dislike_post_endpoint(
     post_id: UUID,
@@ -177,6 +176,7 @@ async def remove_dislike_endpoint(
     return PostEngagementResponse(**payload)
 
 
+@router.get("/{post_id}/comments", response_model=PostCommentListResponse)
 async def list_post_comments_endpoint(
     post_id: UUID,
     db: Session = Depends(get_session),
