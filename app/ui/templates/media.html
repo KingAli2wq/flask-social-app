@@ -12,8 +12,8 @@
                 </div>
                 <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Realtime-ready</span>
             </header>
-            <div class="mt-6 flex flex-col gap-4">
-                <div class="relative h-[70vh] overflow-hidden rounded-[32px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80">
+            <div class="mt-6">
+                <div class="relative h-[72vh] rounded-[32px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80">
                     <div id="media-reel-loader" class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-slate-400">
                         <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
                         <span>Loading spotlight…</span>
@@ -22,15 +22,8 @@
                         <span class="text-4xl">📼</span>
                         <p>Upload a video or photo to see it here.</p>
                     </div>
-                    <div id="media-reel" class="scrollbar-thin h-full snap-y snap-mandatory overflow-y-auto px-4 py-6 space-y-10"></div>
+                    <div id="media-reel" tabindex="0" class="scrollbar-thin h-full snap-y snap-mandatory overflow-y-auto px-4 py-6 space-y-10"></div>
                 </div>
-                <button
-                    id="media-reel-load-more"
-                    type="button"
-                    class="hidden rounded-full border border-slate-700/60 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-indigo-500/60 hover:bg-indigo-600 hover:text-white"
-                >
-                    Load more moments
-                </button>
             </div>
         </section>
     </div>

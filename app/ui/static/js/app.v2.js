@@ -4,6 +4,10 @@
   const USER_ID_KEY = 'socialsphere:user_id';
   const THEME_KEY = 'socialsphere:theme';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
+  const MEDIA_REEL_CACHE_KEY = 'socialsphere:media-reel-cache';
+  const MEDIA_REEL_SCROLL_LOCK_MS = 320;
+  const MEDIA_REEL_SKELETON_COUNT = 3;
+  const POST_EDITOR_ROOT_ID = 'post-edit-overlay';
   const FEED_BATCH_SIZE = 5;
   const REALTIME_WS_PATH = '/ws/feed';
   const MESSAGES_WS_PREFIX = '/messages/ws';
@@ -58,6 +62,19 @@
     publicProfileStats: null,
     postRegistry: {},           // post_id -> post payload shown anywhere in UI
     postComments: {},           // post_id -> { items, loaded }
+    postEditor: {
+      root: null,
+      form: null,
+      captionInput: null,
+      fileInput: null,
+      removeMediaInput: null,
+      mediaStatus: null,
+      submitButton: null,
+      errorNode: null,
+      postId: null,
+      originalCaption: '',
+      escapeHandlerBound: false,
+    },
     messageReplyTarget: null,
     messageReplyElements: null,
     notifications: {
@@ -75,10 +92,11 @@
     },
     mediaReel: {
       items: [],
-      cursor: 0,
-      batchSize: 3,
       loading: false,
       signature: null,
+      fetchController: null,
+      videoObserver: null,
+      scrollEnhanced: false,
     },
     mediaComments: {},
   };
@@ -1082,6 +1100,260 @@
     state.postRegistry[String(post.id)] = post;
   }
 
+  function ensurePostEditorElements() {
+    const controls = state.postEditor;
+    if (controls.root) {
+      return controls;
+    }
+    const root = document.createElement('div');
+    root.id = POST_EDITOR_ROOT_ID;
+    root.className = 'fixed inset-0 z-[999] hidden flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm';
+    root.innerHTML = `
+      <div class="w-full max-w-lg rounded-[32px] border border-slate-800/70 bg-slate-950/95 p-6 shadow-2xl shadow-black/40">
+        <form data-role="post-edit-form" class="space-y-5">
+          <header class="flex items-center justify-between">
+            <div>
+              <p class="text-lg font-semibold text-white">Edit post</p>
+              <p class="text-xs text-slate-400">Update your caption or replace the media.</p>
+            </div>
+            <button type="button" data-role="post-edit-cancel" class="text-xs font-semibold text-slate-400 hover:text-white">Close</button>
+          </header>
+          <div class="space-y-2">
+            <label class="text-sm font-semibold text-slate-200">Caption</label>
+            <textarea data-role="post-edit-caption" rows="4" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"></textarea>
+          </div>
+          <div class="space-y-2">
+            <label class="text-sm font-semibold text-slate-200">Replace media (optional)</label>
+            <input data-role="post-edit-file" type="file" accept="image/*,video/*" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 text-sm text-slate-200 file:mr-4 file:cursor-pointer file:rounded-full file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-indigo-500" />
+            <p data-role="post-edit-media-status" class="text-xs text-slate-400">No media attached.</p>
+          </div>
+          <label class="flex items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" data-role="post-edit-remove" class="h-4 w-4 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500" />
+            Remove current media
+          </label>
+          <div data-role="post-edit-error" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100"></div>
+          <div class="flex items-center justify-end gap-3">
+            <button type="button" data-role="post-edit-cancel" class="rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white">Cancel</button>
+            <button type="submit" data-role="post-edit-submit" class="rounded-full bg-indigo-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Save changes</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(root);
+    const form = root.querySelector('[data-role="post-edit-form"]');
+    const captionInput = root.querySelector('[data-role="post-edit-caption"]');
+    const fileInput = root.querySelector('[data-role="post-edit-file"]');
+    const removeMediaInput = root.querySelector('[data-role="post-edit-remove"]');
+    const submitButton = root.querySelector('[data-role="post-edit-submit"]');
+    const mediaStatus = root.querySelector('[data-role="post-edit-media-status"]');
+    const errorNode = root.querySelector('[data-role="post-edit-error"]');
+    const cancelButtons = root.querySelectorAll('[data-role="post-edit-cancel"]');
+    cancelButtons.forEach(button => {
+      button.addEventListener('click', event => {
+        event.preventDefault();
+        closePostEditor();
+      });
+    });
+    root.addEventListener('click', event => {
+      if (event.target === root) {
+        closePostEditor();
+      }
+    });
+    if (form) {
+      form.addEventListener('submit', handlePostEditorSubmit);
+    }
+    if (!controls.escapeHandlerBound) {
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && state.postEditor.root && !state.postEditor.root.classList.contains('hidden')) {
+          closePostEditor();
+        }
+      });
+      controls.escapeHandlerBound = true;
+    }
+    controls.root = root;
+    controls.form = form;
+    controls.captionInput = captionInput;
+    controls.fileInput = fileInput;
+    controls.removeMediaInput = removeMediaInput;
+    controls.mediaStatus = mediaStatus;
+    controls.submitButton = submitButton;
+    controls.errorNode = errorNode;
+    return controls;
+  }
+
+  function openPostEditor(post) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!post || !post.id) return;
+    const controls = ensurePostEditorElements();
+    controls.postId = post.id;
+    controls.originalCaption = post.caption || '';
+    if (controls.captionInput) {
+      controls.captionInput.value = post.caption || '';
+    }
+    if (controls.fileInput) {
+      controls.fileInput.value = '';
+    }
+    if (controls.removeMediaInput) {
+      controls.removeMediaInput.checked = false;
+      controls.removeMediaInput.disabled = !post.media_url;
+    }
+    if (controls.mediaStatus) {
+      controls.mediaStatus.textContent = post.media_url ? 'Media currently attached.' : 'No media attached.';
+    }
+    if (controls.errorNode) {
+      controls.errorNode.classList.add('hidden');
+      controls.errorNode.textContent = '';
+    }
+    controls.root.classList.remove('hidden');
+    window.setTimeout(() => {
+      if (controls.captionInput) {
+        controls.captionInput.focus();
+        controls.captionInput.setSelectionRange(controls.captionInput.value.length, controls.captionInput.value.length);
+      }
+    }, 10);
+  }
+
+  function closePostEditor() {
+    const controls = state.postEditor;
+    if (!controls.root) return;
+    if (controls.form) {
+      controls.form.reset();
+    }
+    if (controls.removeMediaInput) {
+      controls.removeMediaInput.checked = false;
+      controls.removeMediaInput.disabled = false;
+    }
+    if (controls.errorNode) {
+      controls.errorNode.classList.add('hidden');
+      controls.errorNode.textContent = '';
+    }
+    controls.postId = null;
+    controls.originalCaption = '';
+    controls.root.classList.add('hidden');
+  }
+
+  async function handlePostEditorSubmit(event) {
+    event.preventDefault();
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    const controls = state.postEditor.root ? state.postEditor : ensurePostEditorElements();
+    if (!controls.postId) {
+      return;
+    }
+    const captionValue = controls.captionInput ? controls.captionInput.value.trim() : '';
+    const originalCaption = (controls.originalCaption || '').trim();
+    const fileInput = controls.fileInput;
+    const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+    const removeMedia = Boolean(controls.removeMediaInput && controls.removeMediaInput.checked);
+    const hasCaptionChange = Boolean(captionValue) && captionValue !== originalCaption;
+    if (!hasCaptionChange && !file && !removeMedia) {
+      const message = 'Make a change before saving your post.';
+      if (controls.errorNode) {
+        controls.errorNode.textContent = message;
+        controls.errorNode.classList.remove('hidden');
+      } else {
+        showToast(message, 'warning');
+      }
+      return;
+    }
+    const formData = new FormData();
+    if (hasCaptionChange) {
+      formData.append('caption', captionValue);
+    }
+    if (file) {
+      formData.append('file', file);
+    }
+    if (removeMedia) {
+      formData.append('remove_media', 'true');
+    }
+    if (controls.submitButton) {
+      controls.submitButton.disabled = true;
+      controls.submitButton.classList.add('opacity-60', 'cursor-not-allowed');
+    }
+    if (controls.errorNode) {
+      controls.errorNode.classList.add('hidden');
+    }
+    try {
+      const updatedPost = await apiFetch(`/posts/${encodeURIComponent(controls.postId)}`, {
+        method: 'PATCH',
+        body: formData,
+      });
+      applyPostEditPatch(updatedPost);
+      closePostEditor();
+      showToast('Post updated.', 'success');
+    } catch (error) {
+      if (controls.errorNode) {
+        controls.errorNode.textContent = error.message || 'Unable to update post.';
+        controls.errorNode.classList.remove('hidden');
+      } else {
+        showToast(error.message || 'Unable to update post.', 'error');
+      }
+    } finally {
+      if (controls.submitButton) {
+        controls.submitButton.disabled = false;
+        controls.submitButton.classList.remove('opacity-60', 'cursor-not-allowed');
+      }
+      if (fileInput) {
+        fileInput.value = '';
+      }
+      if (controls.removeMediaInput) {
+        controls.removeMediaInput.checked = false;
+      }
+    }
+  }
+
+  function applyPostEditPatch(updatedPost) {
+    if (!updatedPost || !updatedPost.id) return;
+    const key = String(updatedPost.id);
+    const overrides = {
+      caption: updatedPost.caption,
+      media_url: updatedPost.media_url,
+      media_asset_id: updatedPost.media_asset_id,
+    };
+    if (updatedPost.user_id) {
+      overrides.user_id = updatedPost.user_id;
+    }
+    if (updatedPost.username) {
+      overrides.username = updatedPost.username;
+    }
+    if (updatedPost.avatar_url) {
+      overrides.avatar_url = updatedPost.avatar_url;
+    }
+    const existing =
+      state.postRegistry[key] ||
+      state.feedItems.find(item => String(item.id) === key) ||
+      { id: updatedPost.id, user_id: updatedPost.user_id };
+    const merged = { ...existing, ...overrides };
+    state.postRegistry[key] = merged;
+    state.feedItems = state.feedItems.map(item => (String(item.id) === key ? { ...item, ...overrides } : item));
+    replacePostCardInstances(merged);
+  }
+
+  function replacePostCardInstances(post) {
+    if (!post || !post.id) return;
+    const postId = String(post.id);
+    const nodes = document.querySelectorAll(`[data-post-card="${postId}"]`);
+    if (!nodes.length) return;
+    const authMeta = getAuth();
+    const avatarUrl =
+      state.avatarCache[String(post.user_id)] ||
+      resolveAvatarUrl(post.avatar_url) ||
+      DEFAULT_AVATAR;
+    nodes.forEach(node => {
+      const parent = node.parentElement;
+      if (!parent) return;
+      const replacement = createPostCard({ ...post }, authMeta, avatarUrl);
+      parent.replaceChild(replacement, node);
+    });
+  }
+
   function getCommentStore(postId) {
     if (!postId) return { items: [], loaded: false };
     const key = String(postId);
@@ -1475,6 +1747,9 @@
     const el = document.createElement('article');
     el.className =
       'group rounded-3xl bg-slate-900/80 p-6 shadow-lg shadow-black/20 transition hover:-translate-y-1 hover:shadow-indigo-500/20 card-surface';
+    if (post?.id) {
+      el.dataset.postCard = String(post.id);
+    }
     const postId = post?.id;
     const rawCurrentUsername = typeof currentUserMeta === 'string' ? currentUserMeta : currentUserMeta?.username;
     const currentUsername = rawCurrentUsername ? String(rawCurrentUsername).replace(/^@/, '') : null;
@@ -1512,6 +1787,16 @@
         >
           <span aria-hidden="true">🗑</span>
           <span>Delete</span>
+        </button>`
+      : '';
+    const editButtonMarkup = isCurrentUser
+      ? `<button
+          data-role="edit-post"
+          data-post-id="${post.id}"
+          class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600"
+        >
+          <span aria-hidden="true">✎</span>
+          <span>Edit</span>
         </button>`
       : '';
     const commentPanelMarkup = postId
@@ -1620,6 +1905,7 @@
           >${commentCount}</span>
         </button>
         <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>Share</span></button>
+        ${editButtonMarkup}
         ${deleteButtonMarkup}
       </footer>
       ${commentPanelMarkup}
@@ -1666,6 +1952,13 @@
       deleteButton.addEventListener('click', event => {
         event.preventDefault();
         handleDeletePost(post, el, deleteButton);
+      });
+    }
+    const editButton = el.querySelector('[data-role="edit-post"]');
+    if (editButton) {
+      editButton.addEventListener('click', event => {
+        event.preventDefault();
+        openPostEditor(post);
       });
     }
     const likeButton = el.querySelector('[data-role="like-button"]');
@@ -3404,77 +3697,247 @@
     }
   }
 
+  function hydrateMediaReelFromCache() {
+    const cached = loadJson(MEDIA_REEL_CACHE_KEY, null);
+    if (!cached || !Array.isArray(cached.items) || !cached.items.length) {
+      return false;
+    }
+    state.mediaReel.items = cached.items;
+    state.mediaReel.signature = cached.signature || null;
+    renderFullMediaReel();
+    return true;
+  }
+
+  function persistMediaReelCache(items, signature) {
+    saveJson(MEDIA_REEL_CACHE_KEY, {
+      items,
+      signature,
+      cached_at: Date.now(),
+    });
+  }
+
+  function abortActiveMediaReelFetch() {
+    if (state.mediaReel.fetchController) {
+      try {
+        state.mediaReel.fetchController.abort();
+      } catch (_) {
+        /* noop */
+      }
+      state.mediaReel.fetchController = null;
+    }
+  }
+
+  function renderMediaReelSkeleton(count = MEDIA_REEL_SKELETON_COUNT) {
+    const container = document.getElementById('media-reel');
+    if (!container) return;
+    container.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < count; i += 1) {
+      const card = document.createElement('article');
+      card.className = 'snap-start rounded-[32px] border border-slate-800/40 bg-slate-950/40 p-6 animate-pulse';
+      card.style.scrollSnapAlign = 'start';
+      card.style.scrollSnapStop = 'always';
+      card.innerHTML = `
+        <div class="flex items-center gap-4">
+          <div class="h-12 w-12 rounded-full bg-slate-800/70"></div>
+          <div class="flex-1 space-y-2">
+            <div class="h-3 w-32 rounded-full bg-slate-800/70"></div>
+            <div class="h-3 w-24 rounded-full bg-slate-900/80"></div>
+          </div>
+        </div>
+        <div class="mt-4 h-[60vh] w-full rounded-[24px] bg-slate-900/70"></div>
+      `;
+      fragment.appendChild(card);
+    }
+    container.appendChild(fragment);
+  }
+
+  function setupMediaReelScrollBehavior() {
+    const container = document.getElementById('media-reel');
+    if (!container || state.mediaReel.scrollEnhanced) return;
+    state.mediaReel.scrollEnhanced = true;
+    container.style.scrollBehavior = 'smooth';
+    let wheelLocked = false;
+    const scrollByStep = direction => {
+      const step = container.clientHeight * 0.92 || 600;
+      container.scrollBy({ top: direction * step, behavior: 'smooth' });
+    };
+    container.addEventListener(
+      'wheel',
+      event => {
+        if (event.ctrlKey || Math.abs(event.deltaY) < 20) {
+          return;
+        }
+        event.preventDefault();
+        if (wheelLocked) return;
+        wheelLocked = true;
+        const direction = event.deltaY > 0 ? 1 : -1;
+        scrollByStep(direction);
+        window.setTimeout(() => {
+          wheelLocked = false;
+        }, MEDIA_REEL_SCROLL_LOCK_MS);
+      },
+      { passive: false }
+    );
+    container.addEventListener(
+      'keydown',
+      event => {
+        if (event.defaultPrevented) return;
+        if (event.key === 'ArrowDown' || event.key === 'PageDown') {
+          event.preventDefault();
+          scrollByStep(1);
+        } else if (event.key === 'ArrowUp' || event.key === 'PageUp') {
+          event.preventDefault();
+          scrollByStep(-1);
+        } else if (event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          scrollByStep(event.shiftKey ? -1 : 1);
+        }
+      },
+      { passive: false }
+    );
+  }
+
+  function attachVideoSource(video, autoplay = false) {
+    if (!video) return;
+    if (video.dataset.src) {
+      video.src = video.dataset.src;
+      video.removeAttribute('data-src');
+      video.load();
+    }
+    if (autoplay && typeof video.play === 'function') {
+      video.play().catch(() => {
+        /* Ignore autoplay failures */
+      });
+    }
+  }
+
+  function setupMediaReelVideoObserver() {
+    if (state.mediaReel.videoObserver) {
+      state.mediaReel.videoObserver.disconnect();
+      state.mediaReel.videoObserver = null;
+    }
+    const videos = document.querySelectorAll('#media-reel [data-media-role="reel-video"]');
+    if (!videos.length) {
+      return;
+    }
+    if (typeof IntersectionObserver === 'undefined') {
+      videos.forEach(video => attachVideoSource(video, true));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          const video = entry.target;
+          if (entry.isIntersecting) {
+            attachVideoSource(video, true);
+          } else if (typeof video.pause === 'function') {
+            try {
+              video.pause();
+              video.currentTime = 0;
+            } catch (_) {
+              /* noop */
+            }
+          }
+        });
+      },
+      { threshold: 0.65 }
+    );
+    videos.forEach((video, index) => {
+      if (index === 0) {
+        attachVideoSource(video, true);
+      }
+      observer.observe(video);
+    });
+    state.mediaReel.videoObserver = observer;
+  }
+
   async function loadMediaReel(options = {}) {
     const normalized = typeof options === 'boolean' ? { forceRefresh: options } : options;
     const { forceRefresh = false, silent = false } = normalized;
     const container = document.getElementById('media-reel');
     const loader = document.getElementById('media-reel-loader');
     const empty = document.getElementById('media-reel-empty');
-    const loadMore = document.getElementById('media-reel-load-more');
     if (!container) return;
-    if (state.mediaReel.loading) return;
+    if (state.mediaReel.loading) {
+      abortActiveMediaReelFetch();
+    }
     state.mediaReel.loading = true;
     if (!silent && loader) loader.classList.remove('hidden');
     if (empty) empty.classList.add('hidden');
-    if (forceRefresh) {
+    if (forceRefresh && !silent) {
       state.mediaReel.items = [];
-      state.mediaReel.cursor = 0;
       container.innerHTML = '';
+    }
+    if (forceRefresh) {
       state.mediaComments = {};
     }
+    if (!silent && !state.mediaReel.items.length) {
+      renderMediaReelSkeleton();
+    }
+    let controller = null;
     try {
-      const response = await apiFetch(`/media/feed?limit=${MEDIA_REEL_DEFAULT_LIMIT}`);
+      controller = new AbortController();
+      state.mediaReel.fetchController = controller;
+      const response = await apiFetch(`/media/feed?limit=${MEDIA_REEL_DEFAULT_LIMIT}`, {
+        signal: controller.signal,
+      });
       const items = Array.isArray(response.items) ? response.items : [];
       const signature = computeMediaSignature(items);
-      if (!forceRefresh && state.mediaReel.signature === signature) {
+      const signatureChanged = state.mediaReel.signature !== signature;
+      if (!forceRefresh && !signatureChanged) {
         return;
       }
       state.mediaReel.signature = signature;
       state.mediaReel.items = items;
-      state.mediaReel.cursor = 0;
       container.innerHTML = '';
+      state.mediaComments = {};
       if (!items.length && empty) {
         empty.classList.remove('hidden');
       } else if (empty) {
         empty.classList.add('hidden');
       }
-      if (loadMore) {
-        loadMore.classList.toggle('hidden', items.length <= state.mediaReel.batchSize);
-        loadMore.onclick = () => renderNextMediaBatch();
-      }
-      renderNextMediaBatch();
+      renderFullMediaReel();
+      persistMediaReelCache(items, signature);
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        return;
+      }
       showToast(error.message || 'Unable to load media feed.', 'error');
       if (empty) empty.classList.remove('hidden');
     } finally {
       state.mediaReel.loading = false;
+      if (state.mediaReel.fetchController === controller) {
+        state.mediaReel.fetchController = null;
+      }
       if (loader) loader.classList.add('hidden');
     }
   }
 
-  function renderNextMediaBatch() {
+  function renderFullMediaReel() {
     const container = document.getElementById('media-reel');
-    const loadMore = document.getElementById('media-reel-load-more');
     if (!container) return;
-    const slice = state.mediaReel.items.slice(state.mediaReel.cursor, state.mediaReel.cursor + state.mediaReel.batchSize);
-    slice.forEach(asset => {
+    container.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    state.mediaReel.items.forEach(asset => {
       updateAvatarCacheEntry(asset.user_id, asset.avatar_url);
-      container.appendChild(createMediaCard(asset));
+      fragment.appendChild(createMediaCard(asset));
     });
-    state.mediaReel.cursor += slice.length;
-    if (loadMore) {
-      loadMore.classList.toggle('hidden', state.mediaReel.cursor >= state.mediaReel.items.length);
-    }
+    container.appendChild(fragment);
+    setupMediaReelScrollBehavior();
+    setupMediaReelVideoObserver();
   }
 
   function createMediaCard(asset) {
     const wrapper = document.createElement('article');
     wrapper.className = 'snap-start rounded-[32px] border border-slate-800/60 bg-slate-950/70 p-6 shadow-2xl shadow-black/40';
+    wrapper.style.scrollSnapAlign = 'start';
+    wrapper.style.scrollSnapStop = 'always';
     wrapper.dataset.mediaId = asset.id;
     const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
     const mediaMarkup = isVideo
-      ? `<video data-media-role="reel-video" src="${asset.url}" class="h-full w-full object-cover" playsinline loop muted controls></video>`
-      : `<img src="${asset.url}" alt="Media item" class="h-full w-full object-cover" />`;
+      ? `<video data-media-role="reel-video" data-src="${asset.url}" class="h-full w-full object-cover" preload="metadata" playsinline loop muted controls></video>`
+      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="h-full w-full object-cover" />`;
     const displayName = asset.display_name || asset.username || 'Unknown creator';
     const username = asset.username ? `@${asset.username}` : '';
     const likeCount = typeof asset.like_count === 'number' ? asset.like_count : 0;
@@ -3538,12 +4001,6 @@
     `;
     const avatarImg = wrapper.querySelector('[data-media-role="avatar"]');
     applyAvatarToImg(avatarImg, asset.avatar_url);
-    const mediaNode = wrapper.querySelector('[data-media-role="reel-video"]');
-    if (mediaNode && typeof mediaNode.play === 'function') {
-      mediaNode.play().catch(() => {
-        /* Ignore autoplay errors */
-      });
-    }
     const likeButton = wrapper.querySelector('[data-media-role="like-button"]');
     if (likeButton) {
       applyMediaLikeButtonState(likeButton, viewerHasLiked, likeCount);
@@ -3599,7 +4056,9 @@
     const form = document.getElementById('media-upload-form');
     const feedback = document.getElementById('media-upload-feedback');
     renderMediaHistory();
-    loadMediaReel({ forceRefresh: true }).catch(error => {
+    const hydratedFromCache = hydrateMediaReelFromCache();
+    setupMediaReelScrollBehavior();
+    loadMediaReel({ forceRefresh: !hydratedFromCache }).catch(error => {
       console.warn('[media] failed to hydrate reel', error);
     });
 

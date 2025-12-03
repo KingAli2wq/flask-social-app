@@ -29,6 +29,7 @@ from ..services import (
     list_feed_records,
     set_post_dislike_state,
     set_post_like_state,
+    update_post_record,
 )
 from ..services.realtime import feed_updates_manager
 
@@ -81,6 +82,28 @@ async def create_post_endpoint(
     except Exception:  # pragma: no cover - best effort logging
         logger.exception("Failed to broadcast feed update")
 
+    return PostResponse.model_validate(post)
+
+
+@router.patch("/{post_id}", response_model=PostResponse)
+async def update_post_endpoint(
+    post_id: UUID,
+    caption: str | None = Form(None),
+    media_asset_id: str | None = Form(None),
+    remove_media: bool = Form(False),
+    file: UploadFile | None = File(None),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostResponse:
+    post = await update_post_record(
+        db,
+        post_id=post_id,
+        requester_id=current_user.id,
+        caption=caption,
+        media_asset_id=media_asset_id,
+        file=file,
+        remove_media=remove_media,
+    )
     return PostResponse.model_validate(post)
 
 

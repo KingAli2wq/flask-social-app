@@ -44,6 +44,7 @@ from .post_service import (
     list_post_comments,
     set_post_dislike_state,
     set_post_like_state,
+    update_post_record,
 )
 from .profile_service import get_profile, update_profile
 from .settings_service import (
@@ -99,6 +100,7 @@ __all__ = [
     "list_post_comments",
     "set_post_dislike_state",
     "set_post_like_state",
+    "update_post_record",
     "FollowStats",
     "follow_user",
     "unfollow_user",
