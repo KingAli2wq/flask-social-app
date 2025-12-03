@@ -5,6 +5,8 @@ from .auth_service import (
     decode_access_token,
     get_current_user,
     get_optional_user,
+    require_owner,
+    require_roles,
     register_user,
 )
 from .cleanup_service import CleanupError, CleanupSummary, run_cleanup
@@ -65,6 +67,8 @@ __all__ = [
     "decode_access_token",
     "get_current_user",
     "get_optional_user",
+    "require_roles",
+    "require_owner",
     "create_group_chat",
     "delete_message",
     "list_messages",

@@ -23,6 +23,7 @@ class AuthResponse(BaseModel):
     user_id: UUID
     token_type: str = "bearer"
     bio: str | None = None
+    role: str | None = None
 
 
 class UserPublicProfile(BaseModel):

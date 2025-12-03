@@ -27,6 +27,7 @@ class MediaFeedItem(BaseModel):
     username: str | None = None
     display_name: str | None = None
     avatar_url: str | None = None
+    role: str | None = None
     url: str
     content_type: str
     created_at: datetime
@@ -61,6 +62,7 @@ class MediaCommentResponse(BaseModel):
     user_id: UUID
     username: str | None = None
     avatar_url: str | None = None
+    role: str | None = None
     content: str
     parent_id: UUID | None = None
     created_at: datetime

@@ -12,7 +12,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import MediaAsset, MediaComment, MediaDislike, MediaLike, User
+from ..models import MediaAsset, MediaComment, MediaDislike, MediaLike, Post, User
+from .spaces_service import SpacesDeletionError, delete_file_from_spaces
 
 
 def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
@@ -45,6 +46,7 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
         User.username.label("username"),
         User.display_name.label("display_name"),
         User.avatar_url.label("avatar_url"),
+        User.role.label("role"),
         like_count_subquery,
         dislike_count_subquery,
         comment_count_subquery,
@@ -84,6 +86,8 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
         idx += 1
         avatar_value = row[idx]
         idx += 1
+        role_value = row[idx]
+        idx += 1
         like_count_value = row[idx]
         idx += 1
         dislike_count_value = row[idx]
@@ -105,6 +109,7 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
             "username": cast(str | None, username_value),
             "display_name": cast(str | None, display_name_value),
             "avatar_url": cast(str | None, avatar_value),
+            "role": cast(str | None, role_value),
             "url": asset.url,
             "content_type": asset.content_type,
             "created_at": asset.created_at,
@@ -229,7 +234,7 @@ def set_media_dislike_state(
 def list_media_comments(db: Session, *, media_asset_id: UUID) -> list[dict[str, Any]]:
     _get_media_asset_or_404(db, media_asset_id)
     stmt = (
-        select(MediaComment, User.username, User.avatar_url)
+        select(MediaComment, User.username, User.avatar_url, User.role)
         .join(User, MediaComment.user_id == User.id)
         .where(MediaComment.media_asset_id == media_asset_id)
         .order_by(MediaComment.created_at.asc())
@@ -239,13 +244,14 @@ def list_media_comments(db: Session, *, media_asset_id: UUID) -> list[dict[str, 
     nodes: dict[UUID, dict[str, Any]] = {}
     roots: list[dict[str, Any]] = []
 
-    for comment, username, avatar_url in rows:
+    for comment, username, avatar_url, role in rows:
         node = {
             "id": comment.id,
             "media_asset_id": comment.media_asset_id,
             "user_id": comment.user_id,
             "username": cast(str | None, username),
             "avatar_url": cast(str | None, avatar_url),
+            "role": cast(str | None, role),
             "content": comment.content,
             "parent_id": comment.parent_id,
             "created_at": comment.created_at,
@@ -299,11 +305,42 @@ def create_media_comment(
         "user_id": author.id,
         "username": author.username,
         "avatar_url": author.avatar_url,
+        "role": getattr(author, "role", None),
         "content": comment.content,
         "parent_id": comment.parent_id,
         "created_at": comment.created_at,
         "replies": [],
     }
+
+
+def delete_media_asset(
+    db: Session,
+    *,
+    asset_id: UUID,
+    delete_remote: bool = True,
+) -> None:
+    asset = db.get(MediaAsset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
+
+    key = asset.key
+    if delete_remote and key:
+        try:
+            delete_file_from_spaces(key)
+        except SpacesDeletionError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    related_posts = db.query(Post).where(Post.media_asset_id == asset.id).all()
+    for post in related_posts:
+        post.media_asset_id = None
+        post.media_url = None
+
+    db.delete(asset)
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete media asset") from exc
 
 
 def delete_old_media(db: Session, *, older_than: timedelta | None = None) -> int:
@@ -342,6 +379,7 @@ __all__ = [
     "set_media_dislike_state",
     "list_media_comments",
     "create_media_comment",
+    "delete_media_asset",
     "delete_old_media",
     "store_upload",
 ]

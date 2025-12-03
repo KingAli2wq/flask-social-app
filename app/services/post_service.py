@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
+from .media_service import delete_media_asset
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
 
@@ -125,13 +126,16 @@ async def update_post_record(
     *,
     post_id: UUID,
     requester_id: UUID,
+    requester_role: str | None = None,
     caption: str | None = None,
     media_asset_id: UUID | str | None = None,
     file: UploadFile | None = None,
     remove_media: bool = False,
 ) -> Post:
     post = _get_post_or_404(db, post_id)
-    if post.user_id != requester_id:
+    normalized_role = (requester_role or "").lower()
+    can_edit_any = normalized_role in {"owner", "admin"}
+    if post.user_id != requester_id and not can_edit_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to edit this post")
 
     normalized_asset_id = _normalize_media_asset_id(media_asset_id)
@@ -205,6 +209,7 @@ def list_feed_records(
         Post,
         User.username.label("username"),
         User.avatar_url.label("avatar_url"),
+        User.role.label("author_role"),
     ]
     statement = select(*base_columns).join(User, Post.user_id == User.id)
 
@@ -267,6 +272,8 @@ def list_feed_records(
         idx += 1
         avatar_value = row[idx]
         idx += 1
+        role_value = row[idx]
+        idx += 1
         like_count_value = row[idx]
         idx += 1
         dislike_count_value = row[idx]
@@ -300,6 +307,7 @@ def list_feed_records(
             "created_at": post.created_at,
             "username": username,
             "avatar_url": avatar_url,
+            "author_role": cast(str | None, role_value),
             "like_count": int(like_count_value or 0),
             "dislike_count": int(dislike_count_value or 0),
             "comment_count": int(comment_count_value or 0),
@@ -415,7 +423,7 @@ def set_post_dislike_state(
 def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
     _get_post_or_404(db, post_id)
     stmt = (
-        select(PostComment, User.username, User.avatar_url)
+        select(PostComment, User.username, User.avatar_url, User.role)
         .join(User, PostComment.user_id == User.id)
         .where(PostComment.post_id == post_id)
         .order_by(PostComment.created_at.asc())
@@ -425,13 +433,14 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
     nodes: dict[UUID, dict[str, Any]] = {}
     roots: list[dict[str, Any]] = []
 
-    for comment, username, avatar_url in rows:
+    for comment, username, avatar_url, role in rows:
         node = {
             "id": comment.id,
             "post_id": comment.post_id,
             "user_id": comment.user_id,
             "username": cast(str | None, username),
             "avatar_url": cast(str | None, avatar_url),
+            "role": cast(str | None, role),
             "content": comment.content,
             "parent_id": comment.parent_id,
             "created_at": comment.created_at,
@@ -480,6 +489,7 @@ def create_post_comment(
         "user_id": author.id,
         "username": author.username,
         "avatar_url": author.avatar_url,
+        "role": getattr(author, "role", None),
         "content": comment.content,
         "parent_id": comment.parent_id,
         "created_at": comment.created_at,
@@ -487,17 +497,35 @@ def create_post_comment(
     }
 
 
-def delete_post_record(db: Session, *, post_id: UUID, requester_id: UUID) -> None:
-    """Delete a post if the requester is the author."""
+def delete_post_record(
+    db: Session,
+    *,
+    post_id: UUID,
+    requester_id: UUID,
+    requester_role: str | None = None,
+    delete_media: bool = True,
+) -> None:
+    """Delete a post when requester is author or privileged role."""
 
     post = db.get(Post, post_id)
     if post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
     post_author_id = cast(UUID, post.user_id)
-    if post_author_id != requester_id:
+    normalized_role = (requester_role or "").lower()
+    can_delete_any = normalized_role in {"owner", "admin"}
+    if post_author_id != requester_id and not can_delete_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this post")
+    asset_id = post.media_asset_id
     db.delete(post)
     db.commit()
+
+    if delete_media and asset_id:
+        try:
+            delete_media_asset(db, asset_id=asset_id, delete_remote=True)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                return
+            raise
 
 
 def delete_old_posts(db: Session, *, older_than: timedelta | None = None) -> int:

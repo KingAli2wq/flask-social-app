@@ -58,6 +58,10 @@ class SpacesUploadError(RuntimeError):
     """Raised when an upload to DigitalOcean Spaces fails."""
 
 
+class SpacesDeletionError(RuntimeError):
+    """Raised when deleting an object from DigitalOcean Spaces fails."""
+
+
 @lru_cache(maxsize=1)
 def load_spaces_config() -> SpacesConfig:
     """Read and validate DigitalOcean Spaces configuration from the environment."""
@@ -163,6 +167,23 @@ def build_public_url(key: str) -> str:
     return f"{endpoint}/{normalized_key}" if normalized_key else endpoint
 
 
+def delete_file_from_spaces(key: str, *, client: BaseClient | None = None) -> None:
+    """Remove an object from DigitalOcean Spaces."""
+
+    if not key:
+        return
+
+    config = load_spaces_config()
+    normalized_key = key.lstrip("/")
+    s3_client = client or get_spaces_client()
+
+    try:
+        s3_client.delete_object(Bucket=config.bucket, Key=normalized_key)
+    except (ClientError, BotoCoreError) as exc:  # pragma: no cover - network bound
+        logger.exception("Failed to delete Spaces object %s", normalized_key)
+        raise SpacesDeletionError("Unable to delete media from storage") from exc
+
+
 async def upload_file_to_spaces(
     file: UploadFile,
     *,
@@ -242,9 +263,11 @@ __all__ = [
     "SpacesConfig",
     "SpacesConfigurationError",
     "SpacesUploadError",
+    "SpacesDeletionError",
     "SpacesUploadResult",
     "build_public_url",
     "load_spaces_config",
     "get_spaces_client",
     "upload_file_to_spaces",
+    "delete_file_from_spaces",
 ]

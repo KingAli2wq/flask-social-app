@@ -27,6 +27,7 @@ class User(Base):
     location = Column(String(255), nullable=True)
     website = Column(String(255), nullable=True)
     avatar_url = Column(String(1024), nullable=True)
+    role = Column(String(32), nullable=False, server_default="user", default="user")
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
     email_verification_code = Column(String(12), nullable=True)
     email_verification_sent_at = Column(DateTime(timezone=True), nullable=True)

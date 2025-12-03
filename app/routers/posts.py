@@ -99,6 +99,7 @@ async def update_post_endpoint(
         db,
         post_id=post_id,
         requester_id=current_user.id,
+        requester_role=getattr(current_user, "role", None),
         caption=caption,
         media_asset_id=media_asset_id,
         file=file,
@@ -208,4 +209,10 @@ async def delete_post_endpoint(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    delete_post_record(db, post_id=post_id, requester_id=current_user.id)
+    delete_post_record(
+        db,
+        post_id=post_id,
+        requester_id=current_user.id,
+        requester_role=getattr(current_user, "role", None),
+        delete_media=True,
+    )

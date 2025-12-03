@@ -167,6 +167,22 @@ async def get_optional_user(
     return db.get(User, user_id)
 
 
+def require_roles(*allowed_roles: str):
+    normalized = {role.lower() for role in allowed_roles if role}
+
+    async def _resolver(user: User = Depends(get_current_user)) -> User:
+        role = (getattr(user, "role", None) or "user").lower()
+        if normalized and role not in normalized:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+
+    return _resolver
+
+
+def require_owner():
+    return require_roles("owner")
+
+
 __all__ = [
     "register_user",
     "authenticate_user",
@@ -176,4 +192,6 @@ __all__ = [
     "verify_password",
     "get_current_user",
     "get_optional_user",
+    "require_roles",
+    "require_owner",
 ]

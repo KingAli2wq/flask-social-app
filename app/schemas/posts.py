@@ -29,6 +29,7 @@ class PostResponse(BaseModel):
     created_at: datetime
     username: str | None = None
     avatar_url: str | None = None
+    author_role: str | None = None
     follow_priority: int | None = None
     is_following_author: bool | None = None
     like_count: int = 0
@@ -66,6 +67,7 @@ class PostCommentResponse(BaseModel):
     user_id: UUID
     username: str | None = None
     avatar_url: str | None = None
+    role: str | None = None
     content: str
     parent_id: UUID | None = None
     created_at: datetime

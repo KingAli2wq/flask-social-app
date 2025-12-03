@@ -11,11 +11,13 @@ class ProfileResponse(BaseModel):
 
     id: UUID
     username: str
+    display_name: str | None = None
     email: str | None
     bio: str | None
     location: str | None
     website: HttpUrl | None = None
     avatar_url: HttpUrl | str | None = None
+    role: str | None = None
     created_at: datetime
     last_active_at: datetime
 
