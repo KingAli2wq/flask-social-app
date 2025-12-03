@@ -73,6 +73,14 @@
       data: null,
       verificationCooldownHandle: null,
     },
+    mediaReel: {
+      items: [],
+      cursor: 0,
+      batchSize: 3,
+      loading: false,
+      signature: null,
+    },
+    mediaComments: {},
   };
 
   // -----------------------------------------------------------------------
@@ -3048,6 +3056,540 @@
   // Media
   // -----------------------------------------------------------------------
 
+  const MEDIA_REEL_DEFAULT_LIMIT = 40;
+
+  function computeMediaSignature(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return `len:${items ? items.length : 0}`;
+    }
+    return items
+      .map(item => `${item?.id ?? 'unknown'}:${item?.like_count ?? 0}:${item?.dislike_count ?? 0}:${item?.comment_count ?? 0}:${item?.created_at ?? ''}`)
+      .join('|');
+  }
+
+  function getMediaCommentStore(assetId) {
+    if (!assetId) return { items: [], loaded: false };
+    const key = String(assetId);
+    if (!state.mediaComments[key]) {
+      state.mediaComments[key] = { items: [], loaded: false };
+    }
+    return state.mediaComments[key];
+  }
+
+  function applyMediaLikeButtonState(button, isLiked, likeCount) {
+    if (!button) return;
+    const baseClasses = 'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
+    button.dataset.liked = isLiked ? 'true' : 'false';
+    button.className = isLiked
+      ? `${baseClasses} border-emerald-400/70 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20`
+      : `${baseClasses} border-slate-700/60 bg-slate-900/70 text-white hover:border-emerald-400/60 hover:text-emerald-100`;
+    const label = button.querySelector('[data-media-role="like-label"]');
+    const count = button.querySelector('[data-media-role="like-count"]');
+    if (label) label.textContent = isLiked ? 'Liked' : 'Like';
+    if (count) count.textContent = String(likeCount ?? 0);
+  }
+
+  function applyMediaDislikeButtonState(button, isDisliked, dislikeCount) {
+    if (!button) return;
+    const baseClasses = 'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
+    button.dataset.disliked = isDisliked ? 'true' : 'false';
+    button.className = isDisliked
+      ? `${baseClasses} border-amber-400/70 bg-amber-500/15 text-amber-50`
+      : `${baseClasses} border-slate-700/60 bg-slate-900/70 text-white hover:border-amber-400/60 hover:text-amber-200`;
+    const label = button.querySelector('[data-media-role="dislike-label"]');
+    const count = button.querySelector('[data-media-role="dislike-count"]');
+    if (label) label.textContent = isDisliked ? 'Disliked' : 'Dislike';
+    if (count) count.textContent = String(dislikeCount ?? 0);
+  }
+
+  function updateMediaLikeButtonsForAsset(assetId, isLiked, likeCount) {
+    document.querySelectorAll(`[data-media-role="like-button"][data-media-id="${assetId}"]`).forEach(button => {
+      applyMediaLikeButtonState(button, isLiked, likeCount);
+    });
+  }
+
+  function updateMediaDislikeButtonsForAsset(assetId, isDisliked, dislikeCount) {
+    document.querySelectorAll(`[data-media-role="dislike-button"][data-media-id="${assetId}"]`).forEach(button => {
+      applyMediaDislikeButtonState(button, isDisliked, dislikeCount);
+    });
+  }
+
+  function updateMediaCommentCountDisplays(assetId, nextCount) {
+    const value = typeof nextCount === 'number' ? nextCount : 0;
+    document.querySelectorAll(`[data-media-role="comment-count"][data-media-id="${assetId}"]`).forEach(node => {
+      node.textContent = String(value);
+    });
+  }
+
+  function setMediaReelEngagementSnapshot(snapshot) {
+    if (!snapshot || !snapshot.media_asset_id) return;
+    const key = String(snapshot.media_asset_id);
+    state.mediaReel.items.forEach(item => {
+      if (String(item.id) === key) {
+        item.like_count = snapshot.like_count;
+        item.dislike_count = snapshot.dislike_count;
+        item.comment_count = snapshot.comment_count;
+        item.viewer_has_liked = snapshot.viewer_has_liked;
+        item.viewer_has_disliked = snapshot.viewer_has_disliked;
+      }
+    });
+    updateMediaLikeButtonsForAsset(key, snapshot.viewer_has_liked, snapshot.like_count);
+    updateMediaDislikeButtonsForAsset(key, snapshot.viewer_has_disliked, snapshot.dislike_count);
+    updateMediaCommentCountDisplays(key, snapshot.comment_count);
+  }
+
+  async function toggleMediaLike(asset, button) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!asset?.id || !button || button.disabled) return;
+    const shouldUnlike = button.dataset.liked === 'true';
+    button.disabled = true;
+    button.classList.add('opacity-70');
+    try {
+      const snapshot = await apiFetch(`/media/${encodeURIComponent(asset.id)}/likes`, {
+        method: shouldUnlike ? 'DELETE' : 'POST'
+      });
+      setMediaReelEngagementSnapshot(snapshot);
+      asset.viewer_has_liked = snapshot.viewer_has_liked;
+      asset.like_count = snapshot.like_count;
+      asset.viewer_has_disliked = snapshot.viewer_has_disliked;
+      asset.dislike_count = snapshot.dislike_count;
+      if (!shouldUnlike) {
+        showToast('Media liked.', 'success');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update like.', 'error');
+    } finally {
+      button.disabled = false;
+      button.classList.remove('opacity-70');
+    }
+  }
+
+  async function toggleMediaDislike(asset, button) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!asset?.id || !button || button.disabled) return;
+    const shouldUndislike = button.dataset.disliked === 'true';
+    button.disabled = true;
+    button.classList.add('opacity-70');
+    try {
+      const snapshot = await apiFetch(`/media/${encodeURIComponent(asset.id)}/dislikes`, {
+        method: shouldUndislike ? 'DELETE' : 'POST'
+      });
+      setMediaReelEngagementSnapshot(snapshot);
+      asset.viewer_has_disliked = snapshot.viewer_has_disliked;
+      asset.dislike_count = snapshot.dislike_count;
+      asset.viewer_has_liked = snapshot.viewer_has_liked;
+      asset.like_count = snapshot.like_count;
+      if (!shouldUndislike) {
+        showToast('Media disliked.', 'info');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update dislike.', 'error');
+    } finally {
+      button.disabled = false;
+      button.classList.remove('opacity-70');
+    }
+  }
+
+  function appendMediaCommentRecord(assetId, comment) {
+    const store = getMediaCommentStore(assetId);
+    if (!store.loaded) {
+      store.items.push(comment);
+      return;
+    }
+    if (comment.parent_id) {
+      const parent = findCommentById(store.items, comment.parent_id);
+      if (!parent) {
+        store.items.push(comment);
+        return;
+      }
+      if (!Array.isArray(parent.replies)) parent.replies = [];
+      parent.replies.push(comment);
+    } else {
+      store.items.push(comment);
+    }
+  }
+
+  function renderMediaCommentList(assetId, comments, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    const emptyState = container.parentElement?.querySelector('[data-media-role="comments-empty"]');
+    const hasComments = Array.isArray(comments) && comments.length > 0;
+    if (!hasComments) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      return;
+    }
+    if (emptyState) emptyState.classList.add('hidden');
+    comments.forEach(comment => {
+      container.appendChild(createMediaCommentBlock(assetId, comment, 0));
+    });
+  }
+
+  function createMediaCommentBlock(assetId, comment, depth) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 shadow-sm shadow-black/10';
+    wrapper.dataset.mediaCommentId = comment.id;
+    if (depth > 0) {
+      wrapper.style.marginLeft = `${Math.min(depth, 3) * 16}px`;
+    }
+    const avatarId = `media-comment-avatar-${comment.id}`;
+    const author = comment.username ? `@${comment.username}` : 'User';
+    wrapper.innerHTML = `
+      <div class="flex items-start gap-3">
+        <div class="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+          <img id="${avatarId}" alt="${author}" class="h-full w-full object-cover" />
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <span class="font-semibold text-slate-200">${author}</span>
+            <time class="text-[11px]">${formatDate(comment.created_at)}</time>
+          </div>
+          <p class="mt-1 text-sm text-slate-200">${comment.content || ''}</p>
+          <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
+            <button type="button" data-media-role="comment-reply" class="hover:text-white">Reply</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const avatarNode = wrapper.querySelector(`#${avatarId}`);
+    applyAvatarToImg(avatarNode, comment.avatar_url);
+    const replyButton = wrapper.querySelector('[data-media-role="comment-reply"]');
+    if (replyButton) {
+      replyButton.addEventListener('click', () => {
+        const panel = wrapper.closest('[data-media-role="comment-panel"]');
+        beginMediaCommentReply(assetId, comment, panel);
+      });
+    }
+    if (Array.isArray(comment.replies) && comment.replies.length) {
+      const repliesContainer = document.createElement('div');
+      repliesContainer.className = 'mt-3 space-y-3';
+      comment.replies.forEach(reply => {
+        repliesContainer.appendChild(createMediaCommentBlock(assetId, reply, depth + 1));
+      });
+      wrapper.appendChild(repliesContainer);
+    }
+    return wrapper;
+  }
+
+  function resetMediaCommentReply(panel) {
+    if (!panel) return;
+    const form = panel.querySelector('[data-media-role="comment-form"]');
+    if (form) delete form.dataset.replyId;
+    const pill = panel.querySelector('[data-media-role="comment-reply-pill"]');
+    if (pill) pill.classList.add('hidden');
+    const usernameNode = panel.querySelector('[data-media-role="comment-reply-username"]');
+    if (usernameNode) usernameNode.textContent = '@commenter';
+    const previewNode = panel.querySelector('[data-media-role="comment-reply-preview"]');
+    if (previewNode) previewNode.textContent = '';
+  }
+
+  function beginMediaCommentReply(assetId, comment, panel) {
+    if (!panel || !comment) return;
+    const form = panel.querySelector('[data-media-role="comment-form"]');
+    const pill = panel.querySelector('[data-media-role="comment-reply-pill"]');
+    const usernameNode = panel.querySelector('[data-media-role="comment-reply-username"]');
+    const previewNode = panel.querySelector('[data-media-role="comment-reply-preview"]');
+    if (!form || !pill || !usernameNode) return;
+    form.dataset.replyId = comment.id;
+    usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
+    if (previewNode) {
+      const preview = (comment.content || '').trim();
+      previewNode.textContent = preview ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '') : 'No text available.';
+    }
+    pill.classList.remove('hidden');
+    const textarea = panel.querySelector('textarea');
+    if (textarea) {
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    }
+  }
+
+  async function loadCommentsForMediaAsset(assetId, panel) {
+    if (!panel || !assetId) return;
+    const list = panel.querySelector('[data-media-role="comment-list"]');
+    const store = getMediaCommentStore(assetId);
+    if (store.loaded) {
+      renderMediaCommentList(assetId, store.items, list);
+      return;
+    }
+    panel.classList.add('opacity-70');
+    try {
+      const response = await apiFetch(`/media/${encodeURIComponent(assetId)}/comments`);
+      const fetched = Array.isArray(response.items) ? response.items : [];
+      store.items = fetched;
+      store.loaded = true;
+      renderMediaCommentList(assetId, store.items, list);
+    } catch (error) {
+      showToast(error.message || 'Unable to load comments.', 'error');
+    } finally {
+      panel.classList.remove('opacity-70');
+    }
+  }
+
+  async function submitMediaCommentForm(asset, panel, form) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!asset?.id || !panel || !form) return;
+    const textarea = form.querySelector('textarea');
+    const content = String(textarea?.value || '').trim();
+    if (!content) {
+      showToast('Write a comment before posting.', 'warning');
+      return;
+    }
+    const submitButton = form.querySelector('button[type="submit"]');
+    form.classList.add('opacity-70');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const payload = {
+        content,
+        parent_id: form.dataset.replyId || null,
+      };
+      const comment = await apiFetch(`/media/${encodeURIComponent(asset.id)}/comments`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      appendMediaCommentRecord(asset.id, comment);
+      const store = getMediaCommentStore(asset.id);
+      store.loaded = true;
+      const list = panel.querySelector('[data-media-role="comment-list"]');
+      renderMediaCommentList(asset.id, store.items, list);
+      if (textarea) textarea.value = '';
+      resetMediaCommentReply(panel);
+      asset.comment_count = (asset.comment_count || 0) + 1;
+      const snapshot = {
+        media_asset_id: asset.id,
+        like_count: typeof asset.like_count === 'number' ? asset.like_count : 0,
+        dislike_count: typeof asset.dislike_count === 'number' ? asset.dislike_count : 0,
+        comment_count: asset.comment_count,
+        viewer_has_liked: Boolean(asset.viewer_has_liked),
+        viewer_has_disliked: Boolean(asset.viewer_has_disliked),
+      };
+      setMediaReelEngagementSnapshot(snapshot);
+      showToast('Comment added.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to add comment.', 'error');
+    } finally {
+      form.classList.remove('opacity-70');
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  function toggleMediaCommentPanel(button, panel, asset) {
+    if (!button || !panel || !asset?.id) return;
+    const isOpen = button.dataset.open === 'true';
+    const nextState = !isOpen;
+    button.dataset.open = nextState ? 'true' : 'false';
+    panel.classList.toggle('hidden', !nextState);
+    const label = button.querySelector('[data-media-role="comment-toggle-label"]');
+    if (label) label.textContent = nextState ? 'Hide' : 'Comment';
+    if (nextState) {
+      loadCommentsForMediaAsset(asset.id, panel);
+      const textarea = panel.querySelector('textarea');
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      }
+    } else {
+      resetMediaCommentReply(panel);
+    }
+  }
+
+  async function loadMediaReel(options = {}) {
+    const normalized = typeof options === 'boolean' ? { forceRefresh: options } : options;
+    const { forceRefresh = false, silent = false } = normalized;
+    const container = document.getElementById('media-reel');
+    const loader = document.getElementById('media-reel-loader');
+    const empty = document.getElementById('media-reel-empty');
+    const loadMore = document.getElementById('media-reel-load-more');
+    if (!container) return;
+    if (state.mediaReel.loading) return;
+    state.mediaReel.loading = true;
+    if (!silent && loader) loader.classList.remove('hidden');
+    if (empty) empty.classList.add('hidden');
+    if (forceRefresh) {
+      state.mediaReel.items = [];
+      state.mediaReel.cursor = 0;
+      container.innerHTML = '';
+      state.mediaComments = {};
+    }
+    try {
+      const response = await apiFetch(`/media/feed?limit=${MEDIA_REEL_DEFAULT_LIMIT}`);
+      const items = Array.isArray(response.items) ? response.items : [];
+      const signature = computeMediaSignature(items);
+      if (!forceRefresh && state.mediaReel.signature === signature) {
+        return;
+      }
+      state.mediaReel.signature = signature;
+      state.mediaReel.items = items;
+      state.mediaReel.cursor = 0;
+      container.innerHTML = '';
+      if (!items.length && empty) {
+        empty.classList.remove('hidden');
+      } else if (empty) {
+        empty.classList.add('hidden');
+      }
+      if (loadMore) {
+        loadMore.classList.toggle('hidden', items.length <= state.mediaReel.batchSize);
+        loadMore.onclick = () => renderNextMediaBatch();
+      }
+      renderNextMediaBatch();
+    } catch (error) {
+      showToast(error.message || 'Unable to load media feed.', 'error');
+      if (empty) empty.classList.remove('hidden');
+    } finally {
+      state.mediaReel.loading = false;
+      if (loader) loader.classList.add('hidden');
+    }
+  }
+
+  function renderNextMediaBatch() {
+    const container = document.getElementById('media-reel');
+    const loadMore = document.getElementById('media-reel-load-more');
+    if (!container) return;
+    const slice = state.mediaReel.items.slice(state.mediaReel.cursor, state.mediaReel.cursor + state.mediaReel.batchSize);
+    slice.forEach(asset => {
+      updateAvatarCacheEntry(asset.user_id, asset.avatar_url);
+      container.appendChild(createMediaCard(asset));
+    });
+    state.mediaReel.cursor += slice.length;
+    if (loadMore) {
+      loadMore.classList.toggle('hidden', state.mediaReel.cursor >= state.mediaReel.items.length);
+    }
+  }
+
+  function createMediaCard(asset) {
+    const wrapper = document.createElement('article');
+    wrapper.className = 'snap-start rounded-[32px] border border-slate-800/60 bg-slate-950/70 p-6 shadow-2xl shadow-black/40';
+    wrapper.dataset.mediaId = asset.id;
+    const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
+    const mediaMarkup = isVideo
+      ? `<video data-media-role="reel-video" src="${asset.url}" class="h-full w-full object-cover" playsinline loop muted controls></video>`
+      : `<img src="${asset.url}" alt="Media item" class="h-full w-full object-cover" />`;
+    const displayName = asset.display_name || asset.username || 'Unknown creator';
+    const username = asset.username ? `@${asset.username}` : '';
+    const likeCount = typeof asset.like_count === 'number' ? asset.like_count : 0;
+    const dislikeCount = typeof asset.dislike_count === 'number' ? asset.dislike_count : 0;
+    const commentCount = typeof asset.comment_count === 'number' ? asset.comment_count : 0;
+    const viewerHasLiked = Boolean(asset.viewer_has_liked);
+    const viewerHasDisliked = Boolean(asset.viewer_has_disliked);
+    wrapper.innerHTML = `
+      <header class="flex items-center gap-4">
+        <img data-media-role="avatar" data-user-id="${asset.user_id}" src="${DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" alt="Creator avatar" />
+        <div class="flex-1">
+          <p class="text-base font-semibold text-white">${displayName}</p>
+          <p class="text-xs text-slate-400">${username || 'Anonymous'} • ${formatDate(asset.created_at)}</p>
+        </div>
+      </header>
+      <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70">
+        ${mediaMarkup}
+      </div>
+      <footer class="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
+        <button data-media-role="like-button" data-media-id="${asset.id}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold">
+          <span aria-hidden="true">❤️</span>
+          <span data-media-role="like-label">${viewerHasLiked ? 'Liked' : 'Like'}</span>
+          <span data-media-role="like-count" class="text-[11px] text-slate-300">${likeCount}</span>
+        </button>
+        <button data-media-role="dislike-button" data-media-id="${asset.id}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold">
+          <span aria-hidden="true">👎</span>
+          <span data-media-role="dislike-label">${viewerHasDisliked ? 'Disliked' : 'Dislike'}</span>
+          <span data-media-role="dislike-count" class="text-[11px] text-slate-300">${dislikeCount}</span>
+        </button>
+        <button data-media-role="comment-toggle" data-media-id="${asset.id}" data-open="false" class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/80 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600">
+          <span aria-hidden="true">💬</span>
+          <span data-media-role="comment-toggle-label">Comment</span>
+          <span data-media-role="comment-count" data-media-id="${asset.id}" class="text-[11px] text-slate-200">${commentCount}</span>
+        </button>
+      </footer>
+      <section data-media-role="comment-panel" data-media-id="${asset.id}" class="mt-4 hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
+        <div data-media-role="comments-empty" class="text-sm text-slate-400">No comments yet. Spark the conversation.</div>
+        <div data-media-role="comment-list" class="mt-4 space-y-3"></div>
+        <form data-media-role="comment-form" class="mt-4 space-y-3">
+          <div data-media-role="comment-reply-pill" class="hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2 text-xs text-indigo-100">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="font-semibold text-indigo-200">
+                  Replying to <span data-media-role="comment-reply-username" class="text-white">@commenter</span>
+                </p>
+                <p data-media-role="comment-reply-preview" class="mt-1 text-[11px] text-slate-300"></p>
+              </div>
+              <button type="button" data-media-role="comment-reply-cancel" class="text-[11px] font-semibold text-indigo-200 transition hover:text-white">Cancel</button>
+            </div>
+          </div>
+          <textarea rows="3" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none" placeholder="Share your thoughts…" required></textarea>
+          <div class="flex items-center justify-between gap-3">
+            <button type="button" data-media-role="comment-reset" class="text-xs font-semibold text-slate-400 hover:text-white">Clear</button>
+            <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+              <span class="text-base">➤</span>
+              <span>Post comment</span>
+            </button>
+          </div>
+        </form>
+      </section>
+    `;
+    const avatarImg = wrapper.querySelector('[data-media-role="avatar"]');
+    applyAvatarToImg(avatarImg, asset.avatar_url);
+    const mediaNode = wrapper.querySelector('[data-media-role="reel-video"]');
+    if (mediaNode && typeof mediaNode.play === 'function') {
+      mediaNode.play().catch(() => {
+        /* Ignore autoplay errors */
+      });
+    }
+    const likeButton = wrapper.querySelector('[data-media-role="like-button"]');
+    if (likeButton) {
+      applyMediaLikeButtonState(likeButton, viewerHasLiked, likeCount);
+      likeButton.addEventListener('click', event => {
+        event.preventDefault();
+        toggleMediaLike(asset, likeButton);
+      });
+    }
+    const dislikeButton = wrapper.querySelector('[data-media-role="dislike-button"]');
+    if (dislikeButton) {
+      applyMediaDislikeButtonState(dislikeButton, viewerHasDisliked, dislikeCount);
+      dislikeButton.addEventListener('click', event => {
+        event.preventDefault();
+        toggleMediaDislike(asset, dislikeButton);
+      });
+    }
+    const commentToggle = wrapper.querySelector('[data-media-role="comment-toggle"]');
+    const commentPanel = wrapper.querySelector('[data-media-role="comment-panel"]');
+    if (commentToggle && commentPanel) {
+      commentToggle.addEventListener('click', event => {
+        event.preventDefault();
+        toggleMediaCommentPanel(commentToggle, commentPanel, asset);
+      });
+      const form = commentPanel.querySelector('[data-media-role="comment-form"]');
+      if (form) {
+        form.addEventListener('submit', event => {
+          event.preventDefault();
+          submitMediaCommentForm(asset, commentPanel, form);
+        });
+        const resetBtn = commentPanel.querySelector('[data-media-role="comment-reset"]');
+        if (resetBtn) {
+          resetBtn.addEventListener('click', () => {
+            const textarea = form.querySelector('textarea');
+            if (textarea) textarea.value = '';
+            resetMediaCommentReply(commentPanel);
+          });
+        }
+        const cancelReply = commentPanel.querySelector('[data-media-role="comment-reply-cancel"]');
+        if (cancelReply) {
+          cancelReply.addEventListener('click', () => resetMediaCommentReply(commentPanel));
+        }
+      }
+    }
+    return wrapper;
+  }
+
   function initMediaPage() {
     initThemeToggle();
     const fileInput = document.getElementById('media-file');
@@ -3057,6 +3599,9 @@
     const form = document.getElementById('media-upload-form');
     const feedback = document.getElementById('media-upload-feedback');
     renderMediaHistory();
+    loadMediaReel({ forceRefresh: true }).catch(error => {
+      console.warn('[media] failed to hydrate reel', error);
+    });
 
     if (fileInput) {
       fileInput.addEventListener('change', () => {
@@ -3108,6 +3653,7 @@
           renderMediaHistory();
           form.reset();
           if (preview) preview.classList.add('hidden');
+          await loadMediaReel({ forceRefresh: true, silent: true });
         } catch (error) {
           if (feedback) {
             feedback.textContent = error.message || 'Upload failed';

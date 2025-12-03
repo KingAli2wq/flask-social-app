@@ -4,15 +4,15 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple, cast
 from uuid import UUID, uuid4
 
-from fastapi import UploadFile
-from sqlalchemy import delete, select
+from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import MediaAsset
+from ..models import MediaAsset, MediaComment, MediaDislike, MediaLike, User
 
 
 def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
@@ -20,6 +20,290 @@ def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
 
     stmt = select(MediaAsset).where(MediaAsset.user_id == user_id).order_by(MediaAsset.created_at.desc())
     return list(db.scalars(stmt))
+
+
+MAX_MEDIA_FEED_LIMIT = 50
+
+
+def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 25) -> list[dict[str, Any]]:
+    """Return a chronological media reel enriched with engagement metadata."""
+
+    clamped_limit = max(1, min(limit, MAX_MEDIA_FEED_LIMIT))
+
+    like_count_subquery = (
+        select(func.count(MediaLike.id)).where(MediaLike.media_asset_id == MediaAsset.id).scalar_subquery()
+    )
+    dislike_count_subquery = (
+        select(func.count(MediaDislike.id)).where(MediaDislike.media_asset_id == MediaAsset.id).scalar_subquery()
+    )
+    comment_count_subquery = (
+        select(func.count(MediaComment.id)).where(MediaComment.media_asset_id == MediaAsset.id).scalar_subquery()
+    )
+
+    columns = [
+        MediaAsset,
+        User.username.label("username"),
+        User.display_name.label("display_name"),
+        User.avatar_url.label("avatar_url"),
+        like_count_subquery,
+        dislike_count_subquery,
+        comment_count_subquery,
+    ]
+
+    viewer_like_col = None
+    viewer_dislike_col = None
+    if viewer_id is not None:
+        viewer_like_col = (
+            select(func.count(MediaLike.id))
+            .where(MediaLike.media_asset_id == MediaAsset.id, MediaLike.user_id == viewer_id)
+            .scalar_subquery()
+        )
+        viewer_dislike_col = (
+            select(func.count(MediaDislike.id))
+            .where(MediaDislike.media_asset_id == MediaAsset.id, MediaDislike.user_id == viewer_id)
+            .scalar_subquery()
+        )
+        columns.extend([viewer_like_col, viewer_dislike_col])
+
+    statement = (
+        select(*columns)
+        .outerjoin(User, MediaAsset.user_id == User.id)
+        .order_by(MediaAsset.created_at.desc())
+        .limit(clamped_limit)
+    )
+
+    records: list[dict[str, Any]] = []
+    rows = db.execute(statement).all()
+    for row in rows:
+        idx = 0
+        asset = row[idx]
+        idx += 1
+        username_value = row[idx]
+        idx += 1
+        display_name_value = row[idx]
+        idx += 1
+        avatar_value = row[idx]
+        idx += 1
+        like_count_value = row[idx]
+        idx += 1
+        dislike_count_value = row[idx]
+        idx += 1
+        comment_count_value = row[idx]
+        idx += 1
+        viewer_like_value = None
+        viewer_dislike_value = None
+        if viewer_like_col is not None:
+            viewer_like_value = row[idx]
+            idx += 1
+        if viewer_dislike_col is not None:
+            viewer_dislike_value = row[idx]
+            idx += 1
+
+        record: dict[str, Any] = {
+            "id": asset.id,
+            "user_id": asset.user_id,
+            "username": cast(str | None, username_value),
+            "display_name": cast(str | None, display_name_value),
+            "avatar_url": cast(str | None, avatar_value),
+            "url": asset.url,
+            "content_type": asset.content_type,
+            "created_at": asset.created_at,
+            "like_count": int(like_count_value or 0),
+            "dislike_count": int(dislike_count_value or 0),
+            "comment_count": int(comment_count_value or 0),
+            "viewer_has_liked": bool(viewer_like_value) if viewer_like_col is not None else False,
+            "viewer_has_disliked": bool(viewer_dislike_value) if viewer_dislike_col is not None else False,
+        }
+
+        records.append(record)
+
+    return records
+
+
+def _get_media_asset_or_404(db: Session, asset_id: UUID) -> MediaAsset:
+    asset = db.get(MediaAsset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
+    return asset
+
+
+def _media_engagement_snapshot(db: Session, asset_id: UUID, viewer_id: UUID | None) -> dict[str, Any]:
+    like_count = db.scalar(select(func.count(MediaLike.id)).where(MediaLike.media_asset_id == asset_id)) or 0
+    dislike_count = db.scalar(select(func.count(MediaDislike.id)).where(MediaDislike.media_asset_id == asset_id)) or 0
+    comment_count = db.scalar(select(func.count(MediaComment.id)).where(MediaComment.media_asset_id == asset_id)) or 0
+    viewer_has_liked = False
+    viewer_has_disliked = False
+    if viewer_id is not None:
+        viewer_has_liked = (
+            db.scalar(
+                select(MediaLike.id)
+                .where(MediaLike.media_asset_id == asset_id, MediaLike.user_id == viewer_id)
+                .limit(1)
+            )
+            is not None
+        )
+        viewer_has_disliked = (
+            db.scalar(
+                select(MediaDislike.id)
+                .where(MediaDislike.media_asset_id == asset_id, MediaDislike.user_id == viewer_id)
+                .limit(1)
+            )
+            is not None
+        )
+    return {
+        "media_asset_id": asset_id,
+        "like_count": int(like_count),
+        "dislike_count": int(dislike_count),
+        "comment_count": int(comment_count),
+        "viewer_has_liked": viewer_has_liked,
+        "viewer_has_disliked": viewer_has_disliked,
+    }
+
+
+def set_media_like_state(
+    db: Session,
+    *,
+    media_asset_id: UUID,
+    user_id: UUID,
+    should_like: bool,
+) -> dict[str, Any]:
+    _get_media_asset_or_404(db, media_asset_id)
+
+    existing_like = db.scalar(
+        select(MediaLike).where(MediaLike.media_asset_id == media_asset_id, MediaLike.user_id == user_id)
+    )
+    existing_dislike = db.scalar(
+        select(MediaDislike).where(MediaDislike.media_asset_id == media_asset_id, MediaDislike.user_id == user_id)
+    )
+
+    if should_like and existing_like is None:
+        db.add(MediaLike(media_asset_id=media_asset_id, user_id=user_id))
+    elif not should_like and existing_like is not None:
+        db.delete(existing_like)
+
+    if should_like and existing_dislike is not None:
+        db.delete(existing_dislike)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update like") from exc
+
+    return _media_engagement_snapshot(db, media_asset_id, user_id)
+
+
+def set_media_dislike_state(
+    db: Session,
+    *,
+    media_asset_id: UUID,
+    user_id: UUID,
+    should_dislike: bool,
+) -> dict[str, Any]:
+    _get_media_asset_or_404(db, media_asset_id)
+
+    existing_dislike = db.scalar(
+        select(MediaDislike).where(MediaDislike.media_asset_id == media_asset_id, MediaDislike.user_id == user_id)
+    )
+    existing_like = db.scalar(
+        select(MediaLike).where(MediaLike.media_asset_id == media_asset_id, MediaLike.user_id == user_id)
+    )
+
+    if should_dislike and existing_dislike is None:
+        db.add(MediaDislike(media_asset_id=media_asset_id, user_id=user_id))
+    elif not should_dislike and existing_dislike is not None:
+        db.delete(existing_dislike)
+
+    if should_dislike and existing_like is not None:
+        db.delete(existing_like)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update dislike") from exc
+
+    return _media_engagement_snapshot(db, media_asset_id, user_id)
+
+
+def list_media_comments(db: Session, *, media_asset_id: UUID) -> list[dict[str, Any]]:
+    _get_media_asset_or_404(db, media_asset_id)
+    stmt = (
+        select(MediaComment, User.username, User.avatar_url)
+        .join(User, MediaComment.user_id == User.id)
+        .where(MediaComment.media_asset_id == media_asset_id)
+        .order_by(MediaComment.created_at.asc())
+    )
+    rows = db.execute(stmt).all()
+
+    nodes: dict[UUID, dict[str, Any]] = {}
+    roots: list[dict[str, Any]] = []
+
+    for comment, username, avatar_url in rows:
+        node = {
+            "id": comment.id,
+            "media_asset_id": comment.media_asset_id,
+            "user_id": comment.user_id,
+            "username": cast(str | None, username),
+            "avatar_url": cast(str | None, avatar_url),
+            "content": comment.content,
+            "parent_id": comment.parent_id,
+            "created_at": comment.created_at,
+            "replies": [],
+        }
+        nodes[comment.id] = node
+        if comment.parent_id and comment.parent_id in nodes:
+            nodes[comment.parent_id]["replies"].append(node)
+        else:
+            roots.append(node)
+
+    return roots
+
+
+def create_media_comment(
+    db: Session,
+    *,
+    media_asset_id: UUID,
+    author: User,
+    content: str,
+    parent_id: UUID | None = None,
+) -> dict[str, Any]:
+    _get_media_asset_or_404(db, media_asset_id)
+    text = (content or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
+
+    parent: MediaComment | None = None
+    if parent_id is not None:
+        parent = db.get(MediaComment, parent_id)
+        if parent is None or parent.media_asset_id != media_asset_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid parent comment")
+
+    comment = MediaComment(
+        media_asset_id=media_asset_id,
+        user_id=author.id,
+        content=text,
+        parent_id=parent.id if parent else None,
+    )
+    db.add(comment)
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add comment") from exc
+
+    db.refresh(comment)
+    return {
+        "id": comment.id,
+        "media_asset_id": comment.media_asset_id,
+        "user_id": author.id,
+        "username": author.username,
+        "avatar_url": author.avatar_url,
+        "content": comment.content,
+        "parent_id": comment.parent_id,
+        "created_at": comment.created_at,
+        "replies": [],
+    }
 
 
 def delete_old_media(db: Session, *, older_than: timedelta | None = None) -> int:
@@ -51,4 +335,13 @@ def store_upload(upload: UploadFile, base_dir: Path) -> Tuple[str, str, str]:
     return rel_path.replace(os.sep, "/"), generated_name, upload.content_type or "application/octet-stream"
 
 
-__all__ = ["list_media_for_user", "delete_old_media", "store_upload"]
+__all__ = [
+    "list_media_for_user",
+    "list_media_feed",
+    "set_media_like_state",
+    "set_media_dislike_state",
+    "list_media_comments",
+    "create_media_comment",
+    "delete_old_media",
+    "store_upload",
+]

@@ -1,4 +1,4 @@
-"""Media upload endpoints that leverage DigitalOcean Spaces."""
+"""Media upload endpoints plus immersive TikTok-style reel APIs."""
 from __future__ import annotations
 import uuid
 
@@ -7,8 +7,26 @@ from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import User
-from ..schemas import MediaUploadResponse
-from ..services import SpacesConfigurationError, SpacesUploadError, get_current_user, upload_file_to_spaces
+from ..schemas import (
+    MediaCommentCreate,
+    MediaCommentListResponse,
+    MediaCommentResponse,
+    MediaEngagementResponse,
+    MediaFeedResponse,
+    MediaUploadResponse,
+)
+from ..services import (
+    SpacesConfigurationError,
+    SpacesUploadError,
+    create_media_comment,
+    get_current_user,
+    get_optional_user,
+    list_media_comments,
+    list_media_feed,
+    set_media_dislike_state,
+    set_media_like_state,
+    upload_file_to_spaces,
+)
 
 router = APIRouter(prefix="/media", tags=["media"])
 
@@ -64,3 +82,79 @@ async def upload_media(
         bucket=result.bucket,
         content_type=result.content_type,
     )
+
+
+@router.get("/feed", response_model=MediaFeedResponse)
+async def list_media_feed_endpoint(
+    limit: int = 25,
+    db: Session = Depends(get_session),
+    viewer: User | None = Depends(get_optional_user),
+) -> MediaFeedResponse:
+    records = list_media_feed(db, viewer_id=viewer.id if viewer else None, limit=limit)
+    return MediaFeedResponse(items=records)
+
+
+@router.post("/{asset_id}/likes", response_model=MediaEngagementResponse)
+async def like_media_asset(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaEngagementResponse:
+    payload = set_media_like_state(db, media_asset_id=asset_id, user_id=current_user.id, should_like=True)
+    return MediaEngagementResponse(**payload)
+
+
+@router.delete("/{asset_id}/likes", response_model=MediaEngagementResponse)
+async def unlike_media_asset(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaEngagementResponse:
+    payload = set_media_like_state(db, media_asset_id=asset_id, user_id=current_user.id, should_like=False)
+    return MediaEngagementResponse(**payload)
+
+
+@router.post("/{asset_id}/dislikes", response_model=MediaEngagementResponse)
+async def dislike_media_asset(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaEngagementResponse:
+    payload = set_media_dislike_state(db, media_asset_id=asset_id, user_id=current_user.id, should_dislike=True)
+    return MediaEngagementResponse(**payload)
+
+
+@router.delete("/{asset_id}/dislikes", response_model=MediaEngagementResponse)
+async def remove_dislike_media_asset(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaEngagementResponse:
+    payload = set_media_dislike_state(db, media_asset_id=asset_id, user_id=current_user.id, should_dislike=False)
+    return MediaEngagementResponse(**payload)
+
+
+@router.get("/{asset_id}/comments", response_model=MediaCommentListResponse)
+async def list_media_comments_endpoint(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+) -> MediaCommentListResponse:
+    comments = list_media_comments(db, media_asset_id=asset_id)
+    return MediaCommentListResponse(items=comments)
+
+
+@router.post("/{asset_id}/comments", response_model=MediaCommentResponse)
+async def create_media_comment_endpoint(
+    asset_id: uuid.UUID,
+    payload: MediaCommentCreate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaCommentResponse:
+    record = create_media_comment(
+        db,
+        media_asset_id=asset_id,
+        author=current_user,
+        content=payload.content,
+        parent_id=payload.parent_id,
+    )
+    return MediaCommentResponse(**record)

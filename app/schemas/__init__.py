@@ -2,7 +2,15 @@
 from .auth import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
 from .friends import FriendSearchResponse, FriendSearchResult
 from .follow import FollowActionResponse, FollowStatsResponse
-from .media import MediaUploadResponse
+from .media import (
+    MediaCommentCreate,
+    MediaCommentListResponse,
+    MediaCommentResponse,
+    MediaEngagementResponse,
+    MediaFeedItem,
+    MediaFeedResponse,
+    MediaUploadResponse,
+)
 from .messages import (
     DirectThreadResponse,
     GroupChatCreate,
@@ -39,6 +47,12 @@ __all__ = [
     "RegisterRequest",
     "UserPublicProfile",
     "MediaUploadResponse",
+    "MediaFeedItem",
+    "MediaFeedResponse",
+    "MediaEngagementResponse",
+    "MediaCommentCreate",
+    "MediaCommentResponse",
+    "MediaCommentListResponse",
     "FriendSearchResult",
     "FriendSearchResponse",
     "FollowActionResponse",

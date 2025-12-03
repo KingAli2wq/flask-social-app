@@ -4,7 +4,7 @@ from .friend_request import FriendRequest
 from .friendship import Friendship
 from .follow import Follow
 from .group_chat import GroupChat
-from .media import MediaAsset
+from .media import MediaAsset, MediaComment, MediaDislike, MediaLike
 from .message import Message
 from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
@@ -17,6 +17,9 @@ __all__ = [
     "Follow",
     "GroupChat",
     "MediaAsset",
+    "MediaLike",
+    "MediaDislike",
+    "MediaComment",
     "Message",
     "Notification",
     "Post",

@@ -1,36 +1,68 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid gap-8 lg:grid-cols-[1.3fr,1fr]">
-    <div class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
-        <header class="flex items-center justify-between">
-            <div>
-                <h1 class="text-lg font-semibold text-white">Upload media</h1>
-                <p class="text-sm text-slate-400">Share images or video clips to enrich your posts.</p>
+<section class="grid gap-8 lg:grid-cols-[1.7fr,1fr]">
+    <div class="flex flex-col gap-6">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
+            <header class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs uppercase tracking-widest text-indigo-400">For you</p>
+                    <h1 class="mt-1 text-2xl font-semibold text-white">Immersive media reel</h1>
+                    <p class="text-sm text-slate-400">Scroll through every upload, double down with likes, dislikes, and rich threads.</p>
+                </div>
+                <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Realtime-ready</span>
+            </header>
+            <div class="mt-6 flex flex-col gap-4">
+                <div class="relative h-[70vh] overflow-hidden rounded-[32px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80">
+                    <div id="media-reel-loader" class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-slate-400">
+                        <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
+                        <span>Loading spotlight…</span>
+                    </div>
+                    <div id="media-reel-empty" class="hidden absolute inset-0 flex flex-col items-center justify-center gap-3 text-center text-sm text-slate-400">
+                        <span class="text-4xl">📼</span>
+                        <p>Upload a video or photo to see it here.</p>
+                    </div>
+                    <div id="media-reel" class="scrollbar-thin h-full snap-y snap-mandatory overflow-y-auto px-4 py-6 space-y-10"></div>
+                </div>
+                <button
+                    id="media-reel-load-more"
+                    type="button"
+                    class="hidden rounded-full border border-slate-700/60 px-6 py-2 text-sm font-semibold text-slate-200 transition hover:border-indigo-500/60 hover:bg-indigo-600 hover:text-white"
+                >
+                    Load more moments
+                </button>
             </div>
-            <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Spaces CDN</span>
-        </header>
-        <form id="media-upload-form" class="mt-8 flex flex-col gap-6" enctype="multipart/form-data">
-            <label for="media-file" class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-700/70 bg-slate-950/60 px-6 py-16 text-center text-sm text-slate-400 transition hover:border-indigo-500/70 hover:bg-indigo-500/5">
-                <span class="text-3xl">⤓</span>
-                <span><strong>Drop files</strong> or click to browse</span>
-                <input id="media-file" name="file" type="file" accept="image/*,video/*" class="hidden">
-            </label>
-            <div id="media-preview" class="hidden overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/70">
-                <img id="media-preview-img" class="hidden h-64 w-full object-cover" alt="Preview">
-                <video id="media-preview-video" class="hidden h-64 w-full object-cover" controls></video>
-            </div>
-            <button
-                id="media-upload-submit"
-                type="submit"
-                class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-            >
-                <span class="text-base">⇪</span><span>Upload</span>
-            </button>
-            <div id="media-upload-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
-        </form>
+        </section>
     </div>
     <aside class="flex flex-col gap-6">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+            <header class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-semibold text-white">Upload media</h2>
+                    <p class="text-sm text-slate-400">Share images or clips to seed the reel.</p>
+                </div>
+                <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Spaces CDN</span>
+            </header>
+            <form id="media-upload-form" class="mt-8 flex flex-col gap-6" enctype="multipart/form-data">
+                <label for="media-file" class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-700/70 bg-slate-950/60 px-6 py-16 text-center text-sm text-slate-400 transition hover:border-indigo-500/70 hover:bg-indigo-500/5">
+                    <span class="text-3xl">⤓</span>
+                    <span><strong>Drop files</strong> or click to browse</span>
+                    <input id="media-file" name="file" type="file" accept="image/*,video/*" class="hidden">
+                </label>
+                <div id="media-preview" class="hidden overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/70">
+                    <img id="media-preview-img" class="hidden h-64 w-full object-cover" alt="Preview">
+                    <video id="media-preview-video" class="hidden h-64 w-full object-cover" controls></video>
+                </div>
+                <button
+                    id="media-upload-submit"
+                    type="submit"
+                    class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                >
+                    <span class="text-base">⇪</span><span>Upload</span>
+                </button>
+                <div id="media-upload-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
+            </form>
+        </section>
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
             <h2 class="text-base font-semibold text-white">Recent uploads</h2>
             <div id="media-upload-history" class="scrollbar-thin mt-4 max-h-[420px] overflow-y-auto space-y-4 text-sm text-slate-300">

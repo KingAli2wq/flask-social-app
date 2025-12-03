@@ -16,7 +16,16 @@ from .friendship_service import (
     require_friendship,
     send_friend_request,
 )
-from .media_service import delete_old_media, list_media_for_user
+from .media_service import (
+    create_media_comment,
+    delete_old_media,
+    list_media_comments,
+    list_media_feed,
+    list_media_for_user,
+    set_media_dislike_state,
+    set_media_like_state,
+    store_upload,
+)
 from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
 from .notification_service import (
     NotificationType,
@@ -66,7 +75,13 @@ __all__ = [
     "respond_to_request",
     "require_friendship",
     "list_media_for_user",
+    "list_media_feed",
+    "list_media_comments",
     "delete_old_media",
+    "create_media_comment",
+    "set_media_like_state",
+    "set_media_dislike_state",
+    "store_upload",
     "CleanupError",
     "CleanupSummary",
     "run_cleanup",
