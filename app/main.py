@@ -18,6 +18,7 @@ from .routers import (
     auth_router,
     friends_router,
     follows_router,
+    moderation_router,
     media_router,
     messages_router,
     notifications_router,
@@ -60,6 +61,7 @@ app.include_router(auth_router)
 app.include_router(friends_router)
 app.include_router(follows_router)
 app.include_router(media_router)
+app.include_router(moderation_router)
 app.include_router(posts_router)
 app.include_router(messages_router)
 app.include_router(notifications_router)

@@ -1,7 +1,7 @@
 """Export page routers for composition."""
 from __future__ import annotations
 
-from . import auth, friends, home, media, messages, notifications, profile, settings
+from . import auth, friends, home, media, messages, moderation, notifications, profile, settings
 
 __all__ = [
     "auth",
@@ -9,6 +9,7 @@ __all__ = [
     "home",
     "media",
     "messages",
+    "moderation",
     "notifications",
     "profile",
     "settings",

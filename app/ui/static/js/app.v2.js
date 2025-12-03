@@ -2,6 +2,7 @@
   const TOKEN_KEY = 'socialsphere:token';
   const USERNAME_KEY = 'socialsphere:username';
   const USER_ID_KEY = 'socialsphere:user_id';
+  const USER_ROLE_KEY = 'socialsphere:role';
   const THEME_KEY = 'socialsphere:theme';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const MEDIA_REEL_CACHE_KEY = 'socialsphere:media-reel-cache';
@@ -18,6 +19,26 @@
     error: 'bg-rose-500/90 text-white shadow-rose-500/30',
     warning: 'bg-amber-400 text-slate-900 shadow-amber-400/30',
     info: 'bg-slate-900/90 text-white shadow-slate-900/30'
+  };
+
+  const ROLE_STYLE_MAP = {
+    owner: {
+      text: 'text-rose-300',
+      badge: 'border-rose-500/40 bg-rose-500/10 text-rose-200',
+    },
+    admin: {
+      text: 'text-amber-200',
+      badge: 'border-amber-400/40 bg-amber-400/10 text-amber-200',
+    },
+    user: {
+      text: 'text-slate-100',
+      badge: 'border-slate-700/60 bg-slate-800/60 text-slate-200',
+    },
+  };
+  const ROLE_BADGE_BASE = 'inline-flex items-center gap-1 rounded-full border font-semibold shadow-sm';
+  const ROLE_BADGE_SIZE = {
+    default: 'px-3 py-1 text-xs',
+    compact: 'px-2 py-0.5 text-[11px]',
   };
 
   const DEFAULT_AVATAR = '/assets/default-avatar.png';
@@ -99,6 +120,11 @@
       scrollEnhanced: false,
     },
     mediaComments: {},
+    moderation: {
+      dashboard: null,
+      viewerRole: 'user',
+      viewerId: null,
+    },
   };
 
   // -----------------------------------------------------------------------
@@ -127,20 +153,29 @@
     return {
       token: localStorage.getItem(TOKEN_KEY),
       username: localStorage.getItem(USERNAME_KEY),
-      userId: localStorage.getItem(USER_ID_KEY)
+      userId: localStorage.getItem(USER_ID_KEY),
+      role: localStorage.getItem(USER_ROLE_KEY)
     };
   }
 
-  function setAuth({ token, username, userId }) {
+  function setAuth({ token, username, userId, role }) {
     if (token) localStorage.setItem(TOKEN_KEY, token);
     if (username) localStorage.setItem(USERNAME_KEY, username);
     if (userId) localStorage.setItem(USER_ID_KEY, userId);
+    if (role !== undefined) {
+      if (role === null || role === undefined) {
+        localStorage.removeItem(USER_ROLE_KEY);
+      } else {
+        localStorage.setItem(USER_ROLE_KEY, role);
+      }
+    }
   }
 
   function clearAuth() {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USERNAME_KEY);
     localStorage.removeItem(USER_ID_KEY);
+    localStorage.removeItem(USER_ROLE_KEY);
   }
 
   async function apiFetch(path, options = {}) {
@@ -222,6 +257,99 @@
     });
   }
 
+  function truncateText(text, limit = 140) {
+    if (!text) return '';
+    const trimmed = String(text);
+    return trimmed.length <= limit ? trimmed : `${trimmed.slice(0, limit - 1)}…`;
+  }
+
+  function normalizeRole(role) {
+    const normalized = (role || '').toLowerCase();
+    return normalized === 'owner' || normalized === 'admin' ? normalized : 'user';
+  }
+
+  function formatRoleLabel(role) {
+    const normalized = normalizeRole(role);
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+
+  function roleAccentClass(role) {
+    const normalized = normalizeRole(role);
+    return ROLE_STYLE_MAP[normalized]?.text || ROLE_STYLE_MAP.user.text;
+  }
+
+  function roleBadgeClasses(role, { compact = false } = {}) {
+    const normalized = normalizeRole(role);
+    const palette = ROLE_STYLE_MAP[normalized] || ROLE_STYLE_MAP.user;
+    const sizeClass = compact ? ROLE_BADGE_SIZE.compact : ROLE_BADGE_SIZE.default;
+    return `${ROLE_BADGE_BASE} ${sizeClass} ${palette.badge}`.trim();
+  }
+
+  function renderRoleBadgeHtml(role, options = {}) {
+    if (!role && !options.includeUser) return '';
+    const normalized = normalizeRole(role);
+    if (!options.includeUser && normalized === 'user') return '';
+    const classes = roleBadgeClasses(normalized, { compact: Boolean(options.compact) });
+    return `<span class="${classes}">${formatRoleLabel(normalized)}</span>`;
+  }
+
+  function createRoleBadge(role, options = {}) {
+    if (!role && !options.includeUser) {
+      const span = document.createElement('span');
+      span.classList.add('hidden');
+      return span;
+    }
+    const normalized = normalizeRole(role);
+    if (!options.includeUser && normalized === 'user') {
+      const span = document.createElement('span');
+      span.classList.add('hidden');
+      return span;
+    }
+    const badge = document.createElement('span');
+    badge.className = roleBadgeClasses(normalized, { compact: Boolean(options.compact) });
+    badge.textContent = formatRoleLabel(normalized);
+    return badge;
+  }
+
+  function decorateLabelWithRole(label, role, options = {}) {
+    const textClasses = options.textClasses || '';
+    const accent = roleAccentClass(role);
+    const badgeHtml = renderRoleBadgeHtml(role, { compact: options.compact !== false });
+    const base = `<span class="${[textClasses, accent].filter(Boolean).join(' ').trim()}">${label}</span>`;
+    if (!badgeHtml) {
+      return base;
+    }
+    const gapClass = options.inlineGapClass || 'ml-2';
+    return `${base}<span class="${gapClass}">${badgeHtml}</span>`;
+  }
+
+  function hasModeratorPrivileges(role) {
+    const normalized = normalizeRole(role);
+    return normalized === 'owner' || normalized === 'admin';
+  }
+
+  function updateNavRoleGates(role) {
+    const normalized = normalizeRole(role);
+    document.querySelectorAll('[data-role-gate]').forEach(link => {
+      const requiredRaw = (link.dataset.requiresRole || '').split(',');
+      const required = requiredRaw.map(item => item.trim().toLowerCase()).filter(Boolean);
+      let allowed = required.length === 0;
+      if (!allowed) {
+        allowed = required.includes(normalized);
+        if (!allowed && normalized === 'owner') {
+          allowed = required.includes('admin');
+        }
+      }
+      if (allowed) {
+        link.classList.remove('hidden');
+        link.removeAttribute('aria-hidden');
+      } else {
+        link.classList.add('hidden');
+        link.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
   // -----------------------------------------------------------------------
   // Theme / Navbar
   // -----------------------------------------------------------------------
@@ -260,7 +388,7 @@
   function refreshNavAuthState() {
     const authBtn = document.getElementById('nav-auth-btn');
     if (!authBtn) return;
-    const { token, username } = getAuth();
+    const { token, username, role } = getAuth();
     if (token) {
       authBtn.textContent = username ? `@${username}` : 'Logout';
       authBtn.href = '#';
@@ -282,6 +410,7 @@
       authBtn.onclick = null;
       stopNotificationIndicator();
     }
+    updateNavRoleGates(role);
   }
 
   // -----------------------------------------------------------------------
@@ -602,6 +731,7 @@
       cacheProfile(me);
       state.currentProfileAvatar = me.avatar_url || null;
       updateCurrentUserAvatarImages(me.avatar_url);
+      setAuth({ username: me.username, userId: me.id, role: me.role || null });
       return me;
     }
 
@@ -610,6 +740,7 @@
     cacheProfile(profile);
     state.currentProfileAvatar = profile.avatar_url || null;
     updateCurrentUserAvatarImages(profile.avatar_url);
+    setAuth({ role: profile.role || null });
     return profile;
   }
 
@@ -1398,6 +1529,7 @@
     }
     const avatarId = `comment-avatar-${comment.id}`;
     const author = comment.username ? `@${comment.username}` : 'User';
+    const authorLabel = decorateLabelWithRole(author, comment.role, { compact: true, textClasses: 'font-semibold text-xs' });
     const previewText = comment.content || '';
     wrapper.innerHTML = `
       <div class="flex items-start gap-3">
@@ -1406,7 +1538,7 @@
         </div>
         <div class="flex-1">
           <div class="flex items-center justify-between text-xs text-slate-400">
-            <span class="font-semibold text-slate-200">${author}</span>
+            <span class="flex flex-wrap items-center gap-2">${authorLabel}</span>
             <time class="text-[11px]">${formatDate(comment.created_at)}</time>
           </div>
           <p class="mt-1 text-sm text-slate-200">${previewText}</p>
@@ -1764,6 +1896,11 @@
       : isCurrentUser && currentUsername
       ? `@${currentUsername}`
       : `User ${String(post.user_id).slice(0, 8)}`;
+    const authorRole = post.author_role || post.role || null;
+    const decoratedDisplayName = decorateLabelWithRole(displayName, authorRole, {
+      compact: true,
+      textClasses: 'text-sm font-semibold',
+    });
     const timestamp = formatDate(post.created_at);
     const mediaUrl = typeof post.media_url === 'string' ? post.media_url.trim() : '';
     const media = mediaUrl
@@ -1863,7 +2000,7 @@
                class="h-12 w-12 rounded-full object-cover"
                alt="Post avatar" />
           <div>
-            <p class="text-sm font-semibold text-white dark:text-white">${displayName}</p>
+            <div class="flex flex-wrap items-center gap-2">${decoratedDisplayName}</div>
             <p class="text-xs text-slate-400">${timestamp}</p>
           </div>
         </div>
@@ -2032,7 +2169,12 @@
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        setAuth({ token: response.access_token, username: payload.username, userId: response.user_id });
+        setAuth({
+          token: response.access_token,
+          username: payload.username,
+          userId: response.user_id,
+          role: response.role || null,
+        });
         refreshNavAuthState();
         showToast('Welcome back! Redirecting to your feed.', 'success');
         window.location.href = '/';
@@ -2063,7 +2205,12 @@
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        setAuth({ token: response.access_token, username: payload.username, userId: response.user_id });
+        setAuth({
+          token: response.access_token,
+          username: payload.username,
+          userId: response.user_id,
+          role: response.role || null,
+        });
         refreshNavAuthState();
         showToast('Account created! Redirecting to your feed.', 'success');
         window.location.href = '/';
@@ -3534,6 +3681,7 @@
     }
     const avatarId = `media-comment-avatar-${comment.id}`;
     const author = comment.username ? `@${comment.username}` : 'User';
+    const authorLabel = decorateLabelWithRole(author, comment.role, { compact: true, textClasses: 'font-semibold text-xs' });
     wrapper.innerHTML = `
       <div class="flex items-start gap-3">
         <div class="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
@@ -3541,7 +3689,7 @@
         </div>
         <div class="flex-1">
           <div class="flex items-center justify-between text-xs text-slate-400">
-            <span class="font-semibold text-slate-200">${author}</span>
+            <span class="flex flex-wrap items-center gap-2">${authorLabel}</span>
             <time class="text-[11px]">${formatDate(comment.created_at)}</time>
           </div>
           <p class="mt-1 text-sm text-slate-200">${comment.content || ''}</p>
@@ -3940,6 +4088,17 @@
       : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="h-full w-full object-cover" />`;
     const displayName = asset.display_name || asset.username || 'Unknown creator';
     const username = asset.username ? `@${asset.username}` : '';
+    const creatorRole = asset.role || asset.author_role || null;
+    const decoratedDisplayName = decorateLabelWithRole(displayName, creatorRole, {
+      textClasses: 'text-base font-semibold leading-tight',
+    });
+    const normalizedCreatorRole = normalizeRole(creatorRole);
+    const usernameClasses = ['font-semibold'];
+    if (normalizedCreatorRole !== 'user') {
+      usernameClasses.push(roleAccentClass(creatorRole));
+    }
+    const usernameLabel = username || 'Anonymous';
+    const createdAt = formatDate(asset.created_at);
     const likeCount = typeof asset.like_count === 'number' ? asset.like_count : 0;
     const dislikeCount = typeof asset.dislike_count === 'number' ? asset.dislike_count : 0;
     const commentCount = typeof asset.comment_count === 'number' ? asset.comment_count : 0;
@@ -3949,8 +4108,12 @@
       <header class="flex items-center gap-4">
         <img data-media-role="avatar" data-user-id="${asset.user_id}" src="${DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" alt="Creator avatar" />
         <div class="flex-1">
-          <p class="text-base font-semibold text-white">${displayName}</p>
-          <p class="text-xs text-slate-400">${username || 'Anonymous'} • ${formatDate(asset.created_at)}</p>
+          <p class="leading-tight">${decoratedDisplayName}</p>
+          <p class="text-xs text-slate-400">
+            <span class="${usernameClasses.join(' ')}">${usernameLabel}</span>
+            <span class="mx-2 text-slate-600" aria-hidden="true">•</span>
+            <span>${createdAt}</span>
+          </p>
         </div>
       </header>
       <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70">
@@ -4582,6 +4745,310 @@
   }
 
   // -----------------------------------------------------------------------
+  // Moderation
+  // -----------------------------------------------------------------------
+
+  async function initModerationPage() {
+    initThemeToggle();
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    const root = document.getElementById('moderation-root');
+    const serverRole = root ? root.dataset.viewerRole || null : null;
+    const { role, userId } = getAuth();
+    const resolvedRole = (serverRole || role || 'user').toLowerCase();
+    state.moderation.viewerRole = resolvedRole;
+    state.moderation.viewerId = userId || null;
+    bindModerationEvents();
+    await loadModerationDashboard();
+  }
+
+  function bindModerationEvents() {
+    const refreshButton = document.getElementById('moderation-refresh');
+    if (refreshButton && refreshButton.dataset.bound !== 'true') {
+      refreshButton.dataset.bound = 'true';
+      refreshButton.addEventListener('click', () => loadModerationDashboard());
+    }
+
+    const userTable = document.getElementById('moderation-user-table');
+    if (userTable && userTable.dataset.bound !== 'true') {
+      userTable.dataset.bound = 'true';
+      userTable.addEventListener('change', event => {
+        const select = event.target.closest('[data-mod-role-select]');
+        if (!select) return;
+        event.preventDefault();
+        handleModerationRoleChange(select);
+      });
+    }
+
+    const postTable = document.getElementById('moderation-post-table');
+    if (postTable && postTable.dataset.bound !== 'true') {
+      postTable.dataset.bound = 'true';
+      postTable.addEventListener('click', event => {
+        const button = event.target.closest('[data-mod-delete-post]');
+        if (!button) return;
+        event.preventDefault();
+        const postId = button.dataset.postId;
+        if (!postId) return;
+        handleModerationPostDelete(postId, button);
+      });
+    }
+  }
+
+  async function loadModerationDashboard(options = {}) {
+    const { silent = false } = options;
+    const loadingNode = document.getElementById('moderation-loading');
+    const errorNode = document.getElementById('moderation-error');
+    if (!silent && loadingNode) {
+      loadingNode.classList.remove('hidden');
+    }
+    if (errorNode) {
+      errorNode.classList.add('hidden');
+    }
+    try {
+      const dashboard = await apiFetch('/moderation/dashboard');
+      state.moderation.dashboard = dashboard;
+      renderModerationStats(dashboard.stats || {});
+      renderModerationUsers(dashboard.recent_users || []);
+      renderModerationPosts(dashboard.recent_posts || []);
+    } catch (error) {
+      if (errorNode && !silent) {
+        errorNode.textContent = error.message || 'Unable to load moderation data.';
+        errorNode.classList.remove('hidden');
+      } else {
+        showToast(error.message || 'Unable to load moderation data.', 'error');
+      }
+    } finally {
+      if (!silent && loadingNode) {
+        loadingNode.classList.add('hidden');
+      }
+    }
+  }
+
+  function renderModerationStats(stats = {}) {
+    const mapping = {
+      'total-users': stats.total_users ?? 0,
+      'active-last-24h': stats.active_last_24h ?? 0,
+      'total-posts': stats.total_posts ?? 0,
+      'total-media-assets': stats.total_media_assets ?? 0,
+    };
+    Object.entries(mapping).forEach(([key, value]) => {
+      const node = document.querySelector(`[data-moderation-stat="${key}"]`);
+      if (node) {
+        node.textContent = Number(value).toLocaleString();
+      }
+    });
+  }
+
+  function renderModerationUsers(users = []) {
+    const body = document.getElementById('moderation-user-body');
+    const empty = document.getElementById('moderation-users-empty');
+    if (!body) return;
+    body.innerHTML = '';
+    if (!users.length) {
+      if (empty) empty.classList.remove('hidden');
+      return;
+    }
+    if (empty) empty.classList.add('hidden');
+    users.forEach(user => {
+      body.appendChild(buildModerationUserRow(user));
+    });
+  }
+
+  function buildModerationUserRow(user) {
+    const row = document.createElement('tr');
+    row.className = 'border-b border-slate-800/60 last:border-0';
+    row.dataset.userId = user.id;
+
+    const identityCell = document.createElement('td');
+    identityCell.className = 'px-4 py-3 align-top text-sm';
+    const identityWrapper = document.createElement('div');
+    identityWrapper.className = 'flex flex-col gap-1';
+    const username = document.createElement('span');
+    username.className = 'font-semibold text-white';
+    username.textContent = user.username ? `@${user.username}` : 'Unknown user';
+    const displayName = document.createElement('span');
+    displayName.className = 'text-xs text-slate-400';
+    displayName.textContent = user.display_name || 'No display name';
+    identityWrapper.appendChild(username);
+    identityWrapper.appendChild(displayName);
+    const emailBadge = document.createElement('span');
+    emailBadge.className = `mt-2 inline-flex max-w-max items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+      user.email_verified ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-200' : 'border border-amber-400/40 bg-amber-400/10 text-amber-100'
+    }`;
+    emailBadge.textContent = user.email_verified ? 'Email verified' : 'Verification pending';
+    identityWrapper.appendChild(emailBadge);
+    identityCell.appendChild(identityWrapper);
+    row.appendChild(identityCell);
+
+    const roleCell = document.createElement('td');
+    roleCell.className = 'px-4 py-3 align-middle';
+    roleCell.appendChild(createRoleBadge(user.role));
+    row.appendChild(roleCell);
+
+    const postsCell = document.createElement('td');
+    postsCell.className = 'px-4 py-3 text-center text-sm text-slate-200';
+    postsCell.textContent = Number(user.post_count || 0).toLocaleString();
+    row.appendChild(postsCell);
+
+    const activityCell = document.createElement('td');
+    activityCell.className = 'px-4 py-3 text-sm text-slate-300';
+    activityCell.textContent = user.last_active_at ? formatDate(user.last_active_at) : '—';
+    row.appendChild(activityCell);
+
+    const controlsCell = document.createElement('td');
+    controlsCell.className = 'px-4 py-3 text-right';
+    if (state.moderation.viewerRole === 'owner') {
+      const select = document.createElement('select');
+      select.className = 'rounded-2xl border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-sm font-medium text-slate-100 transition hover:border-indigo-500/60';
+      select.dataset.modRoleSelect = 'true';
+      select.dataset.userId = user.id;
+      select.dataset.previousRole = (user.role || 'user').toLowerCase();
+      ['owner', 'admin', 'user'].forEach(roleValue => {
+        const option = document.createElement('option');
+        option.value = roleValue;
+        option.textContent = formatRoleLabel(roleValue);
+        if (roleValue === select.dataset.previousRole) {
+          option.selected = true;
+        }
+        select.appendChild(option);
+      });
+      if (state.moderation.viewerId === user.id) {
+        select.disabled = true;
+        select.title = 'You cannot change your own role here';
+      }
+      controlsCell.appendChild(select);
+    } else {
+      const note = document.createElement('span');
+      note.className = 'text-xs text-slate-500';
+      note.textContent = 'View only';
+      controlsCell.appendChild(note);
+    }
+    row.appendChild(controlsCell);
+
+    return row;
+  }
+
+  function renderModerationPosts(posts = []) {
+    const body = document.getElementById('moderation-post-body');
+    const empty = document.getElementById('moderation-posts-empty');
+    if (!body) return;
+    body.innerHTML = '';
+    if (!posts.length) {
+      if (empty) empty.classList.remove('hidden');
+      return;
+    }
+    if (empty) empty.classList.add('hidden');
+    posts.forEach(post => {
+      body.appendChild(buildModerationPostRow(post));
+    });
+  }
+
+  function buildModerationPostRow(post) {
+    const row = document.createElement('tr');
+    row.className = 'border-b border-slate-800/60 last:border-0';
+    row.dataset.postId = post.id;
+
+    const authorCell = document.createElement('td');
+    authorCell.className = 'px-4 py-3 align-top';
+    const authorWrapper = document.createElement('div');
+    authorWrapper.className = 'flex flex-col gap-1';
+    const username = document.createElement('span');
+    username.className = 'font-semibold text-white';
+    username.textContent = post.username ? `@${post.username}` : 'Unknown user';
+    const displayName = document.createElement('span');
+    displayName.className = 'text-xs text-slate-400';
+    displayName.textContent = post.display_name || 'No display name';
+    authorWrapper.appendChild(username);
+    authorWrapper.appendChild(displayName);
+    authorWrapper.appendChild(createRoleBadge(post.role));
+    authorCell.appendChild(authorWrapper);
+    row.appendChild(authorCell);
+
+    const captionCell = document.createElement('td');
+    captionCell.className = 'max-w-xl px-4 py-3 text-sm text-slate-200';
+    const captionText = document.createElement('p');
+    captionText.textContent = truncateText(post.caption || '', 200);
+    captionCell.appendChild(captionText);
+    if (post.media_url) {
+      const mediaLink = document.createElement('a');
+      mediaLink.href = post.media_url;
+      mediaLink.target = '_blank';
+      mediaLink.rel = 'noopener';
+      mediaLink.className = 'mt-2 inline-flex items-center gap-2 text-xs font-semibold text-indigo-300 hover:text-indigo-200';
+      mediaLink.textContent = 'View media';
+      captionCell.appendChild(mediaLink);
+    }
+    row.appendChild(captionCell);
+
+    const metricsCell = document.createElement('td');
+    metricsCell.className = 'px-4 py-3 text-sm text-slate-300';
+    metricsCell.innerHTML = `
+      <div>👍 ${post.like_count ?? 0}</div>
+      <div>👎 ${post.dislike_count ?? 0}</div>
+      <div>💬 ${post.comment_count ?? 0}</div>
+    `;
+    row.appendChild(metricsCell);
+
+    const actionsCell = document.createElement('td');
+    actionsCell.className = 'px-4 py-3 text-right';
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.dataset.modDeletePost = 'true';
+    deleteButton.dataset.postId = post.id;
+    deleteButton.className = 'rounded-full border border-rose-500/40 px-4 py-1.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10';
+    deleteButton.textContent = 'Delete';
+    actionsCell.appendChild(deleteButton);
+    row.appendChild(actionsCell);
+
+    return row;
+  }
+
+  async function handleModerationRoleChange(select) {
+    if (!select) return;
+    const userId = select.dataset.userId;
+    if (!userId) return;
+    const previousRole = select.dataset.previousRole || 'user';
+    const nextRole = select.value;
+    if (!nextRole || previousRole === nextRole) return;
+    select.disabled = true;
+    try {
+      await apiFetch(`/moderation/users/${encodeURIComponent(userId)}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: nextRole })
+      });
+      select.dataset.previousRole = nextRole;
+      showToast('Role updated successfully.', 'success');
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      select.value = previousRole;
+      showToast(error.message || 'Unable to update role.', 'error');
+    } finally {
+      select.disabled = false;
+    }
+  }
+
+  async function handleModerationPostDelete(postId, button) {
+    if (!postId) return;
+    const confirmed = window.confirm('Delete this post and any attached media?');
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/posts/${encodeURIComponent(postId)}`, {
+        method: 'DELETE'
+      });
+      showToast('Post removed successfully.', 'success');
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to delete post.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
 
@@ -4599,6 +5066,7 @@
     initNotificationsPage,
     initMediaPage,
     initSettingsPage,
+    initModerationPage,
   };
 
   document.addEventListener('DOMContentLoaded', initThemeToggle);

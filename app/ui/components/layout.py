@@ -15,7 +15,11 @@ NAV_LINKS = (
     ("Notifications", "/notifications"),
     ("Settings", "/settings"),
     ("Media", "/media"),
+    ("Moderation", "/moderation"),
 )
+NAV_ROLE_REQUIREMENTS = {
+    "Moderation": {"owner", "admin"},
+}
 LOGO_IMAGE = f"/assets/img/social-sphere-logo.png?v={STATIC_VERSION}"
 
 
@@ -29,8 +33,15 @@ def navbar(*, active: str | None = None) -> Markup:
             if label == "Notifications"
             else ""
         )
+        role_meta = NAV_ROLE_REQUIREMENTS.get(label)
+        requires_attr = ""
+        hidden_class = ""
+        if role_meta:
+            roles = ",".join(sorted(role_meta))
+            requires_attr = f' data-role-gate="true" data-requires-role="{roles}" aria-hidden="true"'
+            hidden_class = " hidden"
         links_html.append(
-            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white{extra_classes} {is_active}\">{label}{indicator}</a>"
+            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white{extra_classes} {is_active}{hidden_class}\"{requires_attr}>{label}{indicator}</a>"
         )
     links = "".join(links_html)
 

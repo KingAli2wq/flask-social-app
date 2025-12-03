@@ -29,6 +29,7 @@ from .media_service import (
     store_upload,
 )
 from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
+from .moderation_service import load_moderation_dashboard, update_user_role
 from .notification_service import (
     NotificationType,
     add_notification,
@@ -96,6 +97,8 @@ __all__ = [
     "list_notifications",
     "mark_all_read",
     "delete_old_notifications",
+    "load_moderation_dashboard",
+    "update_user_role",
     "create_post_comment",
     "create_post_record",
     "delete_post_record",

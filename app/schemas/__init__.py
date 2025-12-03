@@ -40,6 +40,13 @@ from .settings import (
     SettingsProfileUpdate,
     SettingsResponse,
 )
+from .moderation import (
+    ModerationDashboardResponse,
+    ModerationPostSummary,
+    ModerationRoleUpdateRequest,
+    ModerationStats,
+    ModerationUserSummary,
+)
 
 __all__ = [
     "AuthResponse",
@@ -74,6 +81,11 @@ __all__ = [
     "SettingsPreferencesUpdate",
     "SettingsProfileUpdate",
     "SettingsResponse",
+    "ModerationStats",
+    "ModerationUserSummary",
+    "ModerationPostSummary",
+    "ModerationDashboardResponse",
+    "ModerationRoleUpdateRequest",
     "PostCommentCreate",
     "PostCommentResponse",
     "PostCommentListResponse",

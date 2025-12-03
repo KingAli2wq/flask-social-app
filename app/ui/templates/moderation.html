@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section id="moderation-root" data-viewer-role="{{ viewer_role or 'user' }}" class="mx-auto flex w-full max-w-6xl flex-col gap-8">
+    <header class="flex flex-col gap-4 rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30 md:flex-row md:items-center md:justify-between">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">Command deck</p>
+            <h1 class="mt-2 text-2xl font-semibold text-white">Moderation dashboard</h1>
+            <p class="text-sm text-slate-400">Review recent activity, promote trusted members, and remove harmful content in one place.</p>
+        </div>
+        <button
+            id="moderation-refresh"
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-500/60 px-5 py-2 text-sm font-semibold text-indigo-200 transition hover:bg-indigo-600/10"
+        >
+            <span class="text-lg">↻</span>
+            <span>Refresh data</span>
+        </button>
+    </header>
+
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-5 shadow-lg shadow-indigo-500/10">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Total users</p>
+            <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-users">0</p>
+        </article>
+        <article class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-5 shadow-lg shadow-emerald-500/10">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Active last 24h</p>
+            <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="active-last-24h">0</p>
+        </article>
+        <article class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-5 shadow-lg shadow-sky-500/10">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Posts</p>
+            <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-posts">0</p>
+        </article>
+        <article class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-5 shadow-lg shadow-rose-500/10">
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Media assets</p>
+            <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-media-assets">0</p>
+        </article>
+    </div>
+
+    <div id="moderation-error" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"></div>
+    <div id="moderation-loading" class="hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-6 text-center text-sm text-slate-400">
+        {{ components.feedback.loading_spinner(label="Loading moderation data") | safe }}
+    </div>
+
+    <section class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30">
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-white">User oversight</h2>
+                <p class="text-sm text-slate-400">Recent sign ups and their trust levels.</p>
+            </div>
+            <span class="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-400">Owners can adjust roles directly.</span>
+        </div>
+        <p id="moderation-users-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">No user data yet.</p>
+        <div class="mt-6 overflow-x-auto">
+            <table id="moderation-user-table" class="min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200">
+                <thead>
+                    <tr class="text-xs uppercase tracking-wider text-slate-400">
+                        <th class="px-4 py-2 font-medium">User</th>
+                        <th class="px-4 py-2 font-medium">Role</th>
+                        <th class="px-4 py-2 font-medium text-center">Posts</th>
+                        <th class="px-4 py-2 font-medium">Last active</th>
+                        <th class="px-4 py-2 font-medium text-right">Controls</th>
+                    </tr>
+                </thead>
+                <tbody id="moderation-user-body"></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30">
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-white">Recent posts</h2>
+                <p class="text-sm text-slate-400">Spot abusive captions and remove them instantly.</p>
+            </div>
+        </div>
+        <p id="moderation-posts-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">No posts found.</p>
+        <div class="mt-6 overflow-x-auto">
+            <table id="moderation-post-table" class="min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200">
+                <thead>
+                    <tr class="text-xs uppercase tracking-wider text-slate-400">
+                        <th class="px-4 py-2 font-medium">Author</th>
+                        <th class="px-4 py-2 font-medium">Content</th>
+                        <th class="px-4 py-2 font-medium">Engagement</th>
+                        <th class="px-4 py-2 font-medium text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="moderation-post-body"></tbody>
+            </table>
+        </div>
+    </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.addEventListener('DOMContentLoaded', () => {
+        if (window.UI && typeof window.UI.initModerationPage === 'function') {
+            window.UI.initModerationPage();
+        }
+    });
+</script>
+{% endblock %}
