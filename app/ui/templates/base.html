@@ -113,6 +113,84 @@
         {% block content %}{% endblock %}
     </main>
     <script src="/assets/js/app.v2.js" defer></script>
+    <script>
+        (() => {
+            function bindMobileNavFallback() {
+                const toggle = document.getElementById('mobile-nav-toggle');
+                const panel = document.getElementById('mobile-nav-panel');
+                if (!toggle || !panel || toggle.dataset.bound === 'true') {
+                    return;
+                }
+
+                // Mirror the primary nav toggle behaviour so mobile users can always navigate.
+                const label = toggle.querySelector('[data-mobile-nav-label]');
+                const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
+                const closeIcon = toggle.querySelector('[data-mobile-nav-icon="close"]');
+
+                const setState = next => {
+                    panel.classList.toggle('hidden', !next);
+                    toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+                    toggle.dataset.open = next ? 'true' : 'false';
+                    if (label) {
+                        label.textContent = next ? 'Close' : 'Menu';
+                    }
+                    if (openIcon && closeIcon) {
+                        openIcon.classList.toggle('hidden', next);
+                        closeIcon.classList.toggle('hidden', !next);
+                    }
+                };
+
+                const handleDocumentClick = event => {
+                    if (toggle.dataset.open !== 'true') {
+                        return;
+                    }
+                    if (panel.contains(event.target) || toggle.contains(event.target)) {
+                        return;
+                    }
+                    setState(false);
+                };
+
+                const handleKeydown = event => {
+                    if (event.key === 'Escape' && toggle.dataset.open === 'true') {
+                        setState(false);
+                    }
+                };
+
+                const handleResize = () => {
+                    if (window.innerWidth >= 768 && toggle.dataset.open === 'true') {
+                        setState(false);
+                    }
+                };
+
+                panel.querySelectorAll('a[href]').forEach(link => {
+                    link.addEventListener('click', () => setState(false));
+                });
+
+                toggle.addEventListener('click', event => {
+                    event.preventDefault();
+                    const next = toggle.dataset.open !== 'true';
+                    setState(next);
+                });
+
+                document.addEventListener('click', handleDocumentClick);
+                document.addEventListener('keydown', handleKeydown);
+                window.addEventListener('resize', handleResize);
+
+                setState(false);
+                toggle.dataset.bound = 'true';
+            }
+
+            function scheduleFallback() {
+                window.setTimeout(bindMobileNavFallback, 0);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', scheduleFallback, { once: true });
+            } else {
+                scheduleFallback();
+            }
+        })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
