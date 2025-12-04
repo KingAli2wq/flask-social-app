@@ -159,6 +159,12 @@
     },
   };
 
+  const scrollLock = {
+    count: 0,
+    bodyOverflow: '',
+    htmlOverflow: '',
+  };
+
   // -----------------------------------------------------------------------
   // Helpers
   // -----------------------------------------------------------------------
@@ -4969,6 +4975,28 @@
     }
   }
 
+  function lockBodyScroll() {
+    if (typeof document === 'undefined') return;
+    if (scrollLock.count === 0) {
+      scrollLock.bodyOverflow = document.body.style.overflow;
+      scrollLock.htmlOverflow = document.documentElement.style.overflow;
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    }
+    scrollLock.count += 1;
+  }
+
+  function unlockBodyScroll() {
+    if (typeof document === 'undefined' || scrollLock.count === 0) return;
+    scrollLock.count = Math.max(0, scrollLock.count - 1);
+    if (scrollLock.count === 0) {
+      document.body.style.overflow = scrollLock.bodyOverflow || '';
+      document.documentElement.style.overflow = scrollLock.htmlOverflow || '';
+      scrollLock.bodyOverflow = '';
+      scrollLock.htmlOverflow = '';
+    }
+  }
+
   async function openModerationDataset(type, options = {}) {
     const meta = MODERATION_DATASET_META[type];
     if (!meta) return;
@@ -5014,10 +5042,18 @@
     const panelRoot = state.moderation.panel.root;
     if (!panelRoot) return;
     if (show) {
+      const wasHidden = panelRoot.classList.contains('hidden');
       panelRoot.classList.remove('hidden');
+      if (wasHidden) {
+        lockBodyScroll();
+      }
     } else {
+      const wasVisible = !panelRoot.classList.contains('hidden');
       panelRoot.classList.add('hidden');
       state.moderation.activeDataset = null;
+      if (wasVisible) {
+        unlockBodyScroll();
+      }
     }
   }
 
@@ -5594,6 +5630,7 @@
     if (!modal.body) return;
     const isOwner = state.moderation.viewerRole === 'owner';
     const disabledAttr = isOwner ? '' : 'disabled';
+    const canEditRole = isOwner && state.moderation.viewerId !== detail.id;
     modal.body.innerHTML = `
       <div class="flex flex-col gap-4 md:flex-row md:items-start">
         <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-24 w-24 rounded-3xl border border-slate-800/70 object-cover" />
@@ -5607,6 +5644,16 @@
             <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Followers<br><span class="text-lg font-semibold text-white">${Number(detail.follower_count || 0).toLocaleString()}</span></div>
             <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Following<br><span class="text-lg font-semibold text-white">${Number(detail.following_count || 0).toLocaleString()}</span></div>
           </div>
+          ${isOwner ? `
+            <div class="rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3">
+              <label class="block text-sm font-semibold text-slate-200">Role
+                <select class="mt-1 w-full rounded-2xl border border-slate-700/70 bg-slate-950/70 px-3 py-2 text-sm font-medium text-slate-100 focus:border-indigo-500/60 focus:outline-none" data-mod-role-select="true" data-user-id="${detail.id}" data-previous-role="${(detail.role || 'user').toLowerCase()}" ${canEditRole ? '' : 'disabled title="You cannot change your own role"'}>
+                  ${buildRoleOptions((detail.role || 'user').toLowerCase())}
+                </select>
+              </label>
+              ${!canEditRole ? '<p class="mt-2 text-xs text-slate-500">You cannot change your own role.</p>' : ''}
+            </div>
+          ` : ''}
         </div>
       </div>
       <form data-user-edit-form class="mt-6 space-y-4">
@@ -5649,6 +5696,13 @@
     `;
   }
 
+  function buildRoleOptions(selectedRole) {
+    const normalized = (selectedRole || 'user').toLowerCase();
+    return ['owner', 'admin', 'user']
+      .map(role => `<option value="${role}" ${role === normalized ? 'selected' : ''}>${formatRoleLabel(role)}</option>`)
+      .join('');
+  }
+
   function attachModerationUserDetailEvents(detail) {
     const modal = state.moderation.modal;
     if (!modal.body) return;
@@ -5659,6 +5713,10 @@
     const deleteBtn = modal.body.querySelector('[data-user-delete]');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () => handleModerationUserDelete(detail.id, deleteBtn));
+    }
+    const roleSelect = modal.body.querySelector('[data-mod-role-select]');
+    if (roleSelect && state.moderation.viewerRole === 'owner') {
+      roleSelect.addEventListener('change', () => handleModerationRoleChange(roleSelect));
     }
   }
 
@@ -5913,16 +5971,21 @@
   function showModerationDetailModal({ title, label, body }) {
     const modal = state.moderation.modal;
     if (!modal.root) return;
+    const wasHidden = modal.root.classList.contains('hidden');
     if (modal.title && title) modal.title.textContent = title;
     if (modal.label && label) modal.label.textContent = label;
     if (modal.body && body !== undefined) modal.body.innerHTML = body;
     modal.root.classList.remove('hidden');
+    if (wasHidden) {
+      lockBodyScroll();
+    }
   }
 
   function hideModerationDetailModal() {
     const modal = state.moderation.modal;
-    if (modal.root) {
+    if (modal.root && !modal.root.classList.contains('hidden')) {
       modal.root.classList.add('hidden');
+      unlockBodyScroll();
     }
   }
 
@@ -5935,7 +5998,11 @@
     confirm.title.textContent = options.title || 'Confirm action';
     confirm.message.textContent = options.message || 'Are you sure?';
     confirm.accept.textContent = options.confirmLabel || 'Confirm';
+    const wasHidden = confirm.root.classList.contains('hidden');
     confirm.root.classList.remove('hidden');
+    if (wasHidden) {
+      lockBodyScroll();
+    }
     return new Promise(resolve => {
       confirm.resolver = resolve;
       confirm.accept.onclick = () => finalizeModerationConfirm(true);
@@ -5946,7 +6013,10 @@
   function finalizeModerationConfirm(result) {
     const confirm = state.moderation.confirm;
     if (!confirm.resolver) return;
-    confirm.root.classList.add('hidden');
+    if (!confirm.root.classList.contains('hidden')) {
+      confirm.root.classList.add('hidden');
+      unlockBodyScroll();
+    }
     const resolver = confirm.resolver;
     confirm.resolver = null;
     confirm.accept.onclick = null;
