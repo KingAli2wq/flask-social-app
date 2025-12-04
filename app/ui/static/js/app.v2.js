@@ -15,6 +15,7 @@
   const NOTIFICATION_WS_PATH = '/notifications/ws';
   const POST_MEDIA_VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogg', 'ogv', 'mkv']);
   const POST_MEDIA_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'bmp']);
+  const INVALID_POST_MEDIA_URL_STRINGS = new Set(['', 'null', 'none', 'undefined', 'post media']);
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -2015,8 +2016,23 @@
     return null;
   }
 
+  function sanitizePostMediaUrl(value) {
+    if (typeof value !== 'string') {
+      return '';
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return '';
+    }
+    const normalized = trimmed.toLowerCase();
+    if (INVALID_POST_MEDIA_URL_STRINGS.has(normalized)) {
+      return '';
+    }
+    return trimmed;
+  }
+
   function buildPostMediaMarkup(post) {
-    const url = typeof post?.media_url === 'string' ? post.media_url.trim() : '';
+    const url = sanitizePostMediaUrl(post?.media_url);
     if (!url) {
       return '';
     }
@@ -2029,7 +2045,7 @@
           ? ` poster="${post.media_preview_url.trim()}"`
           : '';
       return `
-        <div class="${containerClasses}">
+        <div class="${containerClasses}" data-role="post-media">
           <video
             class="h-full w-full object-contain bg-black"
             src="${url}"
@@ -2041,13 +2057,15 @@
       `;
     }
     return `
-      <div class="${containerClasses}">
+      <div class="${containerClasses}" data-role="post-media">
         <img
           src="${url}"
           alt="Post media"
           loading="lazy"
           decoding="async"
+          data-role="post-media-image"
           class="max-h-full max-w-full object-contain"
+          onerror="this.dataset.failed='true'; var container=this.closest('[data-role=post-media]'); if(container){container.remove();}"
         />
       </div>
     `;
