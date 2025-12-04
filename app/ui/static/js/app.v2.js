@@ -120,6 +120,11 @@
       fetchController: null,
       videoObserver: null,
       scrollEnhanced: false,
+      fullscreen: {
+        active: false,
+        overlay: null,
+        list: null,
+      },
     },
     mediaComments: {},
     moderation: {
@@ -2018,7 +2023,7 @@
       return `
         <div class="${containerClasses}">
           <video
-            class="h-full w-full object-cover"
+            class="h-full w-full object-contain bg-black"
             src="${url}"
             controls
             playsinline
@@ -4246,7 +4251,7 @@
     wrapper.dataset.mediaId = asset.id;
     const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
     const mediaMarkup = isVideo
-      ? `<video data-media-role="reel-video" data-src="${asset.url}" class="h-full w-full object-cover" preload="metadata" playsinline loop muted controls></video>`
+      ? `<video data-media-role="reel-video" data-src="${asset.url}" class="h-full w-full object-contain bg-black" preload="metadata" playsinline loop muted controls></video>`
       : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="max-h-full max-w-full object-contain" />`;
     const displayName = asset.display_name || asset.username || 'Unknown creator';
     const username = asset.username ? `@${asset.username}` : '';
