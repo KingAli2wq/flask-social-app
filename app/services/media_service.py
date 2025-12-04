@@ -1,10 +1,11 @@
 """Media persistence and storage helpers for the social app."""
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Tuple, cast
+from typing import Any, Iterable, Tuple, cast
 from uuid import UUID, uuid4
 
 import requests
@@ -16,6 +17,9 @@ from sqlalchemy.orm import Session
 
 from ..models import MediaAsset, MediaComment, MediaDislike, MediaLike, Post, User
 from .spaces_service import SpacesDeletionError, delete_file_from_spaces
+
+
+logger = logging.getLogger(__name__)
 
 
 def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
@@ -43,15 +47,71 @@ def _media_asset_is_fetchable(asset: MediaAsset) -> bool:
     return status_code < 400
 
 
-def _purge_missing_media_assets(db: Session, asset_ids: list[UUID]) -> None:
+def _detach_posts_for_assets(db: Session, asset_ids: list[UUID]) -> None:
+    """Clear media references from posts linked to the provided asset IDs."""
+
     if not asset_ids:
         return
-    posts = db.query(Post).filter(Post.media_asset_id.in_(asset_ids)).all()
+
+    posts = db.query(Post).where(Post.media_asset_id.in_(asset_ids)).all()
     for post in posts:
         post.media_asset_id = None
         post.media_url = None
-    db.query(MediaAsset).filter(MediaAsset.id.in_(asset_ids)).delete(synchronize_session=False)
-    db.commit()
+
+
+def _delete_media_asset_objects(
+    db: Session,
+    assets: Iterable[MediaAsset],
+    *,
+    delete_remote: bool,
+    fail_on_remote_error: bool = True,
+) -> int:
+    """Delete ``MediaAsset`` rows plus their remote files when requested."""
+
+    asset_list = [asset for asset in assets if asset is not None]
+    if not asset_list:
+        return 0
+
+    if delete_remote:
+        for asset in asset_list:
+            key = (asset.key or "").strip()
+            if not key:
+                continue
+            try:
+                delete_file_from_spaces(key)
+            except SpacesDeletionError as exc:
+                if fail_on_remote_error:
+                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+                logger.warning("Unable to delete remote media asset %s: %s", asset.id, exc)
+
+    asset_ids = [asset.id for asset in asset_list]
+    _detach_posts_for_assets(db, asset_ids)
+
+    for asset in asset_list:
+        db.delete(asset)
+
+    return len(asset_list)
+
+
+def _purge_missing_media_assets(db: Session, asset_ids: list[UUID]) -> None:
+    if not asset_ids:
+        return
+    assets = db.query(MediaAsset).filter(MediaAsset.id.in_(asset_ids)).all()
+    if not assets:
+        return
+    try:
+        removed = _delete_media_asset_objects(
+            db,
+            assets,
+            delete_remote=True,
+            fail_on_remote_error=False,
+        )
+        db.commit()
+        if removed:
+            logger.info("Purged %d missing media assets from feed", removed)
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
 
 def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 25) -> list[dict[str, Any]]:
@@ -370,21 +430,13 @@ def delete_media_asset(
     asset = db.get(MediaAsset, asset_id)
     if asset is None:
         return
-
-    key = asset.key
-    if delete_remote and key:
-        try:
-            delete_file_from_spaces(key)
-        except SpacesDeletionError as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-    related_posts = db.query(Post).where(Post.media_asset_id == asset.id).all()
-    for post in related_posts:
-        post.media_asset_id = None
-        post.media_url = None
-
-    db.delete(asset)
     try:
+        _delete_media_asset_objects(
+            db,
+            [asset],
+            delete_remote=delete_remote,
+            fail_on_remote_error=True,
+        )
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()

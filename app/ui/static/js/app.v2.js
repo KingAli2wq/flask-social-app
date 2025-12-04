@@ -124,6 +124,12 @@
         active: false,
         overlay: null,
         list: null,
+        stage: null,
+        counter: null,
+        prev: null,
+        next: null,
+        currentIndex: 0,
+        keyHandlerBound: false,
       },
     },
     mediaComments: {},
@@ -4241,6 +4247,8 @@
     container.appendChild(fragment);
     setupMediaReelScrollBehavior();
     setupMediaReelVideoObserver();
+    syncMediaFullscreenToggleState();
+    refreshMediaFullscreenContent();
   }
 
   function createMediaCard(asset) {
@@ -4377,6 +4385,325 @@
     return wrapper;
   }
 
+  function ensureMediaFullscreenElements() {
+    const controller = state.mediaReel.fullscreen;
+    if (controller.overlay && controller.list && controller.stage && controller.counter) {
+      return controller;
+    }
+    let overlay = document.getElementById('media-fullscreen-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'media-fullscreen-overlay';
+      overlay.className = 'fixed inset-0 z-[999] hidden bg-slate-950/95 text-white backdrop-blur-md opacity-0 transition-opacity duration-200';
+      overlay.innerHTML = `
+        <div class="flex h-full w-full flex-col bg-gradient-to-b from-slate-950/95 to-slate-900/90">
+          <header class="flex items-center justify-between px-6 py-4 text-sm text-slate-300">
+            <div>
+              <p class="text-[11px] uppercase tracking-[0.3em] text-slate-500">Media reel</p>
+              <p class="text-base font-semibold text-white">Fullscreen viewer</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <span data-media-fullscreen-counter class="text-xs text-slate-300">0 / 0</span>
+              <button type="button" data-media-fullscreen-close class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-rose-500/60 hover:text-white">Close</button>
+            </div>
+          </header>
+          <div class="relative flex-1 overflow-hidden" data-media-fullscreen-stage>
+            <div data-media-fullscreen-track class="flex h-full w-full translate-x-0 items-stretch transition-transform duration-300 ease-out"></div>
+            <button type="button" data-media-fullscreen-prev class="absolute left-4 top-1/2 -translate-y-1/2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-lg font-semibold text-white shadow-lg shadow-black/40 transition hover:border-indigo-500/70 hover:bg-indigo-600/80" aria-label="Previous media">‹</button>
+            <button type="button" data-media-fullscreen-next class="absolute right-4 top-1/2 -translate-y-1/2 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-2 text-lg font-semibold text-white shadow-lg shadow-black/40 transition hover:border-indigo-500/70 hover:bg-indigo-600/80" aria-label="Next media">›</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+    }
+
+    controller.overlay = overlay;
+    controller.list = overlay.querySelector('[data-media-fullscreen-track]');
+    controller.stage = overlay.querySelector('[data-media-fullscreen-stage]');
+    controller.counter = overlay.querySelector('[data-media-fullscreen-counter]');
+    controller.prev = overlay.querySelector('[data-media-fullscreen-prev]');
+    controller.next = overlay.querySelector('[data-media-fullscreen-next]');
+
+    const closeButton = overlay.querySelector('[data-media-fullscreen-close]');
+    if (closeButton && closeButton.dataset.bound !== 'true') {
+      closeButton.dataset.bound = 'true';
+      closeButton.addEventListener('click', event => {
+        event.preventDefault();
+        closeMediaFullscreen();
+      });
+    }
+
+    if (overlay.dataset.bound !== 'true') {
+      overlay.dataset.bound = 'true';
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) {
+          closeMediaFullscreen();
+        }
+      });
+    }
+
+    if (controller.prev && controller.prev.dataset.bound !== 'true') {
+      controller.prev.dataset.bound = 'true';
+      controller.prev.addEventListener('click', event => {
+        event.preventDefault();
+        stepMediaFullscreen(-1);
+      });
+    }
+
+    if (controller.next && controller.next.dataset.bound !== 'true') {
+      controller.next.dataset.bound = 'true';
+      controller.next.addEventListener('click', event => {
+        event.preventDefault();
+        stepMediaFullscreen(1);
+      });
+    }
+
+    if (controller.stage && controller.stage.dataset.bound !== 'true') {
+      controller.stage.dataset.bound = 'true';
+      let wheelLocked = false;
+      controller.stage.addEventListener(
+        'wheel',
+        event => {
+          if (!state.mediaReel.fullscreen.active) return;
+          if (Math.abs(event.deltaY) < 20) return;
+          event.preventDefault();
+          if (wheelLocked) return;
+          wheelLocked = true;
+          stepMediaFullscreen(event.deltaY > 0 ? 1 : -1);
+          window.setTimeout(() => {
+            wheelLocked = false;
+          }, 360);
+        },
+        { passive: false }
+      );
+    }
+
+    if (!controller.keyHandlerBound) {
+      controller.keyHandlerBound = true;
+      document.addEventListener('keydown', handleMediaFullscreenKeydown, true);
+    }
+
+    return controller;
+  }
+
+  function createMediaFullscreenSlide(asset, index) {
+    const slide = document.createElement('section');
+    slide.className = 'flex h-full w-full flex-shrink-0 flex-col items-center justify-center gap-6 px-6 py-10 text-center';
+    slide.dataset.mediaId = asset.id || '';
+    slide.dataset.index = String(index);
+    const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
+    const mediaMarkup = isVideo
+      ? `<video data-media-role="fullscreen-video" data-src="${asset.url}" class="max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain" playsinline preload="metadata" controls></video>`
+      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain" />`;
+    const creator = escapeHtml(asset.display_name || asset.username || 'Unknown creator');
+    const usernameLabel = asset.username ? `@${asset.username}` : '—';
+    const safeUsername = escapeHtml(usernameLabel);
+    const timestamp = formatDate(asset.created_at);
+    const likeCount = typeof asset.like_count === 'number' ? asset.like_count : 0;
+    const dislikeCount = typeof asset.dislike_count === 'number' ? asset.dislike_count : 0;
+    const commentCount = typeof asset.comment_count === 'number' ? asset.comment_count : 0;
+    slide.innerHTML = `
+      <div class="flex w-full flex-1 items-center justify-center">
+        ${mediaMarkup}
+      </div>
+      <div class="w-full max-w-3xl text-left text-sm text-slate-300">
+        <p class="text-base font-semibold text-white">${creator}</p>
+        <p class="text-xs text-slate-400">${safeUsername}</p>
+        <p class="mt-1 text-[11px] text-slate-500">${timestamp}</p>
+        <p class="mt-3 text-xs text-slate-400">❤️ ${likeCount} • 👎 ${dislikeCount} • 💬 ${commentCount}</p>
+      </div>
+    `;
+    return slide;
+  }
+
+  function buildMediaFullscreenSlides(startIndex = 0) {
+    const controller = ensureMediaFullscreenElements();
+    if (!controller.list) return;
+    controller.list.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+    state.mediaReel.items.forEach((asset, index) => {
+      fragment.appendChild(createMediaFullscreenSlide(asset, index));
+    });
+    controller.list.appendChild(fragment);
+    controller.currentIndex = 0;
+    if (!state.mediaReel.items.length) {
+      closeMediaFullscreen();
+      syncMediaFullscreenToggleState();
+      return;
+    }
+    goToMediaFullscreenIndex(Math.min(startIndex, state.mediaReel.items.length - 1));
+  }
+
+  function getVisibleMediaReelIndex() {
+    const container = document.getElementById('media-reel');
+    if (!container) return 0;
+    const cards = Array.from(container.querySelectorAll('article[data-media-id]'));
+    if (!cards.length) return 0;
+    const containerRect = container.getBoundingClientRect();
+    let closestIndex = 0;
+    let shortestDistance = Number.POSITIVE_INFINITY;
+    cards.forEach((card, index) => {
+      const rect = card.getBoundingClientRect();
+      const distance = Math.abs(rect.top - containerRect.top);
+      if (distance < shortestDistance) {
+        shortestDistance = distance;
+        closestIndex = index;
+      }
+    });
+    return closestIndex;
+  }
+
+  function openMediaFullscreen(startIndex = 0) {
+    if (!state.mediaReel.items.length) {
+      showToast('Upload media to view fullscreen.', 'info');
+      return;
+    }
+    const controller = ensureMediaFullscreenElements();
+    buildMediaFullscreenSlides(startIndex);
+    state.mediaReel.fullscreen.active = true;
+    if (controller.overlay) {
+      controller.overlay.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        controller.overlay.classList.remove('opacity-0');
+        controller.overlay.classList.add('opacity-100');
+      });
+    }
+    lockBodyScroll();
+    syncMediaFullscreenToggleState();
+    syncMediaFullscreenControls();
+    syncMediaFullscreenCounter();
+    syncMediaFullscreenPlayback();
+  }
+
+  function closeMediaFullscreen() {
+    const controller = state.mediaReel.fullscreen;
+    if (!controller.active) {
+      controller.active = false;
+      syncMediaFullscreenToggleState();
+      return;
+    }
+    controller.active = false;
+    if (controller.overlay) {
+      controller.overlay.classList.remove('opacity-100');
+      controller.overlay.classList.add('opacity-0');
+      window.setTimeout(() => {
+        controller.overlay?.classList.add('hidden');
+      }, 200);
+    }
+    if (controller.list) {
+      controller.list.querySelectorAll('video').forEach(video => {
+        if (typeof video.pause === 'function') {
+          try {
+            video.pause();
+          } catch (_) {
+            /* noop */
+          }
+        }
+      });
+    }
+    unlockBodyScroll();
+    syncMediaFullscreenToggleState();
+  }
+
+  function toggleMediaFullscreen() {
+    if (state.mediaReel.fullscreen.active) {
+      closeMediaFullscreen();
+      return;
+    }
+    openMediaFullscreen(getVisibleMediaReelIndex());
+  }
+
+  function goToMediaFullscreenIndex(targetIndex) {
+    const controller = state.mediaReel.fullscreen;
+    if (!controller.list || !state.mediaReel.items.length) return;
+    const maxIndex = state.mediaReel.items.length - 1;
+    const clamped = Math.max(0, Math.min(targetIndex, maxIndex));
+    controller.currentIndex = clamped;
+    controller.list.style.transform = `translateX(-${clamped * 100}%)`;
+    syncMediaFullscreenControls();
+    syncMediaFullscreenCounter();
+    syncMediaFullscreenPlayback();
+  }
+
+  function stepMediaFullscreen(delta) {
+    goToMediaFullscreenIndex(state.mediaReel.fullscreen.currentIndex + delta);
+  }
+
+  function syncMediaFullscreenControls() {
+    const controller = state.mediaReel.fullscreen;
+    const total = state.mediaReel.items.length;
+    const atStart = controller.currentIndex <= 0;
+    const atEnd = controller.currentIndex >= total - 1;
+    if (controller.prev) {
+      controller.prev.disabled = atStart;
+      controller.prev.classList.toggle('opacity-40', atStart);
+    }
+    if (controller.next) {
+      controller.next.disabled = atEnd;
+      controller.next.classList.toggle('opacity-40', atEnd);
+    }
+  }
+
+  function syncMediaFullscreenCounter() {
+    const controller = state.mediaReel.fullscreen;
+    if (!controller.counter) return;
+    const total = state.mediaReel.items.length;
+    if (!total) {
+      controller.counter.textContent = '0 / 0';
+      return;
+    }
+    controller.counter.textContent = `${controller.currentIndex + 1} / ${total}`;
+  }
+
+  function syncMediaFullscreenPlayback() {
+    const controller = state.mediaReel.fullscreen;
+    if (!controller.list) return;
+    const videos = controller.list.querySelectorAll('video[data-media-role="fullscreen-video"]');
+    videos.forEach((video, index) => {
+      if (index === controller.currentIndex) {
+        attachVideoSource(video, true);
+      } else if (typeof video.pause === 'function') {
+        try {
+          video.pause();
+          video.currentTime = 0;
+        } catch (_) {
+          /* noop */
+        }
+      }
+    });
+  }
+
+  function handleMediaFullscreenKeydown(event) {
+    if (!state.mediaReel.fullscreen.active) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMediaFullscreen();
+      return;
+    }
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      stepMediaFullscreen(1);
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      stepMediaFullscreen(-1);
+    }
+  }
+
+  function refreshMediaFullscreenContent() {
+    if (!state.mediaReel.fullscreen.active) return;
+    buildMediaFullscreenSlides(state.mediaReel.fullscreen.currentIndex);
+  }
+
+  function syncMediaFullscreenToggleState() {
+    const toggle = document.getElementById('media-fullscreen-toggle');
+    if (!toggle) return;
+    const hasItems = state.mediaReel.items.length > 0;
+    toggle.disabled = !hasItems;
+    toggle.classList.toggle('opacity-50', !hasItems);
+    toggle.classList.toggle('cursor-not-allowed', !hasItems);
+    toggle.textContent = state.mediaReel.fullscreen.active ? 'Exit full screen' : 'Full screen';
+  }
+
   function initMediaPage() {
     initThemeToggle();
     const fileInput = document.getElementById('media-file');
@@ -4385,7 +4712,16 @@
     const previewVideo = document.getElementById('media-preview-video');
     const form = document.getElementById('media-upload-form');
     const feedback = document.getElementById('media-upload-feedback');
+    const fullscreenToggle = document.getElementById('media-fullscreen-toggle');
     renderMediaHistory();
+    syncMediaFullscreenToggleState();
+    if (fullscreenToggle && fullscreenToggle.dataset.bound !== 'true') {
+      fullscreenToggle.dataset.bound = 'true';
+      fullscreenToggle.addEventListener('click', event => {
+        event.preventDefault();
+        toggleMediaFullscreen();
+      });
+    }
     const hydratedFromCache = hydrateMediaReelFromCache();
     setupMediaReelScrollBehavior();
     loadMediaReel({ forceRefresh: !hydratedFromCache }).catch(error => {
