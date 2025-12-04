@@ -4946,6 +4946,12 @@
     if (tableContainer && tableContainer.dataset.bound !== 'true') {
       tableContainer.dataset.bound = 'true';
       tableContainer.addEventListener('click', handleModerationDatasetAction);
+      tableContainer.addEventListener('change', event => {
+        const select = event.target.closest('[data-mod-role-select]');
+        if (!select) return;
+        event.preventDefault();
+        handleModerationRoleChange(select);
+      });
     }
 
     const detailClose = document.getElementById('moderation-detail-close');
@@ -5218,6 +5224,7 @@
     items.forEach(user => {
       const row = document.createElement('tr');
       row.className = 'border-b border-slate-800/60 last:border-0';
+      const canEditRole = state.moderation.viewerRole === 'owner' && state.moderation.viewerId !== user.id;
       row.innerHTML = `
         <td class="px-4 py-3">
           <div class="flex items-center gap-3">
@@ -5234,7 +5241,13 @@
           <div>Media: ${Number(user.media_count || 0).toLocaleString()}</div>
           <div>Joined: ${user.created_at ? formatDate(user.created_at) : '—'}</div>
         </td>
-        <td class="px-4 py-3">${renderRoleBadgeHtml(user.role, { includeUser: true }) || '<span class="text-slate-500 text-xs">User</span>'}</td>
+        <td class="px-4 py-3">
+          ${canEditRole ? `
+            <select class="w-full rounded-2xl border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-sm font-medium text-slate-100 focus:border-indigo-500/60 focus:outline-none" data-mod-role-select="true" data-user-id="${user.id}" data-previous-role="${(user.role || 'user').toLowerCase()}">
+              ${buildRoleOptions((user.role || 'user').toLowerCase())}
+            </select>
+          ` : `${renderRoleBadgeHtml(user.role, { includeUser: true }) || '<span class="text-slate-500 text-xs">User</span>'}`}
+        </td>
         <td class="px-4 py-3 text-right">
           <div class="flex flex-wrap items-center justify-end gap-2">
             <button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-user" data-user-id="${user.id}">View</button>
