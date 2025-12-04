@@ -242,6 +242,8 @@ def update_user_role(
 
     target_role = (getattr(target, "role", None) or "user").lower()
     target_id = cast(UUID, target.id)
+    if target_role == "owner" and desired_role != "owner":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only the primary owner can hold this role")
     actor_id = cast(UUID, actor.id)
 
     if target_role == "owner" and desired_role != "owner":

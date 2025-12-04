@@ -5711,8 +5711,12 @@
 
   function buildRoleOptions(selectedRole) {
     const normalized = (selectedRole || 'user').toLowerCase();
-    return ['owner', 'admin', 'user']
-      .map(role => `<option value="${role}" ${role === normalized ? 'selected' : ''}>${formatRoleLabel(role)}</option>`)
+    const editableRoles = ['admin', 'user'];
+    if (normalized === 'owner' && !editableRoles.includes('owner')) {
+      editableRoles.unshift('owner');
+    }
+    return editableRoles
+      .map(role => `<option value="${role}" ${role === normalized ? 'selected' : ''} ${role === 'owner' ? 'disabled' : ''}>${formatRoleLabel(role)}</option>`)
       .join('');
   }
 
