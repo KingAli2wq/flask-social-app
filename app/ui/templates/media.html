@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid gap-8 lg:grid-cols-[1.7fr,1fr]">
+<section class="mx-auto grid max-w-screen-2xl gap-8 lg:grid-cols-[2.1fr,1fr] xl:gap-12">
     <div class="flex flex-col gap-6">
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
             <header class="flex items-center justify-between">
@@ -13,7 +13,7 @@
                 <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Realtime-ready</span>
             </header>
             <div class="mt-6">
-                <div class="relative h-[72vh] rounded-[32px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80">
+                <div class="relative h-[78vh] overflow-hidden rounded-[40px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80 lg:h-[84vh]">
                     <div id="media-reel-loader" class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-sm text-slate-400">
                         <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
                         <span>Loading spotlight…</span>
@@ -22,7 +22,7 @@
                         <span class="text-4xl">📼</span>
                         <p>Upload a video or photo to see it here.</p>
                     </div>
-                    <div id="media-reel" tabindex="0" class="scrollbar-thin h-full snap-y snap-mandatory overflow-y-auto px-4 py-6 space-y-10"></div>
+                    <div id="media-reel" tabindex="0" class="scrollbar-thin h-full snap-y snap-mandatory overflow-y-auto px-3 py-6 space-y-10 sm:px-6 sm:py-8 lg:px-10"></div>
                 </div>
             </div>
         </section>
@@ -43,8 +43,8 @@
                     <input id="media-file" name="file" type="file" accept="image/*,video/*" class="hidden">
                 </label>
                 <div id="media-preview" class="hidden overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/70">
-                    <img id="media-preview-img" class="hidden h-64 w-full object-cover" alt="Preview">
-                    <video id="media-preview-video" class="hidden h-64 w-full object-cover" controls></video>
+                    <img id="media-preview-img" class="hidden h-64 w-full object-cover" alt="Preview" loading="lazy" decoding="async">
+                    <video id="media-preview-video" class="hidden h-64 w-full object-cover" controls preload="metadata" playsinline></video>
                 </div>
                 <button
                     id="media-upload-submit"

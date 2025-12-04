@@ -13,6 +13,8 @@
   const REALTIME_WS_PATH = '/ws/feed';
   const MESSAGES_WS_PREFIX = '/messages/ws';
   const NOTIFICATION_WS_PATH = '/notifications/ws';
+  const POST_MEDIA_VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogg', 'ogv', 'mkv']);
+  const POST_MEDIA_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'bmp']);
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -1922,6 +1924,89 @@
     return clone;
   }
 
+  function extractFileExtension(url) {
+    if (typeof url !== 'string' || !url.trim()) {
+      return '';
+    }
+    const [clean] = url.split(/[?#]/);
+    const segment = (clean || '').split('/').pop() || '';
+    const dotIndex = segment.lastIndexOf('.');
+    if (dotIndex === -1) {
+      return '';
+    }
+    return segment.slice(dotIndex + 1).toLowerCase();
+  }
+
+  function inferPostMediaKind(post) {
+    if (!post || typeof post !== 'object') {
+      return null;
+    }
+    const typeCandidates = [
+      post.media_content_type,
+      post.content_type,
+      post.mediaContentType,
+      post.media?.content_type,
+      post.media?.contentType,
+    ];
+    for (const candidate of typeCandidates) {
+      if (typeof candidate !== 'string') continue;
+      const normalized = candidate.trim().toLowerCase();
+      if (!normalized) continue;
+      if (normalized.startsWith('video/')) return 'video';
+      if (normalized.startsWith('image/')) return 'image';
+    }
+    const url = typeof post.media_url === 'string' ? post.media_url : '';
+    const ext = extractFileExtension(url);
+    if (!ext) {
+      return null;
+    }
+    if (POST_MEDIA_VIDEO_EXTENSIONS.has(ext)) {
+      return 'video';
+    }
+    if (POST_MEDIA_IMAGE_EXTENSIONS.has(ext)) {
+      return 'image';
+    }
+    return null;
+  }
+
+  function buildPostMediaMarkup(post) {
+    const url = typeof post?.media_url === 'string' ? post.media_url.trim() : '';
+    if (!url) {
+      return '';
+    }
+    const mediaKind = inferPostMediaKind(post);
+    const containerClasses =
+      'mt-4 aspect-[4/5] w-full overflow-hidden rounded-2xl border border-slate-800/50 bg-black/60';
+    if (mediaKind === 'video') {
+      const posterAttr =
+        typeof post?.media_preview_url === 'string' && post.media_preview_url.trim()
+          ? ` poster="${post.media_preview_url.trim()}"`
+          : '';
+      return `
+        <div class="${containerClasses}">
+          <video
+            class="h-full w-full object-cover"
+            src="${url}"
+            controls
+            playsinline
+            preload="metadata"${posterAttr}
+          ></video>
+        </div>
+      `;
+    }
+    return `
+      <div class="${containerClasses}">
+        <img
+          src="${url}"
+          alt="Post media"
+          loading="lazy"
+          decoding="async"
+          class="h-full w-full object-cover"
+        />
+      </div>
+    `;
+  }
+
   function createPostCard(post, currentUserMeta, avatarUrl) {
     const el = document.createElement('article');
     el.className =
@@ -1949,10 +2034,7 @@
       textClasses: 'text-sm font-semibold',
     });
     const timestamp = formatDate(post.created_at);
-    const mediaUrl = typeof post.media_url === 'string' ? post.media_url.trim() : '';
-    const media = mediaUrl
-      ? `<img src="${mediaUrl}" class="mt-4 w-full rounded-2xl object-cover" alt="">`
-      : '';
+    const mediaSection = buildPostMediaMarkup(post);
     const likeCount = typeof post.like_count === 'number' ? post.like_count : 0;
     const dislikeCount = typeof post.dislike_count === 'number' ? post.dislike_count : 0;
     const commentCount = typeof post.comment_count === 'number' ? post.comment_count : 0;
@@ -2054,7 +2136,7 @@
         ${followButtonMarkup}
       </header>
       <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.caption || ''}</p>
-      ${media}
+      ${mediaSection}
       <footer class="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button
           data-role="like-button"
