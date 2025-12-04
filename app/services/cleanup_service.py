@@ -5,12 +5,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
+from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import Message, Notification, Post
+from ..models import MediaAsset, Message, Notification, Post
+from .media_service import media_url_is_fetchable
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,7 @@ class CleanupSummary:
     direct_messages: int
     group_messages: int
     notifications: int
+    broken_post_media: int = 0
 
     @property
     def total(self) -> int:
@@ -51,7 +54,8 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
     Returns
     -------
     CleanupSummary
-        Counts describing how many rows were removed per table.
+        Counts describing how many rows were removed per table and how many
+        posts had stale media references detached.
 
     Raises
     ------
@@ -77,6 +81,7 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
     delete_notifications = delete(Notification).where(Notification.created_at < cutoff).returning(Notification.id)
 
     try:
+        detached_media_posts = _detach_broken_post_media(session)
         posts_deleted = _execute_delete(session, delete_posts)
         direct_deleted = _execute_delete(session, delete_direct_messages)
         group_deleted = _execute_delete(session, delete_group_messages)
@@ -93,6 +98,7 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
         direct_messages=direct_deleted,
         group_messages=group_deleted,
         notifications=notifications_deleted,
+        broken_post_media=detached_media_posts,
     )
 
     logger.info(
@@ -127,6 +133,40 @@ def _execute_delete(session: Session, statement) -> int:
     result = session.execute(statement)
     deleted_ids = result.scalars().all()
     return len(deleted_ids)
+
+
+def _detach_broken_post_media(session: Session) -> int:
+    """Remove media references from posts whose files no longer exist."""
+
+    stmt = (
+        select(Post.id, Post.media_url, Post.media_asset_id, MediaAsset.url.label("asset_url"))
+        .outerjoin(MediaAsset, MediaAsset.id == Post.media_asset_id)
+        .where(or_(Post.media_asset_id.is_not(None), Post.media_url.is_not(None)))
+        .execution_options(yield_per=64)
+    )
+
+    broken_post_ids: list[UUID] = []
+    for post_id, post_media_url, _media_asset_id, asset_url in session.execute(stmt):
+        candidate_url = (post_media_url or asset_url or "").strip()
+        if not candidate_url or not media_url_is_fetchable(candidate_url):
+            broken_post_ids.append(post_id)
+
+    if not broken_post_ids:
+        return 0
+
+    unique_post_ids = list({post_id for post_id in broken_post_ids})
+    posts = session.query(Post).filter(Post.id.in_(unique_post_ids)).all()
+    detached = 0
+    for post in posts:
+        if post.media_asset_id is not None or post.media_url:
+            post.media_asset_id = None
+            post.media_url = None
+            detached += 1
+
+    if detached:
+        logger.info("Detached media from %d posts referencing missing files", detached)
+
+    return detached
 
 
 __all__ = [

@@ -32,17 +32,18 @@ def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
 MAX_MEDIA_FEED_LIMIT = 50
 
 
-def _media_asset_is_fetchable(asset: MediaAsset, *, timeout: float = 3.0) -> bool:
-    """Return True when the stored media URL responds successfully."""
+def media_url_is_fetchable(url: str | None, *, timeout: float = 3.0) -> bool:
+    """Return True when the provided URL responds successfully."""
 
-    if not asset.url:
+    candidate = (url or "").strip()
+    if not candidate:
         return False
 
     def _probe(method):
         try:
-            resp = method(asset.url, allow_redirects=True, timeout=timeout, stream=True)
+            resp = method(candidate, allow_redirects=True, timeout=timeout, stream=True)
         except RequestException as exc:  # pragma: no cover - network
-            logger.warning("%s probe failed for asset %s: %s", method.__name__.upper(), asset.id, exc)
+            logger.warning("%s probe failed for url %s: %s", method.__name__.upper(), candidate, exc)
             return None
         status_code = getattr(resp, "status_code", 500)
         resp.close()
@@ -56,6 +57,15 @@ def _media_asset_is_fetchable(asset: MediaAsset, *, timeout: float = 3.0) -> boo
         if status_code is None:
             return False
     return status_code < 400
+
+
+def _media_asset_is_fetchable(asset: MediaAsset, *, timeout: float = 3.0) -> bool:
+    """Return True when the stored media URL responds successfully."""
+
+    if asset is None:
+        return False
+
+    return media_url_is_fetchable(asset.url, timeout=timeout)
 
 
 def _detach_posts_for_assets(db: Session, asset_ids: list[UUID]) -> None:
