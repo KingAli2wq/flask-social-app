@@ -20,6 +20,7 @@ from .friendship_service import (
 )
 from .media_service import (
     create_media_comment,
+    delete_media_asset,
     delete_old_media,
     list_media_comments,
     list_media_feed,
@@ -29,7 +30,18 @@ from .media_service import (
     store_upload,
 )
 from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
-from .moderation_service import load_moderation_dashboard, update_user_role
+from .moderation_service import (
+    delete_moderation_user,
+    get_moderation_media_asset,
+    get_moderation_post,
+    get_moderation_user,
+    list_moderation_media_assets,
+    list_moderation_posts,
+    list_moderation_users,
+    load_moderation_dashboard,
+    update_moderation_user,
+    update_user_role,
+)
 from .notification_service import (
     NotificationType,
     add_notification,
@@ -85,6 +97,7 @@ __all__ = [
     "list_media_comments",
     "delete_old_media",
     "create_media_comment",
+    "delete_media_asset",
     "set_media_like_state",
     "set_media_dislike_state",
     "store_upload",
@@ -98,7 +111,15 @@ __all__ = [
     "mark_all_read",
     "delete_old_notifications",
     "load_moderation_dashboard",
+    "list_moderation_users",
+    "get_moderation_user",
     "update_user_role",
+    "update_moderation_user",
+    "delete_moderation_user",
+    "list_moderation_posts",
+    "get_moderation_post",
+    "list_moderation_media_assets",
+    "get_moderation_media_asset",
     "create_post_comment",
     "create_post_record",
     "delete_post_record",

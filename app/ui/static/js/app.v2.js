@@ -124,6 +124,38 @@
       dashboard: null,
       viewerRole: 'user',
       viewerId: null,
+      activeDataset: null,
+      datasetSearchHandle: null,
+      datasets: {
+        users: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
+        posts: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
+        media: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
+      },
+      panel: {
+        root: null,
+        title: null,
+        label: null,
+        searchInput: null,
+        pageLabel: null,
+        tableContainer: null,
+        emptyState: null,
+        prevButton: null,
+        nextButton: null,
+      },
+      modal: {
+        root: null,
+        title: null,
+        label: null,
+        body: null,
+      },
+      confirm: {
+        root: null,
+        title: null,
+        message: null,
+        accept: null,
+        cancel: null,
+        resolver: null,
+      },
     },
   };
 
@@ -147,6 +179,15 @@
     } catch (err) {
       console.warn('Failed to persist storage for', key, err);
     }
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function getAuth() {
@@ -4748,6 +4789,24 @@
   // Moderation
   // -----------------------------------------------------------------------
 
+  const MODERATION_DATASET_META = {
+    users: {
+      title: 'All users',
+      label: 'User directory',
+      searchPlaceholder: 'Search username, email, or display name',
+    },
+    posts: {
+      title: 'All posts',
+      label: 'Post feed',
+      searchPlaceholder: 'Search caption text',
+    },
+    media: {
+      title: 'All media assets',
+      label: 'Media library',
+      searchPlaceholder: 'Search filename, URL, or creator',
+    },
+  };
+
   async function initModerationPage() {
     initThemeToggle();
     try {
@@ -4761,11 +4820,58 @@
     const resolvedRole = (role || serverRole || 'user').toLowerCase();
     state.moderation.viewerRole = resolvedRole;
     state.moderation.viewerId = userId || null;
+    cacheModerationNodes();
     bindModerationEvents();
     await loadModerationDashboard();
   }
 
+  function cacheModerationNodes() {
+    const panel = state.moderation.panel;
+    panel.root = document.getElementById('moderation-dataset-panel');
+    panel.title = document.getElementById('moderation-panel-title');
+    panel.label = document.getElementById('moderation-panel-label');
+    panel.searchInput = document.getElementById('moderation-panel-search');
+    panel.pageLabel = document.getElementById('moderation-panel-page');
+    panel.tableContainer = document.getElementById('moderation-panel-table');
+    panel.emptyState = document.getElementById('moderation-panel-empty');
+    panel.prevButton = document.getElementById('moderation-panel-prev');
+    panel.nextButton = document.getElementById('moderation-panel-next');
+
+    const modal = state.moderation.modal;
+    modal.root = document.getElementById('moderation-detail-modal');
+    modal.title = document.getElementById('moderation-detail-title');
+    modal.label = document.getElementById('moderation-detail-label');
+    modal.body = document.getElementById('moderation-detail-body');
+
+    const confirm = state.moderation.confirm;
+    confirm.root = document.getElementById('moderation-confirm-modal');
+    confirm.title = document.getElementById('moderation-confirm-title');
+    confirm.message = document.getElementById('moderation-confirm-message');
+    confirm.accept = document.getElementById('moderation-confirm-accept');
+    confirm.cancel = document.getElementById('moderation-confirm-cancel');
+  }
+
   function bindModerationEvents() {
+    document.querySelectorAll('[data-moderation-card]').forEach(card => {
+      if (card.dataset.bound === 'true') return;
+      card.dataset.bound = 'true';
+      const handler = () => {
+        const dataset = card.dataset.moderationCard;
+        if (!dataset) return;
+        openModerationDataset(dataset, {
+          filter: card.dataset.moderationCardFilter || null,
+          title: card.dataset.moderationCardTitle || null,
+        });
+      };
+      card.addEventListener('click', handler);
+      card.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          handler();
+        }
+      });
+    });
+
     const refreshButton = document.getElementById('moderation-refresh');
     if (refreshButton && refreshButton.dataset.bound !== 'true') {
       refreshButton.dataset.bound = 'true';
@@ -4795,6 +4901,415 @@
         handleModerationPostDelete(postId, button);
       });
     }
+
+    const panelClose = document.getElementById('moderation-panel-close');
+    if (panelClose && panelClose.dataset.bound !== 'true') {
+      panelClose.dataset.bound = 'true';
+      panelClose.addEventListener('click', () => toggleModerationDatasetPanel(false));
+    }
+
+    const panelRoot = state.moderation.panel.root;
+    if (panelRoot && panelRoot.dataset.bound !== 'true') {
+      panelRoot.dataset.bound = 'true';
+      panelRoot.addEventListener('click', event => {
+        if (event.target === panelRoot) {
+          toggleModerationDatasetPanel(false);
+        }
+      });
+    }
+
+    const searchInput = state.moderation.panel.searchInput;
+    if (searchInput && searchInput.dataset.bound !== 'true') {
+      searchInput.dataset.bound = 'true';
+      searchInput.addEventListener('input', event => handleModerationPanelSearch(event.target.value));
+    }
+
+    const prevButton = state.moderation.panel.prevButton;
+    if (prevButton && prevButton.dataset.bound !== 'true') {
+      prevButton.dataset.bound = 'true';
+      prevButton.addEventListener('click', () => paginateModerationDataset(-1));
+    }
+
+    const nextButton = state.moderation.panel.nextButton;
+    if (nextButton && nextButton.dataset.bound !== 'true') {
+      nextButton.dataset.bound = 'true';
+      nextButton.addEventListener('click', () => paginateModerationDataset(1));
+    }
+
+    const tableContainer = state.moderation.panel.tableContainer;
+    if (tableContainer && tableContainer.dataset.bound !== 'true') {
+      tableContainer.dataset.bound = 'true';
+      tableContainer.addEventListener('click', handleModerationDatasetAction);
+    }
+
+    const detailClose = document.getElementById('moderation-detail-close');
+    if (detailClose && detailClose.dataset.bound !== 'true') {
+      detailClose.dataset.bound = 'true';
+      detailClose.addEventListener('click', hideModerationDetailModal);
+    }
+
+    const detailRoot = state.moderation.modal.root;
+    if (detailRoot && detailRoot.dataset.bound !== 'true') {
+      detailRoot.dataset.bound = 'true';
+      detailRoot.addEventListener('click', event => {
+        if (event.target === detailRoot) {
+          hideModerationDetailModal();
+        }
+      });
+    }
+
+    const confirmRoot = state.moderation.confirm.root;
+    if (confirmRoot && confirmRoot.dataset.bound !== 'true') {
+      confirmRoot.dataset.bound = 'true';
+      confirmRoot.addEventListener('click', event => {
+        if (event.target === confirmRoot) {
+          finalizeModerationConfirm(false);
+        }
+      });
+    }
+  }
+
+  async function openModerationDataset(type, options = {}) {
+    const meta = MODERATION_DATASET_META[type];
+    if (!meta) return;
+    const dataset = state.moderation.datasets[type];
+    if (!dataset) return;
+    const previousDataset = state.moderation.activeDataset;
+    state.moderation.activeDataset = type;
+    if (options.search !== undefined) {
+      dataset.search = options.search.trim();
+      dataset.skip = 0;
+    }
+    if (options.filter !== undefined) {
+      dataset.filter = options.filter;
+      dataset.skip = 0;
+    }
+    if (options.reset === true || previousDataset !== type) {
+      dataset.skip = 0;
+    }
+
+    const panel = state.moderation.panel;
+    if (panel.title) {
+      panel.title.textContent = options.title || meta.title;
+    }
+    if (panel.label) {
+      panel.label.textContent = meta.label;
+    }
+    if (panel.searchInput) {
+      panel.searchInput.placeholder = meta.searchPlaceholder;
+      panel.searchInput.value = dataset.search || '';
+    }
+
+    toggleModerationDatasetPanel(true);
+    showModerationPanelLoading();
+    try {
+      await loadModerationDataset(type);
+    } catch (error) {
+      showToast(error.message || 'Unable to load dataset.', 'error');
+      showModerationPanelError(error.message || 'Unable to load dataset.');
+    }
+  }
+
+  function toggleModerationDatasetPanel(show) {
+    const panelRoot = state.moderation.panel.root;
+    if (!panelRoot) return;
+    if (show) {
+      panelRoot.classList.remove('hidden');
+    } else {
+      panelRoot.classList.add('hidden');
+      state.moderation.activeDataset = null;
+    }
+  }
+
+  function showModerationPanelLoading() {
+    const container = state.moderation.panel.tableContainer;
+    const emptyState = state.moderation.panel.emptyState;
+    if (emptyState) emptyState.classList.add('hidden');
+    if (container) {
+      container.innerHTML = '<div class="rounded-2xl border border-slate-800/70 bg-slate-950/60 px-4 py-6 text-center text-sm text-slate-400">Loading…</div>';
+    }
+  }
+
+  function showModerationPanelError(message) {
+    const container = state.moderation.panel.tableContainer;
+    const emptyState = state.moderation.panel.emptyState;
+    if (container) {
+      container.innerHTML = `<div class="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-6 text-center text-sm text-rose-100">${escapeHtml(message)}</div>`;
+    }
+    if (emptyState) emptyState.classList.add('hidden');
+  }
+
+  function handleModerationPanelSearch(rawValue) {
+    const datasetKey = state.moderation.activeDataset;
+    if (!datasetKey) return;
+    const dataset = state.moderation.datasets[datasetKey];
+    if (!dataset) return;
+    dataset.search = (rawValue || '').trim();
+    dataset.skip = 0;
+    if (state.moderation.datasetSearchHandle) {
+      clearTimeout(state.moderation.datasetSearchHandle);
+    }
+    state.moderation.datasetSearchHandle = setTimeout(() => {
+      loadModerationDataset(datasetKey).catch(error => {
+        showToast(error.message || 'Unable to refresh dataset.', 'error');
+      });
+      state.moderation.datasetSearchHandle = null;
+    }, 320);
+  }
+
+  function paginateModerationDataset(delta) {
+    const datasetKey = state.moderation.activeDataset;
+    if (!datasetKey) return;
+    const dataset = state.moderation.datasets[datasetKey];
+    if (!dataset || !delta) return;
+    const totalPages = dataset.total ? Math.ceil(dataset.total / dataset.limit) : null;
+    const currentPage = Math.floor(dataset.skip / dataset.limit);
+    const targetPage = currentPage + delta;
+    if (targetPage < 0) return;
+    if (totalPages !== null && targetPage >= totalPages) return;
+    dataset.skip = Math.max(0, targetPage * dataset.limit);
+    loadModerationDataset(datasetKey).catch(error => {
+      showToast(error.message || 'Unable to change page.', 'error');
+    });
+  }
+
+  function handleModerationDatasetAction(event) {
+    const trigger = event.target.closest('[data-mod-action]');
+    if (!trigger) return;
+    event.preventDefault();
+    const action = trigger.dataset.modAction;
+    switch (action) {
+      case 'view-user':
+        openModerationUserDetail(trigger.dataset.userId);
+        break;
+      case 'delete-user':
+        handleModerationUserDelete(trigger.dataset.userId, trigger);
+        break;
+      case 'view-post':
+        openModerationPostDetail(trigger.dataset.postId);
+        break;
+      case 'delete-post':
+        handleModerationPostDelete(trigger.dataset.postId, trigger);
+        break;
+      case 'view-media':
+        openModerationMediaDetail(trigger.dataset.assetId);
+        break;
+      case 'delete-media':
+        handleModerationMediaDelete(trigger.dataset.assetId, trigger);
+        break;
+      default:
+        break;
+    }
+  }
+
+  async function loadModerationDataset(type) {
+    const dataset = state.moderation.datasets[type];
+    if (!dataset) return [];
+    const params = new URLSearchParams();
+    params.set('skip', String(dataset.skip));
+    params.set('limit', String(dataset.limit));
+    if (dataset.search) {
+      params.set('search', dataset.search);
+    }
+    if (dataset.filter === 'active') {
+      params.set('active_only', '1');
+    }
+
+    const endpointMap = {
+      users: '/moderation/users',
+      posts: '/moderation/posts',
+      media: '/moderation/media',
+    };
+    const endpoint = endpointMap[type];
+    if (!endpoint) return [];
+    const response = await apiFetch(`${endpoint}?${params.toString()}`);
+    dataset.items = Array.isArray(response.items) ? response.items : [];
+    dataset.total = typeof response.total === 'number' ? response.total : dataset.items.length;
+    renderModerationDataset(type);
+    return dataset.items;
+  }
+
+  function renderModerationDataset(type) {
+    const dataset = state.moderation.datasets[type];
+    const panel = state.moderation.panel;
+    if (!dataset || !panel.tableContainer) return;
+    const builderMap = {
+      users: buildModerationUsersTable,
+      posts: buildModerationPostsTable,
+      media: buildModerationMediaTable,
+    };
+    const builder = builderMap[type];
+    const hasRows = Boolean(dataset.items.length);
+    if (!hasRows && panel.emptyState) {
+      panel.emptyState.classList.remove('hidden');
+    } else if (panel.emptyState) {
+      panel.emptyState.classList.add('hidden');
+    }
+    panel.tableContainer.innerHTML = '';
+    if (builder && hasRows) {
+      panel.tableContainer.appendChild(builder(dataset.items));
+    }
+
+    const totalPages = Math.max(1, Math.ceil(Math.max(dataset.total, 1) / dataset.limit));
+    const currentPage = Math.min(totalPages, Math.floor(dataset.skip / dataset.limit) + 1);
+    if (panel.pageLabel) {
+      panel.pageLabel.textContent = `Page ${currentPage} / ${totalPages}`;
+    }
+    if (panel.prevButton) {
+      panel.prevButton.disabled = currentPage <= 1;
+      panel.prevButton.classList.toggle('opacity-40', currentPage <= 1);
+    }
+    if (panel.nextButton) {
+      panel.nextButton.disabled = currentPage >= totalPages;
+      panel.nextButton.classList.toggle('opacity-40', currentPage >= totalPages);
+    }
+  }
+
+  function buildModerationUsersTable(items) {
+    const table = document.createElement('table');
+    table.className = 'min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200';
+    table.innerHTML = `
+      <thead>
+        <tr class="text-xs uppercase tracking-wider text-slate-400">
+          <th class="px-4 py-2 font-medium">User</th>
+          <th class="px-4 py-2 font-medium">Stats</th>
+          <th class="px-4 py-2 font-medium">Role</th>
+          <th class="px-4 py-2 font-medium text-right">Actions</th>
+        </tr>
+      </thead>
+    `;
+    const body = document.createElement('tbody');
+    items.forEach(user => {
+      const row = document.createElement('tr');
+      row.className = 'border-b border-slate-800/60 last:border-0';
+      row.innerHTML = `
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-3">
+            <img src="${escapeHtml(user.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-10 w-10 rounded-full border border-slate-800/70 object-cover" />
+            <div>
+              <p class="font-semibold text-white">${escapeHtml(user.username ? `@${user.username}` : 'Unknown')}</p>
+              <p class="text-xs text-slate-400">${escapeHtml(user.display_name || '—')}</p>
+              <p class="text-[11px] text-slate-500">${escapeHtml(user.email || 'No email')}</p>
+            </div>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-300">
+          <div>Posts: ${Number(user.post_count || 0).toLocaleString()}</div>
+          <div>Media: ${Number(user.media_count || 0).toLocaleString()}</div>
+          <div>Joined: ${user.created_at ? formatDate(user.created_at) : '—'}</div>
+        </td>
+        <td class="px-4 py-3">${renderRoleBadgeHtml(user.role, { includeUser: true }) || '<span class="text-slate-500 text-xs">User</span>'}</td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-user" data-user-id="${user.id}">View</button>
+            ${state.moderation.viewerRole === 'owner' && state.moderation.viewerId !== user.id ? `<button type="button" class="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-user" data-user-id="${user.id}">Delete</button>` : ''}
+          </div>
+        </td>
+      `;
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    return table;
+  }
+
+  function buildModerationPostsTable(items) {
+    const table = document.createElement('table');
+    table.className = 'min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200';
+    table.innerHTML = `
+      <thead>
+        <tr class="text-xs uppercase tracking-wider text-slate-400">
+          <th class="px-4 py-2 font-medium">Author</th>
+          <th class="px-4 py-2 font-medium">Caption</th>
+          <th class="px-4 py-2 font-medium">Engagement</th>
+          <th class="px-4 py-2 font-medium text-right">Actions</th>
+        </tr>
+      </thead>
+    `;
+    const body = document.createElement('tbody');
+    items.forEach(post => {
+      const row = document.createElement('tr');
+      row.className = 'border-b border-slate-800/60 last:border-0';
+      row.innerHTML = `
+        <td class="px-4 py-3">
+          <div class="flex flex-col gap-1">
+            <span class="font-semibold text-white">${escapeHtml(post.username ? `@${post.username}` : 'Unknown')}</span>
+            <span class="text-xs text-slate-400">${escapeHtml(post.display_name || 'No display')}</span>
+            ${renderRoleBadgeHtml(post.role, { includeUser: true })}
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-200">
+          ${escapeHtml(truncateText(post.caption || '', 200))}
+          ${post.media_url ? `<div class="mt-2 text-xs text-indigo-300">Media attached</div>` : ''}
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-300">
+          <div>👍 ${Number(post.like_count || 0).toLocaleString()}</div>
+          <div>👎 ${Number(post.dislike_count || 0).toLocaleString()}</div>
+          <div>💬 ${Number(post.comment_count || 0).toLocaleString()}</div>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-post" data-post-id="${post.id}">Preview</button>
+            ${hasModeratorPrivileges(state.moderation.viewerRole) ? `<button type="button" class="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-post" data-post-id="${post.id}">Delete</button>` : ''}
+          </div>
+        </td>
+      `;
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    return table;
+  }
+
+  function buildModerationMediaTable(items) {
+    const table = document.createElement('table');
+    table.className = 'min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200';
+    table.innerHTML = `
+      <thead>
+        <tr class="text-xs uppercase tracking-wider text-slate-400">
+          <th class="px-4 py-2 font-medium">Preview</th>
+          <th class="px-4 py-2 font-medium">Owner</th>
+          <th class="px-4 py-2 font-medium">Engagement</th>
+          <th class="px-4 py-2 font-medium text-right">Actions</th>
+        </tr>
+      </thead>
+    `;
+    const body = document.createElement('tbody');
+    items.forEach(asset => {
+      const isImage = (asset.content_type || '').startsWith('image/');
+      const row = document.createElement('tr');
+      row.className = 'border-b border-slate-800/60 last:border-0';
+      row.innerHTML = `
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-3">
+            ${isImage ? `<img src="${escapeHtml(asset.url)}" alt="media" class="h-16 w-16 rounded-2xl border border-slate-800/70 object-cover" />` : '<div class="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-800/70 bg-slate-900/70 text-lg">🎞</div>'}
+            <div>
+              <p class="text-xs text-slate-400">${escapeHtml(asset.content_type || 'Unknown type')}</p>
+              <p class="text-[11px] text-slate-500">${escapeHtml(asset.key || asset.url || '')}</p>
+            </div>
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div class="flex flex-col gap-1">
+            <span class="font-semibold text-white">${escapeHtml(asset.username ? `@${asset.username}` : 'Unknown')}</span>
+            <span class="text-xs text-slate-400">${escapeHtml(asset.display_name || 'No display')}</span>
+            ${renderRoleBadgeHtml(asset.role, { includeUser: true })}
+          </div>
+        </td>
+        <td class="px-4 py-3 text-sm text-slate-300">
+          <div>👍 ${Number(asset.like_count || 0).toLocaleString()}</div>
+          <div>👎 ${Number(asset.dislike_count || 0).toLocaleString()}</div>
+          <div>💬 ${Number(asset.comment_count || 0).toLocaleString()}</div>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-media" data-asset-id="${asset.id}">Preview</button>
+            ${hasModeratorPrivileges(state.moderation.viewerRole) ? `<button type="button" class="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-media" data-asset-id="${asset.id}">Delete</button>` : ''}
+          </div>
+        </td>
+      `;
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    return table;
   }
 
   async function loadModerationDashboard(options = {}) {
@@ -5032,7 +5547,11 @@
 
   async function handleModerationPostDelete(postId, button) {
     if (!postId) return;
-    const confirmed = window.confirm('Delete this post and any attached media?');
+    const confirmed = await showModerationConfirm({
+      title: 'Delete post?',
+      message: 'This will remove the post and any attached media asset.',
+      confirmLabel: 'Delete post',
+    });
     if (!confirmed) return;
     toggleInteractiveState(button, true);
     try {
@@ -5041,11 +5560,398 @@
       });
       showToast('Post removed successfully.', 'success');
       await loadModerationDashboard({ silent: true });
+      if (state.moderation.activeDataset === 'posts') {
+        await loadModerationDataset('posts');
+      }
     } catch (error) {
       showToast(error.message || 'Unable to delete post.', 'error');
     } finally {
       toggleInteractiveState(button, false);
     }
+  }
+
+  async function openModerationUserDetail(userId) {
+    if (!userId) return;
+    showModerationDetailModal({
+      title: 'User details',
+      label: 'Profile review',
+      body: '<p class="text-center text-slate-400">Loading profile…</p>',
+    });
+    try {
+      const detail = await apiFetch(`/moderation/users/${encodeURIComponent(userId)}`);
+      populateModerationUserDetail(detail);
+    } catch (error) {
+      showModerationDetailModal({
+        title: 'User details',
+        label: 'Profile review',
+        body: `<p class="text-center text-rose-200">${escapeHtml(error.message || 'Unable to load profile.')}</p>`,
+      });
+    }
+  }
+
+  function populateModerationUserDetail(detail) {
+    const modal = state.moderation.modal;
+    if (!modal.body) return;
+    const isOwner = state.moderation.viewerRole === 'owner';
+    const disabledAttr = isOwner ? '' : 'disabled';
+    modal.body.innerHTML = `
+      <div class="flex flex-col gap-4 md:flex-row md:items-start">
+        <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-24 w-24 rounded-3xl border border-slate-800/70 object-cover" />
+        <div class="flex-1 space-y-2">
+          <p class="text-lg font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown user')}</p>
+          <p class="text-sm text-slate-400">${escapeHtml(detail.display_name || 'No display name')}</p>
+          <div class="text-xs text-slate-400">${renderRoleBadgeHtml(detail.role, { includeUser: true })}</div>
+          <div class="grid grid-cols-2 gap-3 text-sm text-slate-300">
+            <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Posts<br><span class="text-lg font-semibold text-white">${Number(detail.post_count || 0).toLocaleString()}</span></div>
+            <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Media<br><span class="text-lg font-semibold text-white">${Number(detail.media_count || 0).toLocaleString()}</span></div>
+            <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Followers<br><span class="text-lg font-semibold text-white">${Number(detail.follower_count || 0).toLocaleString()}</span></div>
+            <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Following<br><span class="text-lg font-semibold text-white">${Number(detail.following_count || 0).toLocaleString()}</span></div>
+          </div>
+        </div>
+      </div>
+      <form data-user-edit-form class="mt-6 space-y-4">
+        <div class="grid gap-4 md:grid-cols-2">
+          ${buildModerationTextInput('Display name', 'display_name', detail.display_name, disabledAttr)}
+          ${buildModerationTextInput('Avatar URL', 'avatar_url', detail.avatar_url, disabledAttr)}
+          ${buildModerationTextInput('Email', 'email', detail.email, disabledAttr)}
+          ${buildModerationTextInput('Location', 'location', detail.location, disabledAttr)}
+          ${buildModerationTextInput('Website', 'website', detail.website, disabledAttr)}
+        </div>
+        <label class="block text-sm font-semibold text-slate-200">Bio
+          <textarea name="bio" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" rows="4" ${disabledAttr}>${escapeHtml(detail.bio || '')}</textarea>
+        </label>
+        <div class="flex flex-col gap-3 text-sm text-slate-300 md:flex-row md:items-center">
+          <label class="inline-flex items-center gap-2">
+            <input type="checkbox" name="allow_friend_requests" class="h-4 w-4 rounded border-slate-700/70 bg-transparent" ${detail.allow_friend_requests ? 'checked' : ''} ${disabledAttr} />
+            Allow friend requests
+          </label>
+          <label class="inline-flex items-center gap-2">
+            <input type="checkbox" name="dm_followers_only" class="h-4 w-4 rounded border-slate-700/70 bg-transparent" ${detail.dm_followers_only ? 'checked' : ''} ${disabledAttr} />
+            DMs require following
+          </label>
+        </div>
+        ${isOwner ? `
+          <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-user-delete>Delete account</button>
+            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">Save changes</button>
+          </div>
+        ` : '<p class="rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only owners can edit profiles.</p>'}
+      </form>
+    `;
+    attachModerationUserDetailEvents(detail);
+  }
+
+  function buildModerationTextInput(label, name, value, disabledAttr) {
+    return `
+      <label class="block text-sm font-semibold text-slate-200">${escapeHtml(label)}
+        <input name="${name}" value="${escapeHtml(value || '')}" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" ${disabledAttr} />
+      </label>
+    `;
+  }
+
+  function attachModerationUserDetailEvents(detail) {
+    const modal = state.moderation.modal;
+    if (!modal.body) return;
+    const form = modal.body.querySelector('[data-user-edit-form]');
+    if (form && state.moderation.viewerRole === 'owner') {
+      form.addEventListener('submit', event => handleModerationUserUpdate(event, detail.id));
+    }
+    const deleteBtn = modal.body.querySelector('[data-user-delete]');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => handleModerationUserDelete(detail.id, deleteBtn));
+    }
+  }
+
+  async function handleModerationUserUpdate(event, userId) {
+    event.preventDefault();
+    if (state.moderation.viewerRole !== 'owner') {
+      showToast('Only owners can update profiles.', 'warning');
+      return;
+    }
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    const payload = {};
+    ['display_name', 'avatar_url', 'email', 'location', 'website', 'bio'].forEach(field => {
+      const value = (formData.get(field) || '').toString();
+      payload[field] = value.trim() ? value.trim() : null;
+    });
+    payload.allow_friend_requests = formData.get('allow_friend_requests') === 'on';
+    payload.dm_followers_only = formData.get('dm_followers_only') === 'on';
+    toggleInteractiveState(submitButton, true);
+    try {
+      const updated = await apiFetch(`/moderation/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      showToast('Profile updated.', 'success');
+      populateModerationUserDetail(updated);
+      if (state.moderation.activeDataset === 'users') {
+        await loadModerationDataset('users');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to update profile.', 'error');
+    } finally {
+      toggleInteractiveState(submitButton, false);
+    }
+  }
+
+  async function handleModerationUserDelete(userId, button) {
+    if (state.moderation.viewerRole !== 'owner') {
+      showToast('Only owners can delete accounts.', 'warning');
+      return;
+    }
+    if (state.moderation.viewerId === userId) {
+      showToast('You cannot delete your own account.', 'warning');
+      return;
+    }
+    const confirmed = await showModerationConfirm({
+      title: 'Delete account?',
+      message: 'This permanently removes the user, their posts, and media.',
+      confirmLabel: 'Delete account',
+    });
+    if (!confirmed) return;
+    if (button) toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
+      showToast('User removed.', 'success');
+      hideModerationDetailModal();
+      if (state.moderation.activeDataset === 'users') {
+        await loadModerationDataset('users');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to delete user.', 'error');
+    } finally {
+      if (button) toggleInteractiveState(button, false);
+    }
+  }
+
+  async function openModerationPostDetail(postId) {
+    if (!postId) return;
+    showModerationDetailModal({
+      title: 'Post preview',
+      label: 'Content inspection',
+      body: '<p class="text-center text-slate-400">Loading post…</p>',
+    });
+    try {
+      const detail = await apiFetch(`/moderation/posts/${encodeURIComponent(postId)}`);
+      populateModerationPostDetail(detail);
+    } catch (error) {
+      showModerationDetailModal({
+        title: 'Post preview',
+        label: 'Content inspection',
+        body: `<p class="text-center text-rose-200">${escapeHtml(error.message || 'Unable to load post.')}</p>`,
+      });
+    }
+  }
+
+  function populateModerationPostDetail(detail) {
+    const modal = state.moderation.modal;
+    if (!modal.body) return;
+    const canEdit = hasModeratorPrivileges(state.moderation.viewerRole);
+    modal.body.innerHTML = `
+      <div class="space-y-3">
+        <div class="flex items-center gap-3">
+          <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-12 w-12 rounded-2xl border border-slate-800/70 object-cover" />
+          <div>
+            <p class="font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown')}</p>
+            <p class="text-xs text-slate-400">${escapeHtml(detail.display_name || 'No display')}</p>
+            ${renderRoleBadgeHtml(detail.role, { includeUser: true })}
+          </div>
+        </div>
+        <p class="text-sm text-slate-300">Created ${detail.created_at ? formatDate(detail.created_at) : '—'}</p>
+        <p class="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 text-sm text-slate-100">${escapeHtml(detail.caption || '')}</p>
+        ${detail.media_url ? `<a href="${escapeHtml(detail.media_url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 px-3 py-1 text-xs font-semibold text-indigo-200">Open media</a>` : ''}
+      </div>
+      ${canEdit ? `
+        <form data-post-edit-form class="mt-6 space-y-4">
+          <label class="block text-sm font-semibold text-slate-200">Caption
+            <textarea name="caption" rows="4" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none">${escapeHtml(detail.caption || '')}</textarea>
+          </label>
+          <label class="block text-sm font-semibold text-slate-200">Attach media asset ID
+            <input name="media_asset_id" value="${escapeHtml(detail.media_asset_id || '')}" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" placeholder="Optional MediaAsset UUID" />
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" name="remove_media" class="h-4 w-4 rounded border-slate-700/70 bg-transparent" />
+            Remove attached media
+          </label>
+          <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-post" data-post-id="${detail.id}">Delete post</button>
+            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">Save changes</button>
+          </div>
+        </form>
+      ` : '<p class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only admins or owners can edit posts.</p>'}
+    `;
+    if (canEdit) {
+      const form = modal.body.querySelector('[data-post-edit-form]');
+      if (form) {
+        form.addEventListener('submit', event => handleModerationPostUpdate(event, detail.id));
+      }
+      const deleteBtn = modal.body.querySelector('[data-mod-action="delete-post"]');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', event => {
+          event.preventDefault();
+          handleModerationPostDelete(detail.id, deleteBtn);
+        });
+      }
+    }
+  }
+
+  async function handleModerationPostUpdate(event, postId) {
+    event.preventDefault();
+    if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
+      showToast('Only admins or owners can edit posts.', 'warning');
+      return;
+    }
+    const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
+    const formData = new FormData(form);
+    const payload = {
+      caption: ((formData.get('caption') || '').toString()).trim() || null,
+      media_asset_id: ((formData.get('media_asset_id') || '').toString()).trim() || null,
+      remove_media: formData.get('remove_media') === 'on',
+    };
+    toggleInteractiveState(submitButton, true);
+    try {
+      const updated = await apiFetch(`/moderation/posts/${encodeURIComponent(postId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      showToast('Post updated.', 'success');
+      populateModerationPostDetail(updated);
+      if (state.moderation.activeDataset === 'posts') {
+        await loadModerationDataset('posts');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to update post.', 'error');
+    } finally {
+      toggleInteractiveState(submitButton, false);
+    }
+  }
+
+  async function openModerationMediaDetail(assetId) {
+    if (!assetId) return;
+    showModerationDetailModal({
+      title: 'Media asset',
+      label: 'Library preview',
+      body: '<p class="text-center text-slate-400">Loading media…</p>',
+    });
+    try {
+      const detail = await apiFetch(`/moderation/media/${encodeURIComponent(assetId)}`);
+      populateModerationMediaDetail(detail);
+    } catch (error) {
+      showModerationDetailModal({
+        title: 'Media asset',
+        label: 'Library preview',
+        body: `<p class="text-center text-rose-200">${escapeHtml(error.message || 'Unable to load media asset.')}</p>`,
+      });
+    }
+  }
+
+  function populateModerationMediaDetail(detail) {
+    const modal = state.moderation.modal;
+    if (!modal.body) return;
+    const canModerate = hasModeratorPrivileges(state.moderation.viewerRole);
+    const isImage = (detail.content_type || '').startsWith('image/');
+    modal.body.innerHTML = `
+      <div class="space-y-4">
+        <div class="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4">
+          ${isImage ? `<img src="${escapeHtml(detail.url)}" alt="media" class="mx-auto max-h-[320px] w-full rounded-2xl object-contain" />` : `<a href="${escapeHtml(detail.url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 px-4 py-2 text-sm font-semibold text-indigo-100">Open asset</a>`}
+        </div>
+        <div class="grid gap-3 text-sm text-slate-300 md:grid-cols-2">
+          <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Owner<br><span class="font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown')}</span></div>
+          <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Content type<br><span class="font-semibold text-white">${escapeHtml(detail.content_type || 'Unknown')}</span></div>
+          <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Bucket<br><span class="font-semibold text-white">${escapeHtml(detail.bucket || 'n/a')}</span></div>
+          <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Key<br><span class="font-mono text-xs text-slate-200">${escapeHtml(detail.key || 'n/a')}</span></div>
+        </div>
+        ${canModerate ? `
+          <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <a href="${escapeHtml(detail.url)}" target="_blank" rel="noopener" class="rounded-2xl border border-slate-700/60 px-4 py-2 text-sm font-semibold text-slate-200">Open in new tab</a>
+            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-media-delete>Delete asset</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    if (canModerate) {
+      const deleteBtn = modal.body.querySelector('[data-media-delete]');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', () => handleModerationMediaDelete(detail.id, deleteBtn));
+      }
+    }
+  }
+
+  async function handleModerationMediaDelete(assetId, button) {
+    if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
+      showToast('Only admins or owners can delete media.', 'warning');
+      return;
+    }
+    const confirmed = await showModerationConfirm({
+      title: 'Delete media asset?',
+      message: 'This removes the file from storage and detaches it from posts.',
+      confirmLabel: 'Delete media',
+    });
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/media/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+      showToast('Media deleted.', 'success');
+      hideModerationDetailModal();
+      if (state.moderation.activeDataset === 'media') {
+        await loadModerationDataset('media');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to delete media asset.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  function showModerationDetailModal({ title, label, body }) {
+    const modal = state.moderation.modal;
+    if (!modal.root) return;
+    if (modal.title && title) modal.title.textContent = title;
+    if (modal.label && label) modal.label.textContent = label;
+    if (modal.body && body !== undefined) modal.body.innerHTML = body;
+    modal.root.classList.remove('hidden');
+  }
+
+  function hideModerationDetailModal() {
+    const modal = state.moderation.modal;
+    if (modal.root) {
+      modal.root.classList.add('hidden');
+    }
+  }
+
+  function showModerationConfirm(options) {
+    const confirm = state.moderation.confirm;
+    if (!confirm.root || !confirm.accept || !confirm.cancel || !confirm.title || !confirm.message) {
+      const fallback = window.confirm(options.message || 'Are you sure?');
+      return Promise.resolve(fallback);
+    }
+    confirm.title.textContent = options.title || 'Confirm action';
+    confirm.message.textContent = options.message || 'Are you sure?';
+    confirm.accept.textContent = options.confirmLabel || 'Confirm';
+    confirm.root.classList.remove('hidden');
+    return new Promise(resolve => {
+      confirm.resolver = resolve;
+      confirm.accept.onclick = () => finalizeModerationConfirm(true);
+      confirm.cancel.onclick = () => finalizeModerationConfirm(false);
+    });
+  }
+
+  function finalizeModerationConfirm(result) {
+    const confirm = state.moderation.confirm;
+    if (!confirm.resolver) return;
+    confirm.root.classList.add('hidden');
+    const resolver = confirm.resolver;
+    confirm.resolver = null;
+    confirm.accept.onclick = null;
+    confirm.cancel.onclick = null;
+    resolver(result);
   }
 
   // -----------------------------------------------------------------------
@@ -5068,6 +5974,22 @@
     initSettingsPage,
     initModerationPage,
   };
+
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    const panelRoot = state.moderation.panel.root;
+    if (panelRoot && !panelRoot.classList.contains('hidden')) {
+      toggleModerationDatasetPanel(false);
+    }
+    const detailRoot = state.moderation.modal.root;
+    if (detailRoot && !detailRoot.classList.contains('hidden')) {
+      hideModerationDetailModal();
+    }
+    const confirmRoot = state.moderation.confirm.root;
+    if (confirmRoot && !confirmRoot.classList.contains('hidden')) {
+      finalizeModerationConfirm(false);
+    }
+  });
 
   document.addEventListener('DOMContentLoaded', initThemeToggle);
 })();
