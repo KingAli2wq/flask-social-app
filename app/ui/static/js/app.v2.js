@@ -811,21 +811,38 @@
     const fileInput = form.querySelector('input[type="file"]');
     const previewWrapper = document.getElementById('media-preview');
     const previewImage = document.getElementById('media-preview-image');
+    const previewVideo = document.getElementById('media-preview-video');
 
-    if (fileInput && previewWrapper && previewImage) {
+    if (fileInput && previewWrapper && previewImage && previewVideo) {
       fileInput.addEventListener('change', () => {
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
           previewWrapper.classList.add('hidden');
           previewImage.src = '';
+          previewVideo.src = '';
+          previewImage.classList.add('hidden');
+          previewVideo.classList.add('hidden');
           return;
         }
-        const reader = new FileReader();
-        reader.onload = e => {
-          previewWrapper.classList.remove('hidden');
-          previewImage.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+        const isVideo = (file.type || '').startsWith('video/');
+        previewWrapper.classList.remove('hidden');
+        if (isVideo) {
+          previewVideo.classList.remove('hidden');
+          previewImage.classList.add('hidden');
+          const url = URL.createObjectURL(file);
+          previewVideo.src = url;
+          previewVideo.play().catch(() => {
+            /* ignore */
+          });
+        } else {
+          previewImage.classList.remove('hidden');
+          previewVideo.classList.add('hidden');
+          const reader = new FileReader();
+          reader.onload = e => {
+            previewImage.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
       });
     }
 
@@ -849,7 +866,18 @@
         });
         showToast('Post published successfully.', 'success');
         form.reset();
-        if (previewWrapper) previewWrapper.classList.add('hidden');
+        if (previewWrapper) {
+          previewWrapper.classList.add('hidden');
+          if (previewImage) {
+            previewImage.src = '';
+            previewImage.classList.add('hidden');
+          }
+          if (previewVideo) {
+            previewVideo.pause?.();
+            previewVideo.src = '';
+            previewVideo.classList.add('hidden');
+          }
+        }
         await loadFeed({ forceRefresh: true });
       } catch (error) {
         showToast(error.message || 'Unable to publish post.', 'error');
@@ -1266,6 +1294,11 @@
       showToast('Post deleted.', 'success');
       prunePostFromCollections(post.id);
       removePostCard(cardElement);
+      if (typeof loadMediaReel === 'function') {
+        loadMediaReel({ forceRefresh: true, silent: true }).catch(error => {
+          console.warn('[media] failed to refresh reel after post deletion', error);
+        });
+      }
     } catch (error) {
       showToast(error.message || 'Unable to delete post.', 'error');
       if (trigger) {
@@ -1976,7 +2009,7 @@
     }
     const mediaKind = inferPostMediaKind(post);
     const containerClasses =
-      'mt-4 aspect-[4/5] w-full overflow-hidden rounded-2xl border border-slate-800/50 bg-black/60';
+      'mt-4 aspect-[4/5] w-full overflow-hidden rounded-2xl border border-slate-800/50 bg-slate-950/70 flex items-center justify-center';
     if (mediaKind === 'video') {
       const posterAttr =
         typeof post?.media_preview_url === 'string' && post.media_preview_url.trim()
@@ -2001,7 +2034,7 @@
           alt="Post media"
           loading="lazy"
           decoding="async"
-          class="h-full w-full object-cover"
+          class="max-h-full max-w-full object-contain"
         />
       </div>
     `;
@@ -4214,7 +4247,7 @@
     const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
     const mediaMarkup = isVideo
       ? `<video data-media-role="reel-video" data-src="${asset.url}" class="h-full w-full object-cover" preload="metadata" playsinline loop muted controls></video>`
-      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="h-full w-full object-cover" />`;
+      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="max-h-full max-w-full object-contain" />`;
     const displayName = asset.display_name || asset.username || 'Unknown creator';
     const username = asset.username ? `@${asset.username}` : '';
     const creatorRole = asset.role || asset.author_role || null;
@@ -4245,7 +4278,7 @@
           </p>
         </div>
       </header>
-      <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70">
+      <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70 flex items-center justify-center">
         ${mediaMarkup}
       </div>
       <footer class="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">

@@ -27,6 +27,15 @@ class Post(Base):
     dislikes = relationship("PostDislike", back_populates="post", cascade="all, delete-orphan")
     comments = relationship("PostComment", back_populates="post", cascade="all, delete-orphan")
 
+    @property
+    def media_content_type(self) -> str | None:
+        """Return the MIME type of the attached media asset, if any."""
+
+        asset = getattr(self, "media_asset", None)
+        if asset is None:
+            return None
+        return getattr(asset, "content_type", None)
+
 
 class PostLike(Base):
     __tablename__ = "post_likes"

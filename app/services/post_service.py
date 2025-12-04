@@ -210,8 +210,14 @@ def list_feed_records(
         User.username.label("username"),
         User.avatar_url.label("avatar_url"),
         User.role.label("author_role"),
+        MediaAsset.content_type.label("media_content_type"),
+        MediaAsset.url.label("media_asset_url"),
     ]
-    statement = select(*base_columns).join(User, Post.user_id == User.id)
+    statement = (
+        select(*base_columns)
+        .join(User, Post.user_id == User.id)
+        .outerjoin(MediaAsset, Post.media_asset_id == MediaAsset.id)
+    )
 
     like_count_subquery = (
         select(func.count(PostLike.id)).where(PostLike.post_id == Post.id).scalar_subquery()
@@ -274,6 +280,10 @@ def list_feed_records(
         idx += 1
         role_value = row[idx]
         idx += 1
+        media_content_type_value = row[idx]
+        idx += 1
+        media_asset_url_value = row[idx]
+        idx += 1
         like_count_value = row[idx]
         idx += 1
         dislike_count_value = row[idx]
@@ -298,16 +308,18 @@ def list_feed_records(
 
         username = cast(str | None, username_value)
         avatar_url = cast(str | None, avatar_value)
+        record_media_url = post.media_url or cast(str | None, media_asset_url_value)
         record: dict[str, Any] = {
             "id": post.id,
             "user_id": post.user_id,
             "caption": post.caption,
-            "media_url": post.media_url,
+            "media_url": record_media_url,
             "media_asset_id": post.media_asset_id,
             "created_at": post.created_at,
             "username": username,
             "avatar_url": avatar_url,
             "author_role": cast(str | None, role_value),
+            "media_content_type": cast(str | None, media_content_type_value),
             "like_count": int(like_count_value or 0),
             "dislike_count": int(dislike_count_value or 0),
             "comment_count": int(comment_count_value or 0),

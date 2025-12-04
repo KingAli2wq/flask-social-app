@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any, Tuple, cast
 from uuid import UUID, uuid4
 
+import requests
 from fastapi import HTTPException, UploadFile, status
+from requests import RequestException
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -24,6 +26,32 @@ def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
 
 
 MAX_MEDIA_FEED_LIMIT = 50
+
+
+def _media_asset_is_fetchable(asset: MediaAsset) -> bool:
+    """Return True when the stored media URL responds successfully."""
+
+    if not asset.url:
+        return False
+    try:
+        response = requests.head(asset.url, allow_redirects=True, timeout=3)
+    except RequestException:
+        # Treat transient network errors as reachable to avoid false positives.
+        return True
+    status_code = getattr(response, "status_code", 500)
+    response.close()
+    return status_code < 400
+
+
+def _purge_missing_media_assets(db: Session, asset_ids: list[UUID]) -> None:
+    if not asset_ids:
+        return
+    posts = db.query(Post).filter(Post.media_asset_id.in_(asset_ids)).all()
+    for post in posts:
+        post.media_asset_id = None
+        post.media_url = None
+    db.query(MediaAsset).filter(MediaAsset.id.in_(asset_ids)).delete(synchronize_session=False)
+    db.commit()
 
 
 def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 25) -> list[dict[str, Any]]:
@@ -74,9 +102,29 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
         .limit(clamped_limit)
     )
 
-    records: list[dict[str, Any]] = []
     rows = db.execute(statement).all()
+    invalid_asset_ids: list[UUID] = []
+    filtered_rows = []
     for row in rows:
+        idx = 0
+        asset = row[idx]
+        idx += 1
+        if asset is None:
+            continue
+        if not _media_asset_is_fetchable(asset):
+            invalid_asset_ids.append(asset.id)
+            continue
+        filtered_rows.append(row)
+
+    if invalid_asset_ids:
+        try:
+            _purge_missing_media_assets(db, invalid_asset_ids)
+        except SQLAlchemyError:
+            db.rollback()
+            raise
+
+    records: list[dict[str, Any]] = []
+    for row in filtered_rows:
         idx = 0
         asset = row[idx]
         idx += 1
@@ -321,7 +369,7 @@ def delete_media_asset(
 ) -> None:
     asset = db.get(MediaAsset, asset_id)
     if asset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
+        return
 
     key = asset.key
     if delete_remote and key:
