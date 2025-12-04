@@ -73,6 +73,12 @@ class MediaCommentListResponse(BaseModel):
     items: list[MediaCommentResponse]
 
 
+class MediaVerificationResponse(BaseModel):
+    media_asset_id: UUID
+    deleted: bool = False
+    missing: bool = False
+
+
 MediaCommentResponse.model_rebuild()
 
 
@@ -84,4 +90,5 @@ __all__ = [
     "MediaCommentCreate",
     "MediaCommentResponse",
     "MediaCommentListResponse",
+    "MediaVerificationResponse",
 ]

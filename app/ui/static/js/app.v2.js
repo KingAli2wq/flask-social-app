@@ -120,6 +120,7 @@
       fetchController: null,
       videoObserver: null,
       scrollEnhanced: false,
+      brokenAssetIds: new Set(),
       fullscreen: {
         active: false,
         overlay: null,
@@ -3680,6 +3681,88 @@
       .join('|');
   }
 
+  function requestMediaAssetVerification(assetId) {
+    if (!assetId) return;
+    const { token } = getAuth();
+    if (!token) {
+      return;
+    }
+    apiFetch(`/media/${encodeURIComponent(assetId)}/verify`, { method: 'POST' }).catch(error => {
+      console.warn('[media] verification request failed', error);
+    });
+  }
+
+  function removeMediaAssetFromState(assetId) {
+    if (!assetId) return;
+    const key = String(assetId);
+    const before = state.mediaReel.items.length;
+    state.mediaReel.items = state.mediaReel.items.filter(item => String(item.id) !== key);
+    if (state.mediaReel.items.length === before) {
+      return;
+    }
+    state.mediaReel.signature = computeMediaSignature(state.mediaReel.items);
+    renderFullMediaReel();
+    persistMediaReelCache(state.mediaReel.items, state.mediaReel.signature);
+  }
+
+  function handleMediaAssetElementError(asset, context = 'reel') {
+    if (!asset || !asset.id) return;
+    const key = String(asset.id);
+    if (!state.mediaReel.brokenAssetIds) {
+      state.mediaReel.brokenAssetIds = new Set();
+    }
+    if (state.mediaReel.brokenAssetIds.has(key)) {
+      return;
+    }
+    state.mediaReel.brokenAssetIds.add(key);
+    console.warn('[media] removing broken asset from context', context, key);
+    removeMediaAssetFromState(key);
+    requestMediaAssetVerification(key);
+    showToast('Removed a broken media upload from the reel.', 'warning');
+  }
+
+  function bindMediaElementErrorHandlers(node, asset, context) {
+    if (!node) return;
+    const handler = () => handleMediaAssetElementError(asset, context);
+    node.addEventListener('error', handler, { once: true });
+    if (node.tagName === 'VIDEO') {
+      node.addEventListener('stalled', handler, { once: true });
+      node.addEventListener('abort', handler, { once: true });
+    }
+  }
+
+  function createMediaElementForAsset(asset, { variant = 'reel' } = {}) {
+    const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
+    if (isVideo) {
+      const video = document.createElement('video');
+      video.dataset.assetId = asset.id;
+      video.dataset.mediaRole = variant === 'fullscreen' ? 'fullscreen-video' : 'reel-video';
+      video.preload = 'metadata';
+      video.playsInline = true;
+      video.controls = true;
+      video.className = variant === 'fullscreen'
+        ? 'max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain'
+        : 'h-full w-full object-contain bg-black';
+      if (variant === 'reel') {
+        video.loop = true;
+        video.muted = true;
+      }
+      video.dataset.src = asset.url;
+      bindMediaElementErrorHandlers(video, asset, variant);
+      return video;
+    }
+    const img = document.createElement('img');
+    img.src = asset.url;
+    img.alt = 'Media item';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.className = variant === 'fullscreen'
+      ? 'max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain'
+      : 'max-h-full max-w-full object-contain';
+    bindMediaElementErrorHandlers(img, asset, variant);
+    return img;
+  }
+
   function getMediaCommentStore(assetId) {
     if (!assetId) return { items: [], loaded: false };
     const key = String(assetId);
@@ -4257,10 +4340,6 @@
     wrapper.style.scrollSnapAlign = 'start';
     wrapper.style.scrollSnapStop = 'always';
     wrapper.dataset.mediaId = asset.id;
-    const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
-    const mediaMarkup = isVideo
-      ? `<video data-media-role="reel-video" data-src="${asset.url}" class="h-full w-full object-contain bg-black" preload="metadata" playsinline loop muted controls></video>`
-      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="max-h-full max-w-full object-contain" />`;
     const displayName = asset.display_name || asset.username || 'Unknown creator';
     const username = asset.username ? `@${asset.username}` : '';
     const creatorRole = asset.role || asset.author_role || null;
@@ -4291,9 +4370,7 @@
           </p>
         </div>
       </header>
-      <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70 flex items-center justify-center">
-        ${mediaMarkup}
-      </div>
+      <div class="mt-4 aspect-[9/16] w-full overflow-hidden rounded-[24px] border border-slate-800/50 bg-black/70 flex items-center justify-center" data-media-role="asset-slot"></div>
       <footer class="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button data-media-role="like-button" data-media-id="${asset.id}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold">
           <span aria-hidden="true">❤️</span>
@@ -4339,6 +4416,10 @@
     `;
     const avatarImg = wrapper.querySelector('[data-media-role="avatar"]');
     applyAvatarToImg(avatarImg, asset.avatar_url);
+    const assetSlot = wrapper.querySelector('[data-media-role="asset-slot"]');
+    if (assetSlot) {
+      assetSlot.appendChild(createMediaElementForAsset(asset, { variant: 'reel' }));
+    }
     const likeButton = wrapper.querySelector('[data-media-role="like-button"]');
     if (likeButton) {
       applyMediaLikeButtonState(likeButton, viewerHasLiked, likeCount);
@@ -4491,10 +4572,6 @@
     slide.className = 'flex h-full w-full flex-shrink-0 flex-col items-center justify-center gap-6 px-6 py-10 text-center';
     slide.dataset.mediaId = asset.id || '';
     slide.dataset.index = String(index);
-    const isVideo = typeof asset.content_type === 'string' && asset.content_type.startsWith('video/');
-    const mediaMarkup = isVideo
-      ? `<video data-media-role="fullscreen-video" data-src="${asset.url}" class="max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain" playsinline preload="metadata" controls></video>`
-      : `<img src="${asset.url}" alt="Media item" loading="lazy" decoding="async" class="max-h-[78vh] w-full max-w-4xl rounded-[32px] border border-slate-800/80 bg-black object-contain" />`;
     const creator = escapeHtml(asset.display_name || asset.username || 'Unknown creator');
     const usernameLabel = asset.username ? `@${asset.username}` : '—';
     const safeUsername = escapeHtml(usernameLabel);
@@ -4503,9 +4580,7 @@
     const dislikeCount = typeof asset.dislike_count === 'number' ? asset.dislike_count : 0;
     const commentCount = typeof asset.comment_count === 'number' ? asset.comment_count : 0;
     slide.innerHTML = `
-      <div class="flex w-full flex-1 items-center justify-center">
-        ${mediaMarkup}
-      </div>
+      <div class="flex w-full flex-1 items-center justify-center" data-media-role="asset-slot"></div>
       <div class="w-full max-w-3xl text-left text-sm text-slate-300">
         <p class="text-base font-semibold text-white">${creator}</p>
         <p class="text-xs text-slate-400">${safeUsername}</p>
@@ -4513,6 +4588,10 @@
         <p class="mt-3 text-xs text-slate-400">❤️ ${likeCount} • 👎 ${dislikeCount} • 💬 ${commentCount}</p>
       </div>
     `;
+    const assetSlot = slide.querySelector('[data-media-role="asset-slot"]');
+    if (assetSlot) {
+      assetSlot.appendChild(createMediaElementForAsset(asset, { variant: 'fullscreen' }));
+    }
     return slide;
   }
 

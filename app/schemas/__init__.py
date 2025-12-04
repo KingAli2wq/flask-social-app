@@ -10,6 +10,7 @@ from .media import (
     MediaFeedItem,
     MediaFeedResponse,
     MediaUploadResponse,
+    MediaVerificationResponse,
 )
 from .messages import (
     DirectThreadResponse,
@@ -69,6 +70,7 @@ __all__ = [
     "MediaCommentCreate",
     "MediaCommentResponse",
     "MediaCommentListResponse",
+    "MediaVerificationResponse",
     "FriendSearchResult",
     "FriendSearchResponse",
     "FollowActionResponse",

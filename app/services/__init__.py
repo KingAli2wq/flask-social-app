@@ -28,6 +28,7 @@ from .media_service import (
     set_media_dislike_state,
     set_media_like_state,
     store_upload,
+    verify_media_asset,
 )
 from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
 from .moderation_service import (
@@ -101,6 +102,7 @@ __all__ = [
     "set_media_like_state",
     "set_media_dislike_state",
     "store_upload",
+    "verify_media_asset",
     "CleanupError",
     "CleanupSummary",
     "run_cleanup",

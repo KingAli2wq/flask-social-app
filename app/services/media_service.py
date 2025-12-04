@@ -32,18 +32,29 @@ def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
 MAX_MEDIA_FEED_LIMIT = 50
 
 
-def _media_asset_is_fetchable(asset: MediaAsset) -> bool:
+def _media_asset_is_fetchable(asset: MediaAsset, *, timeout: float = 3.0) -> bool:
     """Return True when the stored media URL responds successfully."""
 
     if not asset.url:
         return False
-    try:
-        response = requests.head(asset.url, allow_redirects=True, timeout=3)
-    except RequestException:
-        # Treat transient network errors as reachable to avoid false positives.
-        return True
-    status_code = getattr(response, "status_code", 500)
-    response.close()
+
+    def _probe(method):
+        try:
+            resp = method(asset.url, allow_redirects=True, timeout=timeout, stream=True)
+        except RequestException as exc:  # pragma: no cover - network
+            logger.warning("%s probe failed for asset %s: %s", method.__name__.upper(), asset.id, exc)
+            return None
+        status_code = getattr(resp, "status_code", 500)
+        resp.close()
+        return status_code
+
+    status_code = _probe(requests.head)
+    if status_code is None:
+        return False
+    if status_code >= 400 or status_code == 405:
+        status_code = _probe(requests.get)
+        if status_code is None:
+            return False
     return status_code < 400
 
 
@@ -441,6 +452,35 @@ def delete_media_asset(
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete media asset") from exc
+
+
+def verify_media_asset(
+    db: Session,
+    *,
+    asset_id: UUID,
+    delete_remote: bool = True,
+) -> dict[str, bool]:
+    """Confirm the media asset is reachable, removing it if the file is gone."""
+
+    asset = db.get(MediaAsset, asset_id)
+    if asset is None:
+        return {"deleted": False, "missing": True}
+
+    if _media_asset_is_fetchable(asset):
+        return {"deleted": False, "missing": False}
+
+    try:
+        removed = _delete_media_asset_objects(
+            db,
+            [asset],
+            delete_remote=delete_remote,
+            fail_on_remote_error=True,
+        )
+        db.commit()
+        return {"deleted": removed > 0, "missing": True}
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to verify media asset") from exc
 
 
 def delete_old_media(db: Session, *, older_than: timedelta | None = None) -> int:

@@ -14,6 +14,7 @@ from ..schemas import (
     MediaEngagementResponse,
     MediaFeedResponse,
     MediaUploadResponse,
+    MediaVerificationResponse,
 )
 from ..services import (
     SpacesConfigurationError,
@@ -26,6 +27,7 @@ from ..services import (
     set_media_dislike_state,
     set_media_like_state,
     upload_file_to_spaces,
+    verify_media_asset,
 )
 
 router = APIRouter(prefix="/media", tags=["media"])
@@ -158,3 +160,13 @@ async def create_media_comment_endpoint(
         parent_id=payload.parent_id,
     )
     return MediaCommentResponse(**record)
+
+
+@router.post("/{asset_id}/verify", response_model=MediaVerificationResponse)
+async def verify_media_asset_endpoint(
+    asset_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> MediaVerificationResponse:
+    result = verify_media_asset(db, asset_id=asset_id, delete_remote=True)
+    return MediaVerificationResponse(media_asset_id=asset_id, **result)
