@@ -432,6 +432,7 @@
     applyStoredTheme();
     const btn = document.getElementById('theme-toggle');
     refreshNavAuthState();
+    initMobileNavToggle();
     if (!btn || btn.dataset.bound === 'true') return;
     btn.dataset.bound = 'true';
     btn.addEventListener('click', () => {
@@ -474,6 +475,66 @@
       stopNotificationIndicator();
     }
     updateNavRoleGates(role);
+  }
+
+  function initMobileNavToggle() {
+    const toggle = document.getElementById('mobile-nav-toggle');
+    const panel = document.getElementById('mobile-nav-panel');
+    if (!toggle || !panel || toggle.dataset.bound === 'true') {
+      return;
+    }
+    toggle.dataset.bound = 'true';
+    const label = toggle.querySelector('[data-mobile-nav-label]');
+    const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
+    const closeIcon = toggle.querySelector('[data-mobile-nav-icon="close"]');
+
+    const setState = next => {
+      if (next) {
+        panel.classList.remove('hidden');
+      } else {
+        panel.classList.add('hidden');
+      }
+      toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
+      if (label) {
+        label.textContent = next ? 'Close' : 'Menu';
+      }
+      if (openIcon && closeIcon) {
+        openIcon.classList.toggle('hidden', next);
+        closeIcon.classList.toggle('hidden', !next);
+      }
+      toggle.dataset.open = next ? 'true' : 'false';
+    };
+
+    setState(false);
+
+    toggle.addEventListener('click', () => {
+      const isOpen = toggle.dataset.open === 'true';
+      setState(!isOpen);
+    });
+
+    panel.querySelectorAll('a[href]').forEach(link => {
+      link.addEventListener('click', () => setState(false));
+    });
+
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && toggle.dataset.open === 'true') {
+        setState(false);
+      }
+    });
+
+    document.addEventListener('click', event => {
+      if (toggle.dataset.open !== 'true') return;
+      if (panel.contains(event.target) || toggle.contains(event.target)) {
+        return;
+      }
+      setState(false);
+    });
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 768 && toggle.dataset.open === 'true') {
+        setState(false);
+      }
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -522,15 +583,17 @@
     const controller = state.notifications;
     const value = Math.max(0, Number.isFinite(nextCount) ? Number(nextCount) : controller.unread || 0);
     controller.unread = value;
-    const badge = document.getElementById('nav-notifications-indicator');
-    if (!badge) return;
-    if (value <= 0) {
-      badge.textContent = '';
-      badge.classList.add('hidden');
-      return;
-    }
-    badge.textContent = value > 99 ? '99+' : String(value);
-    badge.classList.remove('hidden');
+    const badges = document.querySelectorAll('[data-role="nav-notifications-indicator"]');
+    if (!badges.length) return;
+    badges.forEach(badge => {
+      if (value <= 0) {
+        badge.textContent = '';
+        badge.classList.add('hidden');
+      } else {
+        badge.textContent = value > 99 ? '99+' : String(value);
+        badge.classList.remove('hidden');
+      }
+    });
   }
 
   function connectNotificationSocket() {

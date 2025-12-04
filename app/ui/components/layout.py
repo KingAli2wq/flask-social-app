@@ -24,12 +24,24 @@ LOGO_IMAGE = f"/assets/img/social-sphere-logo.png?v={STATIC_VERSION}"
 
 
 def navbar(*, active: str | None = None) -> Markup:
-    links_html = []
+    desktop_links_html: list[str] = []
+    mobile_links_html: list[str] = []
     for label, href in NAV_LINKS:
-        is_active = "text-white" if active == href else "text-slate-300"
+        is_active = active == href
+        desktop_text_class = "text-white" if is_active else "text-slate-300"
+        mobile_state_class = (
+            "border-indigo-500/60 bg-indigo-500/10 text-white"
+            if is_active
+            else "border-slate-800/70 bg-slate-900/70 text-slate-200"
+        )
         extra_classes = " relative" if label == "Notifications" else ""
-        indicator = (
-            '<span id="nav-notifications-indicator" class="absolute -top-1 -right-2 hidden rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow-lg shadow-rose-500/40">0</span>'
+        indicator_desktop = (
+            '<span data-role="nav-notifications-indicator" class="absolute -top-1 -right-2 hidden rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow-lg shadow-rose-500/40">0</span>'
+            if label == "Notifications"
+            else ""
+        )
+        indicator_mobile = (
+            '<span data-role="nav-notifications-indicator" class="ml-4 hidden inline-flex min-w-[2.5rem] items-center justify-center rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow-lg shadow-rose-500/40">0</span>'
             if label == "Notifications"
             else ""
         )
@@ -40,26 +52,45 @@ def navbar(*, active: str | None = None) -> Markup:
             roles = ",".join(sorted(role_meta))
             requires_attr = f' data-role-gate="true" data-requires-role="{roles}" aria-hidden="true"'
             hidden_class = " hidden"
-        links_html.append(
-            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white{extra_classes} {is_active}{hidden_class}\"{requires_attr}>{label}{indicator}</a>"
+        desktop_links_html.append(
+            f"<a href=\"{href}\" class=\"rounded-full px-4 py-2 text-sm font-medium transition hover:text-white{extra_classes} {desktop_text_class}{hidden_class}\"{requires_attr}>{label}{indicator_desktop}</a>"
         )
-    links = "".join(links_html)
+        mobile_links_html.append(
+            f"<a href=\"{href}\" class=\"flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-base font-semibold transition {mobile_state_class}{hidden_class}\"{requires_attr}><span>{label}</span>{indicator_mobile}</a>"
+        )
+
+    desktop_links = "".join(desktop_links_html)
+    mobile_links = "".join(mobile_links_html)
 
     return Markup(
         f"""
         <header class=\"sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur\">
             <div class=\"mx-auto flex max-w-7xl items-center justify-between px-6 py-4\">
                 <a href=\"/\" class=\"flex items-center gap-3 text-lg font-semibold text-white\">
-                        <img src="{LOGO_IMAGE}" alt="SocialSphere logo" class="h-10 w-10 rounded-full object-cover shadow-lg shadow-indigo-500/30 border border-indigo-400/40" loading="lazy">
+                    <img src=\"{LOGO_IMAGE}\" alt=\"SocialSphere logo\" class=\"h-10 w-10 rounded-full object-cover shadow-lg shadow-indigo-500/30 border border-indigo-400/40\" loading=\"lazy\">
                     SocialSphere
                 </a>
-                <nav class=\"hidden items-center gap-1 md:flex\">{links}</nav>
                 <div class=\"flex items-center gap-3\">
-                    <button id=\"theme-toggle\" class=\"rounded-full border border-slate-700/70 px-3 py-2 text-sm text-slate-200 transition hover:border-indigo-500 hover:text-indigo-300\">
-                        Toggle Theme
+                    <button id=\"mobile-nav-toggle\" type=\"button\" class=\"inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-white md:hidden\" aria-controls=\"mobile-nav-panel\" aria-expanded=\"false\">
+                        <span data-mobile-nav-label>Menu</span>
+                        <svg data-mobile-nav-icon=\"open\" xmlns=\"http://www.w3.org/2000/svg\" class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\">
+                            <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M4 6h16M4 12h16M4 18h16\" />
+                        </svg>
+                        <svg data-mobile-nav-icon=\"close\" xmlns=\"http://www.w3.org/2000/svg\" class=\"hidden h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\">
+                            <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\" />
+                        </svg>
                     </button>
-                    <a id=\"nav-auth-btn\" href=\"/login\" class=\"rounded-full border border-indigo-500/40 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-600/20\">Login</a>
+                    <nav class=\"hidden items-center gap-1 md:flex\">{desktop_links}</nav>
+                    <div class=\"flex items-center gap-3\">
+                        <button id=\"theme-toggle\" class=\"rounded-full border border-slate-700/70 px-3 py-2 text-sm text-slate-200 transition hover:border-indigo-500 hover:text-indigo-300\">
+                            Toggle Theme
+                        </button>
+                        <a id=\"nav-auth-btn\" href=\"/login\" class=\"rounded-full border border-indigo-500/40 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-600/20\">Login</a>
+                    </div>
                 </div>
+            </div>
+            <div id=\"mobile-nav-panel\" class=\"md:hidden hidden border-t border-slate-800/60 bg-slate-950/95 px-6 py-4 shadow-xl shadow-black/30\">
+                <nav class=\"flex flex-col gap-2\">{mobile_links}</nav>
             </div>
         </header>
         """
