@@ -1,6 +1,7 @@
 """Business logic for working with posts stored in PostgreSQL."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
@@ -11,8 +12,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
-from .media_service import delete_media_asset
+from .media_service import delete_media_asset, media_url_is_fetchable
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
+
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_media_asset_id(candidate: UUID | str | None) -> UUID | None:
@@ -270,6 +274,7 @@ def list_feed_records(
 
     records: list[dict[str, Any]] = []
     rows = db.execute(statement).all()
+    invalid_post_ids: list[UUID] = []
     for row in rows:
         idx = 0
         post = row[idx]
@@ -309,17 +314,26 @@ def list_feed_records(
         username = cast(str | None, username_value)
         avatar_url = cast(str | None, avatar_value)
         record_media_url = post.media_url or cast(str | None, media_asset_url_value)
+        media_content_type = cast(str | None, media_content_type_value)
+        broken_media = False
+        candidate_url = (record_media_url or "").strip()
+        if candidate_url and not media_url_is_fetchable(candidate_url):
+            broken_media = True
+            record_media_url = None
+            media_content_type = None
+            invalid_post_ids.append(post.id)
+
         record: dict[str, Any] = {
             "id": post.id,
             "user_id": post.user_id,
             "caption": post.caption,
             "media_url": record_media_url,
-            "media_asset_id": post.media_asset_id,
+            "media_asset_id": None if broken_media else post.media_asset_id,
             "created_at": post.created_at,
             "username": username,
             "avatar_url": avatar_url,
             "author_role": cast(str | None, role_value),
-            "media_content_type": cast(str | None, media_content_type_value),
+            "media_content_type": media_content_type,
             "like_count": int(like_count_value or 0),
             "dislike_count": int(dislike_count_value or 0),
             "comment_count": int(comment_count_value or 0),
@@ -333,7 +347,37 @@ def list_feed_records(
 
         records.append(record)
 
+    if invalid_post_ids:
+        _detach_post_media(db, invalid_post_ids)
+
     return records
+
+
+def _detach_post_media(db: Session, post_ids: list[UUID]) -> None:
+    """Clear media references for the provided post IDs, if needed."""
+
+    unique_post_ids = list({pid for pid in post_ids if pid is not None})
+    if not unique_post_ids:
+        return
+
+    posts = db.query(Post).filter(Post.id.in_(unique_post_ids)).all()
+    detached = 0
+    for post in posts:
+        if post.media_asset_id is not None or post.media_url:
+            post.media_asset_id = None
+            post.media_url = None
+            detached += 1
+
+    if detached == 0:
+        return
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("Failed to detach stale media for posts: %s", exc)
+    else:
+        logger.info("Detached stale media for %d posts", detached)
 
 
 def _get_post_or_404(db: Session, post_id: UUID) -> Post:
