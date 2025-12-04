@@ -121,6 +121,7 @@
       videoObserver: null,
       scrollEnhanced: false,
       brokenAssetIds: new Set(),
+      brokenNoticeShown: false,
       fullscreen: {
         active: false,
         overlay: null,
@@ -3718,7 +3719,10 @@
     console.warn('[media] removing broken asset from context', context, key);
     removeMediaAssetFromState(key);
     requestMediaAssetVerification(key);
-    showToast('Removed a broken media upload from the reel.', 'warning');
+    if (!state.mediaReel.brokenNoticeShown) {
+      state.mediaReel.brokenNoticeShown = true;
+      showToast('Some uploads failed to load and were removed.', 'warning');
+    }
   }
 
   function bindMediaElementErrorHandlers(node, asset, context) {
@@ -4785,6 +4789,8 @@
 
   function initMediaPage() {
     initThemeToggle();
+    state.mediaReel.brokenNoticeShown = false;
+    state.mediaReel.brokenAssetIds = new Set();
     const fileInput = document.getElementById('media-file');
     const preview = document.getElementById('media-preview');
     const previewImg = document.getElementById('media-preview-img');
