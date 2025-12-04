@@ -65,12 +65,17 @@ def navbar(*, active: str | None = None) -> Markup:
     return Markup(
         f"""
         <header class=\"sticky top-0 z-40 border-b border-slate-800/60 bg-slate-950/90 backdrop-blur\">
-            <div class=\"mx-auto flex max-w-7xl items-center justify-between px-6 py-4\">
-                <a href=\"/\" class=\"flex items-center gap-3 text-lg font-semibold text-white\">
-                    <img src=\"{LOGO_IMAGE}\" alt=\"SocialSphere logo\" class=\"h-10 w-10 rounded-full object-cover shadow-lg shadow-indigo-500/30 border border-indigo-400/40\" loading=\"lazy\">
-                    SocialSphere
+            <div class=\"mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-4 sm:px-6\">
+                <a href=\"/\" class=\"flex min-w-[180px] flex-1 items-center gap-3 text-lg font-semibold text-white\">
+                    <img src=\"{LOGO_IMAGE}\" alt=\"SocialSphere logo\" class=\"h-10 w-10 rounded-full border border-indigo-400/40 object-cover shadow-lg shadow-indigo-500/30\" loading=\"lazy\">
+                    <span class=\"truncate\">SocialSphere</span>
                 </a>
-                <div class=\"flex items-center gap-3\">
+                <div class=\"flex w-full flex-wrap items-center justify-between gap-2 sm:flex-nowrap sm:justify-end md:w-auto\">
+                    <button id=\"theme-toggle\" class=\"flex-1 rounded-full border border-slate-700/70 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-300 sm:flex-none sm:text-sm\">
+                        <span class=\"sm:hidden\">Theme</span>
+                        <span class=\"hidden sm:inline\">Toggle Theme</span>
+                    </button>
+                    <a id=\"nav-auth-btn\" href=\"/login\" class=\"flex-1 rounded-full border border-indigo-500/40 px-4 py-2 text-center text-xs font-semibold text-indigo-300 transition hover:bg-indigo-600/20 sm:flex-none sm:text-sm\">Login</a>
                     <button id=\"mobile-nav-toggle\" type=\"button\" class=\"inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-white md:hidden\" aria-controls=\"mobile-nav-panel\" aria-expanded=\"false\">
                         <span data-mobile-nav-label>Menu</span>
                         <svg data-mobile-nav-icon=\"open\" xmlns=\"http://www.w3.org/2000/svg\" class=\"h-4 w-4\" fill=\"none\" viewBox=\"0 0 24 24\" stroke=\"currentColor\" stroke-width=\"1.5\">
@@ -80,16 +85,10 @@ def navbar(*, active: str | None = None) -> Markup:
                             <path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M6 18L18 6M6 6l12 12\" />
                         </svg>
                     </button>
-                    <nav class=\"hidden items-center gap-1 md:flex\">{desktop_links}</nav>
-                    <div class=\"flex items-center gap-3\">
-                        <button id=\"theme-toggle\" class=\"rounded-full border border-slate-700/70 px-3 py-2 text-sm text-slate-200 transition hover:border-indigo-500 hover:text-indigo-300\">
-                            Toggle Theme
-                        </button>
-                        <a id=\"nav-auth-btn\" href=\"/login\" class=\"rounded-full border border-indigo-500/40 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-600/20\">Login</a>
-                    </div>
                 </div>
+                <nav class=\"hidden w-full items-center gap-1 md:flex md:justify-center\">{desktop_links}</nav>
             </div>
-            <div id=\"mobile-nav-panel\" class=\"md:hidden hidden border-t border-slate-800/60 bg-slate-950/95 px-6 py-4 shadow-xl shadow-black/30\">
+            <div id=\"mobile-nav-panel\" class=\"hidden border-t border-slate-800/60 bg-slate-950/95 px-4 py-4 shadow-xl shadow-black/30 md:hidden\">
                 <nav class=\"flex flex-col gap-2\">{mobile_links}</nav>
             </div>
         </header>
