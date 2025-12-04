@@ -4758,7 +4758,7 @@
     const root = document.getElementById('moderation-root');
     const serverRole = root ? root.dataset.viewerRole || null : null;
     const { role, userId } = getAuth();
-    const resolvedRole = (serverRole || role || 'user').toLowerCase();
+    const resolvedRole = (role || serverRole || 'user').toLowerCase();
     state.moderation.viewerRole = resolvedRole;
     state.moderation.viewerId = userId || null;
     bindModerationEvents();
