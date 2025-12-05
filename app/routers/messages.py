@@ -49,16 +49,29 @@ def _resolve_message_content(message: Message, fallback_chat: GroupChat | None =
         return "[unable to decrypt message]"
 
 
+def _sender_display_name(user: User | None) -> str | None:
+    if user is None:
+        return None
+    return user.display_name or user.username
+
+
 def _to_message_response(message: Message) -> MessageResponse:
     attachments = message.attachments or []
     parent = message.parent
     reply_payload = None
     content = _resolve_message_content(message)
+    sender = message.sender
+    sender_username = sender.username if sender else None
+    sender_display = _sender_display_name(sender)
+    sender_avatar_url = sender.avatar_url if sender else None
     if parent is not None:
+        parent_sender = parent.sender
         reply_payload = {
             "id": parent.id,
             "sender_id": parent.sender_id,
-            "sender_username": parent.sender.username if parent.sender else None,
+            "sender_username": parent_sender.username if parent_sender else None,
+            "sender_display_name": _sender_display_name(parent_sender),
+            "sender_avatar_url": parent_sender.avatar_url if parent_sender else None,
             "content": None if parent.is_deleted else _resolve_message_content(parent, message.group_chat),
             "is_deleted": parent.is_deleted,
         }
@@ -70,7 +83,9 @@ def _to_message_response(message: Message) -> MessageResponse:
         content=content,
         attachments=attachments,
         created_at=message.created_at,
-        sender_username=message.sender.username if message.sender else None,
+        sender_username=sender_username,
+        sender_display_name=sender_display,
+        sender_avatar_url=sender_avatar_url,
         reply_to=reply_payload,
         is_deleted=message.is_deleted,
         deleted_at=message.deleted_at,

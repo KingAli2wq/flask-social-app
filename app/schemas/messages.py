@@ -28,6 +28,8 @@ class MessageReplyContext(BaseModel):
     id: UUID
     sender_id: UUID
     sender_username: str | None = None
+    sender_display_name: str | None = None
+    sender_avatar_url: str | None = None
     content: str | None = None
     is_deleted: bool = False
 
@@ -43,6 +45,8 @@ class MessageResponse(BaseModel):
     attachments: List[str]
     created_at: datetime
     sender_username: str | None = None
+    sender_display_name: str | None = None
+    sender_avatar_url: str | None = None
     reply_to: MessageReplyContext | None = None
     is_deleted: bool = False
     deleted_at: datetime | None = None
