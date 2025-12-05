@@ -15,6 +15,7 @@ from .media import (
 from .messages import (
     DirectThreadResponse,
     GroupChatCreate,
+    GroupChatInviteRequest,
     GroupChatResponse,
     MessageReplyContext,
     MessageResponse,
@@ -77,6 +78,7 @@ __all__ = [
     "FollowStatsResponse",
     "DirectThreadResponse",
     "GroupChatCreate",
+    "GroupChatInviteRequest",
     "GroupChatResponse",
     "MessageReplyContext",
     "MessageResponse",

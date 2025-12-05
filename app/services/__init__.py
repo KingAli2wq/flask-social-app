@@ -30,7 +30,16 @@ from .media_service import (
     store_upload,
     verify_media_asset,
 )
-from .message_service import create_group_chat, delete_message, delete_old_messages, list_messages, send_message
+from .message_service import (
+    add_group_members,
+    create_group_chat,
+    delete_message,
+    delete_old_messages,
+    get_group_chat,
+    list_group_chats,
+    list_messages,
+    send_message,
+)
 from .moderation_service import (
     delete_moderation_user,
     get_moderation_media_asset,
@@ -84,6 +93,9 @@ __all__ = [
     "require_roles",
     "require_owner",
     "create_group_chat",
+    "add_group_members",
+    "get_group_chat",
+    "list_group_chats",
     "delete_message",
     "list_messages",
     "send_message",

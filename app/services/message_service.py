@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Iterable, cast
+from typing import Iterable, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -14,27 +14,27 @@ from ..models import GroupChat, Message, User
 from ..schemas import GroupChatCreate, MessageSendRequest
 from .friendship_service import require_friendship
 from .notification_service import NotificationType, add_notification
+from .group_crypto import (
+    GroupEncryptionError,
+    encrypt_group_payload,
+    generate_group_encryption_key,
+    generate_group_lock_code,
+)
 
 
 def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> GroupChat:
     """Create a persisted group chat and attach the requested members."""
 
-    candidate_usernames: list[str] = []
-    for raw in [owner.username, *payload.members]:
-        username = raw.strip()
-        if not username:
-            continue
-        if username not in candidate_usernames:
-            candidate_usernames.append(username)
+    candidate_usernames = _collect_unique_usernames(owner.username, payload.members)
+    members = _load_members_by_username(db, candidate_usernames)
 
-    members: list[User] = []
-    for username in candidate_usernames:
-        user = db.scalar(select(User).where(User.username == username))
-        if user is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{username}' not found")
-        members.append(user)
-
-    chat = GroupChat(name=payload.name, owner_id=owner.id)
+    chat = GroupChat(
+        name=payload.name.strip(),
+        owner_id=owner.id,
+        avatar_url=(payload.avatar_url or None),
+        encryption_key=generate_group_encryption_key(),
+        lock_code=generate_group_lock_code(),
+    )
     chat.members = members
 
     try:
@@ -55,6 +55,28 @@ def _attachments_or_none(values: Iterable[str] | None) -> list[str] | None:
     return cleaned or None
 
 
+def _collect_unique_usernames(owner_username: str | None, extras: Sequence[str] | None) -> list[str]:
+    candidates: list[str] = []
+    ordered_source: list[str] = [owner_username or ""]
+    if extras:
+        ordered_source.extend(extras)
+    for raw in ordered_source:
+        username = (raw or "").strip()
+        if username and username not in candidates:
+            candidates.append(username)
+    return candidates
+
+
+def _load_members_by_username(db: Session, usernames: Sequence[str]) -> list[User]:
+    members: list[User] = []
+    for username in usernames:
+        user = db.scalar(select(User).where(User.username == username))
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{username}' not found")
+        members.append(user)
+    return members
+
+
 def send_message(
     db: Session,
     *,
@@ -66,8 +88,14 @@ def send_message(
     if not payload.chat_id and payload.friend_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="friend_id or chat_id required")
 
+    attachments = _attachments_or_none(payload.attachments)
+    has_text = bool((payload.content or "").strip())
+    if not (has_text or attachments):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message requires text or attachments")
+
     group_chat_id: UUID | None = None
     chat_identifier = payload.chat_id
+    target_group_chat: GroupChat | None = None
 
     recipient_id: UUID | None = None
     parent_message: Message | None = None
@@ -83,11 +111,12 @@ def send_message(
             group_chat_uuid = None
 
         if group_chat_uuid is not None:
-            chat = db.get(GroupChat, group_chat_uuid)
-            if chat is None:
+            target_group_chat = db.get(GroupChat, group_chat_uuid)
+            if target_group_chat is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
-            group_chat_id = cast(UUID, chat.id)
-            chat_identifier = str(chat.id)
+            _ensure_group_membership(target_group_chat, sender.id)
+            group_chat_id = cast(UUID, target_group_chat.id)
+            chat_identifier = str(target_group_chat.id)
 
     if recipient_id is None and payload.friend_id is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Friendship required")
@@ -100,13 +129,20 @@ def send_message(
         if parent_chat_id != chat_identifier:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reply must stay within the same chat")
 
+    message_content = payload.content or ""
+    if target_group_chat is not None:
+        try:
+            message_content = encrypt_group_payload(target_group_chat.encryption_key, message_content)
+        except GroupEncryptionError as exc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt message") from exc
+
     message = Message(
         chat_id=chat_identifier,
         group_chat_id=group_chat_id,
         sender_id=sender.id,
         recipient_id=recipient_id,
-        content=payload.content,
-        attachments=_attachments_or_none(payload.attachments),
+        content=message_content,
+        attachments=attachments,
         parent_id=parent_message.id if parent_message else None,
     )
 
@@ -134,6 +170,7 @@ def list_messages(db: Session, *, chat_id: str) -> list[Message]:
         .options(
             selectinload(Message.sender),
             selectinload(Message.parent).selectinload(Message.sender),
+            selectinload(Message.group_chat),
         )
         .order_by(Message.created_at.asc())
     )
@@ -180,12 +217,72 @@ def delete_old_messages(db: Session, *, older_than: timedelta | None = None) -> 
         return 0
 
 
+def list_group_chats(db: Session, *, user: User) -> list[GroupChat]:
+    stmt = (
+        select(GroupChat)
+        .where(GroupChat.members.any(User.id == user.id))
+        .options(selectinload(GroupChat.members), selectinload(GroupChat.owner))
+        .order_by(GroupChat.updated_at.desc())
+    )
+    return list(db.scalars(stmt))
+
+
+def get_group_chat(db: Session, *, chat_id: UUID, requester: User) -> GroupChat:
+    stmt = (
+        select(GroupChat)
+        .where(GroupChat.id == chat_id, GroupChat.members.any(User.id == requester.id))
+        .options(selectinload(GroupChat.members), selectinload(GroupChat.owner))
+    )
+    chat = db.scalar(stmt)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+    return chat
+
+
+def add_group_members(db: Session, *, chat_id: UUID, requester: User, usernames: Sequence[str]) -> GroupChat:
+    normalized = [username.strip() for username in usernames if username and username.strip()]
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one username is required")
+
+    chat = db.get(GroupChat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+
+    _ensure_group_membership(chat, requester.id)
+
+    new_members = _load_members_by_username(db, normalized)
+    existing_ids = {_cast_uuid(member.id) for member in chat.members}
+    added = False
+    for user in new_members:
+        user_id = _cast_uuid(user.id)
+        if user_id in existing_ids:
+            continue
+        chat.members.append(user)
+        existing_ids.add(user_id)
+        added = True
+
+    if not added:
+        return chat
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update group chat members") from exc
+
+    db.refresh(chat)
+    return chat
+
+
 __all__ = [
     "create_group_chat",
     "send_message",
     "list_messages",
     "delete_message",
     "delete_old_messages",
+    "list_group_chats",
+    "get_group_chat",
+    "add_group_members",
 ]
 
 
@@ -209,3 +306,17 @@ def _notify_direct_message(db: Session, *, sender: User, recipient_id: UUID, mes
         payload=payload,
         send_email_notification=True,
     )
+
+
+def _cast_uuid(value: UUID | None) -> UUID:
+    if value is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Missing identifier")
+    return cast(UUID, value)
+
+
+def _ensure_group_membership(chat: GroupChat, user_id: UUID | None) -> None:
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Membership required")
+    member_ids = {_cast_uuid(member.id) for member in chat.members}
+    if _cast_uuid(user_id) not in member_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not part of this group chat")

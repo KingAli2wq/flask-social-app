@@ -5,15 +5,23 @@ from datetime import datetime
 from typing import List
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MessageSendRequest(BaseModel):
     chat_id: str | None = Field(None, description="Unique identifier for a group chat thread")
     friend_id: UUID | None = Field(None, description="Direct message recipient derived from friendships")
-    content: str = Field(..., min_length=1, max_length=2000)
+    content: str = Field("", min_length=0, max_length=2000)
     attachments: List[str] = Field(default_factory=list)
     reply_to_id: UUID | None = Field(None, description="Optional message being replied to")
+
+    @model_validator(mode="after")
+    def ensure_payload(self) -> "MessageSendRequest":
+        has_text = bool((self.content or "").strip())
+        has_attachments = any(bool(item) for item in self.attachments)
+        if not (has_text or has_attachments):
+            raise ValueError("Message must include text or at least one attachment")
+        return self
 
 
 class MessageReplyContext(BaseModel):
@@ -57,13 +65,29 @@ class DirectThreadResponse(BaseModel):
 class GroupChatCreate(BaseModel):
     name: str = Field(..., min_length=3, max_length=60)
     members: List[str] = Field(default_factory=list)
+    avatar_url: str | None = Field(default=None, max_length=512)
+
+
+class GroupChatInviteRequest(BaseModel):
+    members: List[str] = Field(..., min_length=1, description="Usernames to invite into the chat")
+
+    @model_validator(mode="after")
+    def ensure_members(self) -> "GroupChatInviteRequest":
+        cleaned = [member.strip() for member in self.members if member and member.strip()]
+        if not cleaned:
+            raise ValueError("At least one username is required")
+        self.members = cleaned
+        return self
 
 
 class GroupChatResponse(BaseModel):
     id: UUID
     name: str
     owner: str
+    owner_id: UUID | None = None
     members: List[str]
+    avatar_url: str | None = None
+    lock_code: str
     created_at: datetime
     updated_at: datetime
 
@@ -76,4 +100,5 @@ __all__ = [
     "DirectThreadResponse",
     "GroupChatCreate",
     "GroupChatResponse",
+    "GroupChatInviteRequest",
 ]

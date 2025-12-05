@@ -16,6 +16,7 @@
   const POST_MEDIA_VIDEO_EXTENSIONS = new Set(['mp4', 'm4v', 'mov', 'webm', 'ogg', 'ogv', 'mkv']);
   const POST_MEDIA_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'bmp']);
   const INVALID_POST_MEDIA_URL_STRINGS = new Set(['', 'null', 'none', 'undefined', 'post media']);
+  const MESSAGE_ATTACHMENT_LIMIT = 5;
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -57,6 +58,12 @@
     activeThreadLock: null,
     activeChatId: null,
     activeMessages: [],
+    groupChats: [],
+    activeGroupId: null,
+    activeGroupMeta: null,
+    activeGroupLock: null,
+    conversationMode: null,
+    messageAttachments: [],
     friendSearch: {
       query: '',
       results: [],
@@ -101,6 +108,23 @@
     },
     messageReplyTarget: null,
     messageReplyElements: null,
+    groupModals: {
+      create: {
+        root: null,
+        form: null,
+        feedback: null,
+        avatarInput: null,
+        avatarPreview: null,
+        membersInput: null,
+      },
+      invite: {
+        root: null,
+        form: null,
+        feedback: null,
+        title: null,
+        membersInput: null,
+      },
+    },
     notifications: {
       unread: 0,
       pollHandle: null,
@@ -2757,7 +2781,10 @@
       { once: true }
     );
     setupMessageForm();
-    await refreshFriendsDirectory();
+    setupAttachmentPicker();
+    setupGroupChatControls();
+    await Promise.all([refreshFriendsDirectory(), refreshGroupDirectory()]);
+    ensureActiveConversation();
   }
 
   async function refreshFriendsDirectory() {
@@ -2768,6 +2795,10 @@
       state.friends = data.friends || [];
       state.incomingRequests = data.incoming_requests || [];
       state.outgoingRequests = data.outgoing_requests || [];
+      const friendCount = document.getElementById('friend-count');
+      if (friendCount) {
+        friendCount.textContent = `${state.friends.length} contacts`;
+      }
       renderFriendList();
       renderFriendRequests();
       reconcileActiveFriend();
@@ -2775,6 +2806,26 @@
       showToast(error.message || 'Unable to load friends.', 'error');
       renderFriendList(true);
       renderFriendRequests(true);
+    } finally {
+      if (container) container.classList.remove('opacity-70');
+    }
+  }
+
+  async function refreshGroupDirectory() {
+    const container = document.getElementById('group-list');
+    if (container) container.classList.add('opacity-70');
+    try {
+      const data = await apiFetch('/messages/groups');
+      state.groupChats = Array.isArray(data) ? data : [];
+      const groupCount = document.getElementById('group-count');
+      if (groupCount) {
+        groupCount.textContent = `${state.groupChats.length} active`;
+      }
+      renderGroupList();
+      reconcileActiveGroup();
+    } catch (error) {
+      console.warn('[groups] failed to load', error);
+      renderGroupList(true);
     } finally {
       if (container) container.classList.remove('opacity-70');
     }
@@ -2905,13 +2956,18 @@
     if (!stillExists) {
       state.activeFriendId = null;
       state.activeFriendMeta = null;
-      state.activeThreadLock = null;
-      state.activeChatId = null;
-      state.activeMessages = [];
-      disconnectMessageSocket();
-      clearThreadView();
+      if (state.conversationMode === 'direct') {
+        state.activeThreadLock = null;
+        state.activeChatId = null;
+        state.activeMessages = [];
+        state.conversationMode = state.activeGroupId ? 'group' : null;
+        if (!state.conversationMode) {
+          disconnectMessageSocket();
+          clearThreadView();
+        }
+      }
     }
-    if (!state.activeFriendId && state.friends.length) {
+    if (!state.activeFriendId && state.friends.length && !state.conversationMode) {
       selectFriend(state.friends[0].id);
     } else {
       updateFriendSelection();
@@ -2954,6 +3010,96 @@
       applyAvatarToImg(avatarNode, friend.avatar_url);
     });
     updateFriendSelection();
+  }
+
+  function renderGroupList(showError = false) {
+    const container = document.getElementById('group-list');
+    if (!container) return;
+    container.innerHTML = '';
+    if (showError) {
+      container.innerHTML = '<p class="px-2 py-3 text-sm text-rose-300">Unable to load group chats.</p>';
+      return;
+    }
+    if (!state.groupChats.length) {
+      container.innerHTML = '<p class="px-2 py-3 text-sm text-slate-400">No group chats yet. Tap <strong>New group</strong> to get started.</p>';
+      return;
+    }
+    state.groupChats.forEach(chat => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.dataset.groupId = String(chat.id);
+      item.className = `flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-emerald-500/10 ${
+        String(state.activeGroupId) === String(chat.id) && state.conversationMode === 'group' ? 'bg-emerald-500/10' : ''
+      }`;
+      const memberPreview = (chat.members || []).slice(0, 3).join(', ') || 'No members yet';
+      const lockSnippet = chat.lock_code ? shortenLock(chat.lock_code) : 'secure';
+      item.innerHTML = `
+        <div class="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/60">
+          <img data-group-avatar="${chat.id}" alt="${chat.name}" class="h-full w-full object-cover" />
+        </div>
+        <div class="flex-1">
+          <p class="text-sm font-semibold text-slate-100">${escapeHtml(chat.name)}</p>
+          <p class="text-[11px] text-slate-500">${escapeHtml(memberPreview)}</p>
+        </div>
+        <span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">Lock ${lockSnippet}</span>
+      `;
+      item.addEventListener('click', () => selectGroup(chat.id));
+      container.appendChild(item);
+      const avatarNode = item.querySelector(`[data-group-avatar="${chat.id}"]`);
+      applyAvatarToImg(avatarNode, chat.avatar_url);
+    });
+    updateGroupSelection();
+  }
+
+  function reconcileActiveGroup() {
+    const stillExists = state.groupChats.some(chat => String(chat.id) === String(state.activeGroupId));
+    if (!stillExists) {
+      state.activeGroupId = null;
+      state.activeGroupMeta = null;
+      state.activeGroupLock = null;
+      if (state.conversationMode === 'group') {
+        state.activeChatId = null;
+        state.activeMessages = [];
+        state.conversationMode = state.activeFriendId ? 'direct' : null;
+        if (!state.conversationMode) {
+          disconnectMessageSocket();
+          clearThreadView();
+        }
+      }
+    }
+    if (!state.activeGroupId && state.groupChats.length && !state.conversationMode) {
+      selectGroup(state.groupChats[0].id);
+    } else {
+      updateGroupSelection();
+      updateRecipientHint();
+      updateSendAvailability();
+    }
+  }
+
+  function ensureActiveConversation() {
+    if (state.conversationMode === 'direct' && state.activeFriendId) {
+      return;
+    }
+    if (state.conversationMode === 'group' && state.activeGroupId) {
+      return;
+    }
+    if (state.activeFriendId) {
+      selectFriend(state.activeFriendId);
+      return;
+    }
+    if (state.activeGroupId) {
+      selectGroup(state.activeGroupId);
+      return;
+    }
+    if (state.friends.length) {
+      selectFriend(state.friends[0].id);
+      return;
+    }
+    if (state.groupChats.length) {
+      selectGroup(state.groupChats[0].id);
+      return;
+    }
+    clearThreadView();
   }
 
   function renderFriendRequests(showError = false) {
@@ -3041,12 +3187,45 @@
       state.activeMessages = [];
       disconnectMessageSocket();
       clearMessageReplyTarget();
+      state.messageAttachments = [];
+      renderAttachmentPreview();
     }
     state.activeFriendId = friendId;
+    state.activeGroupId = null;
+    state.activeGroupMeta = null;
+    state.activeGroupLock = null;
+    state.conversationMode = 'direct';
     updateFriendSelection();
+    updateGroupSelection();
     updateRecipientHint();
     updateSendAvailability();
     loadDirectThread(friendId);
+  }
+
+  function selectGroup(groupId) {
+    if (!groupId) return;
+    const sameGroup = String(state.activeGroupId) === String(groupId);
+    if (sameGroup && state.threadLoading) {
+      return;
+    }
+    if (!sameGroup) {
+      state.activeChatId = null;
+      state.activeMessages = [];
+      disconnectMessageSocket();
+      clearMessageReplyTarget();
+      state.messageAttachments = [];
+      renderAttachmentPreview();
+    }
+    state.activeGroupId = groupId;
+    state.activeFriendId = null;
+    state.activeFriendMeta = null;
+    state.activeThreadLock = null;
+    state.conversationMode = 'group';
+    updateGroupSelection();
+    updateFriendSelection();
+    updateRecipientHint();
+    updateSendAvailability();
+    loadGroupThread(groupId);
   }
 
   function updateFriendSelection() {
@@ -3059,10 +3238,24 @@
     });
   }
 
+  function updateGroupSelection() {
+    document.querySelectorAll('[data-group-id]').forEach(node => {
+      if (String(node.dataset.groupId) === String(state.activeGroupId) && state.conversationMode === 'group') {
+        node.classList.add('bg-emerald-500/10');
+      } else {
+        node.classList.remove('bg-emerald-500/10');
+      }
+    });
+  }
+
   function updateRecipientHint() {
     const hint = document.getElementById('message-recipient');
     if (!hint) return;
-    if (state.activeFriendMeta) {
+    if (state.conversationMode === 'group' && state.activeGroupMeta) {
+      hint.textContent = `Messaging ${state.activeGroupMeta.name}`;
+      hint.classList.remove('text-slate-500');
+      hint.classList.add('text-emerald-200');
+    } else if (state.activeFriendMeta) {
       hint.textContent = `Securely messaging @${state.activeFriendMeta.username}`;
       hint.classList.remove('text-slate-500');
       hint.classList.add('text-indigo-300');
@@ -3076,7 +3269,8 @@
   function updateSendAvailability() {
     const button = document.getElementById('message-send');
     if (!button) return;
-    const disabled = !state.activeFriendId;
+    const hasTarget = state.conversationMode === 'group' ? Boolean(state.activeGroupId) : Boolean(state.activeFriendId);
+    const disabled = !hasTarget;
     button.disabled = disabled;
     if (disabled) {
       button.classList.add('cursor-not-allowed', 'opacity-50');
@@ -3113,33 +3307,102 @@
     }
   }
 
+  async function loadGroupThread(groupId) {
+    const thread = document.getElementById('message-thread');
+    const header = document.getElementById('chat-header');
+    if (!thread || !header) return;
+    state.threadLoading = true;
+    thread.classList.add('opacity-80');
+    try {
+      const detail = await apiFetch(`/messages/groups/${encodeURIComponent(groupId)}`);
+      state.activeGroupMeta = {
+        id: detail.id,
+        name: detail.name,
+        members: detail.members || [],
+        avatar_url: detail.avatar_url || null,
+        owner_id: detail.owner_id || null,
+      };
+      state.activeGroupLock = detail.lock_code;
+      state.activeGroupId = detail.id;
+      state.activeChatId = detail.id ? String(detail.id) : null;
+      const messages = await apiFetch(`/messages/${encodeURIComponent(detail.id)}`);
+      state.activeMessages = Array.isArray(messages.messages) ? [...messages.messages] : [];
+      state.conversationMode = 'group';
+      updateChatHeader();
+      updateRecipientHint();
+      renderMessageThread(state.activeMessages);
+      connectMessageSocket(state.activeChatId);
+    } catch (error) {
+      showToast(error.message || 'Unable to load group.', 'error');
+    } finally {
+      state.threadLoading = false;
+      thread.classList.remove('opacity-80');
+    }
+  }
+
   function updateChatHeader() {
     const header = document.getElementById('chat-header');
-    if (!header || !state.activeFriendMeta) {
-      clearThreadView();
+    if (!header) return;
+    if (state.conversationMode === 'group' && state.activeGroupMeta) {
+      const { name, avatar_url, members } = state.activeGroupMeta;
+      const lockSnippet = shortenLock(state.activeGroupLock);
+      const memberText = (members || []).slice(0, 4).join(', ') || 'No members yet';
+      header.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="h-12 w-12 overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/60">
+            <img id="active-group-avatar" alt="${escapeHtml(name)}" class="h-full w-full object-cover" />
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-white">${escapeHtml(name)}</h2>
+            <p class="text-xs text-slate-400">${escapeHtml(memberText)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="group-invite-trigger" type="button" class="rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-300">
+            Invite
+          </button>
+          <span id="lock-indicator" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Lock ${lockSnippet}</span>
+        </div>
+      `;
+      const avatarNode = document.getElementById('active-group-avatar');
+      applyAvatarToImg(avatarNode, avatar_url);
+      const inviteTrigger = document.getElementById('group-invite-trigger');
+      if (inviteTrigger && inviteTrigger.dataset.bound !== 'true') {
+        inviteTrigger.dataset.bound = 'true';
+        inviteTrigger.addEventListener('click', openGroupInviteModal);
+      }
       return;
     }
-    const { username, avatar_url } = state.activeFriendMeta;
-    const lockSnippet = shortenLock(state.activeThreadLock);
-    header.innerHTML = `
-      <div class="flex items-center gap-3">
-        <div class="h-12 w-12 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
-          <img id="active-friend-avatar" alt="${username}" class="h-full w-full object-cover" />
+    if (state.conversationMode === 'direct' && state.activeFriendMeta) {
+      const { username, avatar_url } = state.activeFriendMeta;
+      const lockSnippet = shortenLock(state.activeThreadLock);
+      header.innerHTML = `
+        <div class="flex items-center gap-3">
+          <div class="h-12 w-12 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+            <img id="active-friend-avatar" alt="${username}" class="h-full w-full object-cover" />
+          </div>
+          <div>
+            <h2 class="text-base font-semibold text-white">@${username}</h2>
+            <p class="text-xs text-slate-400">Secure lock ${lockSnippet}</p>
+          </div>
         </div>
-        <div>
-          <h2 class="text-base font-semibold text-white">@${username}</h2>
-          <p class="text-xs text-slate-400">Secure lock ${lockSnippet}</p>
-        </div>
-      </div>
-      <span id="lock-indicator" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Lock ${lockSnippet}</span>
-    `;
-    const avatarNode = document.getElementById('active-friend-avatar');
-    applyAvatarToImg(avatarNode, avatar_url);
+        <span id="lock-indicator" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Lock ${lockSnippet}</span>
+      `;
+      const avatarNode = document.getElementById('active-friend-avatar');
+      applyAvatarToImg(avatarNode, avatar_url);
+      return;
+    }
+    clearThreadView();
   }
 
   function clearThreadView() {
+    state.conversationMode = null;
+    state.activeFriendId = null;
     state.activeFriendMeta = null;
+    state.activeGroupId = null;
+    state.activeGroupMeta = null;
     state.activeThreadLock = null;
+    state.activeGroupLock = null;
     state.activeChatId = null;
     state.activeMessages = [];
     disconnectMessageSocket();
@@ -3195,19 +3458,31 @@
         feedback.classList.add('hidden');
         feedback.textContent = '';
       }
-      if (!state.activeFriendId) {
+      const targetingGroup = state.conversationMode === 'group';
+      const targetingFriend = state.conversationMode === 'direct';
+      if (!targetingGroup && !targetingFriend) {
+        showToast('Select a conversation to send a message.', 'warning');
+        return;
+      }
+      if (targetingFriend && !state.activeFriendId) {
         showToast('Select a friend to send a message.', 'warning');
         return;
       }
-      if (!content) {
-        showToast('Message cannot be empty.', 'warning');
+      if (targetingGroup && !state.activeGroupId) {
+        showToast('Select a group chat to send a message.', 'warning');
+        return;
+      }
+      const hasAttachments = state.messageAttachments.length > 0;
+      if (!content && !hasAttachments) {
+        showToast('Share a note or attach a file first.', 'warning');
         return;
       }
       try {
         const payload = {
           content,
-          friend_id: state.activeFriendId,
-          attachments: [],
+          friend_id: targetingFriend ? state.activeFriendId : null,
+          chat_id: targetingGroup ? state.activeChatId : null,
+          attachments: state.messageAttachments.map(item => item.url),
           reply_to_id: state.messageReplyTarget?.id || null,
         };
         const message = await apiFetch('/messages/send', {
@@ -3217,6 +3492,8 @@
         showToast('Message sent!', 'success');
         form.reset();
         clearMessageReplyTarget();
+        state.messageAttachments = [];
+        renderAttachmentPreview();
         handleIncomingMessage(message, { skipToast: true });
         focusMessageComposer();
       } catch (error) {
@@ -3226,6 +3503,390 @@
         }
       }
     });
+  }
+
+  function setupAttachmentPicker() {
+    const input = document.getElementById('message-attachment-input');
+    const trigger = document.getElementById('message-attachment-trigger');
+    if (!input || !trigger) return;
+    trigger.addEventListener('click', () => input.click());
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      try {
+        await handleAttachmentSelection(files);
+      } finally {
+        input.value = '';
+      }
+    });
+    renderAttachmentPreview();
+  }
+
+  async function handleAttachmentSelection(files) {
+    for (const file of files) {
+      if (state.messageAttachments.length >= MESSAGE_ATTACHMENT_LIMIT) {
+        showToast(`You can attach up to ${MESSAGE_ATTACHMENT_LIMIT} files.`, 'warning');
+        break;
+      }
+      try {
+        const url = await uploadMessageAsset(file);
+        state.messageAttachments.push({
+          url,
+          name: file.name || file.type || 'attachment',
+          type: detectAttachmentType(file.name || file.type || url),
+        });
+        renderAttachmentPreview();
+      } catch (error) {
+        showToast(error.message || 'Unable to upload attachment.', 'error');
+        break;
+      }
+    }
+  }
+
+  function renderAttachmentPreview() {
+    const preview = document.getElementById('message-attachment-preview');
+    if (!preview) return;
+    preview.innerHTML = '';
+    if (!state.messageAttachments.length) {
+      preview.classList.add('hidden');
+      return;
+    }
+    preview.classList.remove('hidden');
+    state.messageAttachments.forEach((attachment, index) => {
+      const chip = document.createElement('div');
+      chip.className = 'flex items-center gap-2 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-3 py-1 text-xs text-slate-200';
+      const icon = attachment.type === 'image' ? '🖼' : attachment.type === 'video' ? '🎬' : '📎';
+      chip.innerHTML = `
+        <span>${icon} ${escapeHtml(truncateText(attachment.name, 28))}</span>
+        <button type="button" data-attachment-index="${index}" class="text-[11px] text-rose-300 transition hover:text-rose-100">Remove</button>
+      `;
+      const removeButton = chip.querySelector('button');
+      removeButton.addEventListener('click', () => removeAttachment(index));
+      preview.appendChild(chip);
+    });
+  }
+
+  function removeAttachment(index) {
+    state.messageAttachments.splice(index, 1);
+    renderAttachmentPreview();
+  }
+
+  async function uploadMessageAsset(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiFetch('/media/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response?.url) {
+      throw new Error('Upload failed.');
+    }
+    return response.url;
+  }
+
+  function detectAttachmentType(source) {
+    if (!source) return 'file';
+    const normalized = source.toLowerCase();
+    const withoutQuery = normalized.split('?')[0];
+    const parts = withoutQuery.split('.');
+    const ext = parts.length > 1 ? parts.pop() : '';
+    if (ext && POST_MEDIA_VIDEO_EXTENSIONS.has(ext)) return 'video';
+    if (ext && POST_MEDIA_IMAGE_EXTENSIONS.has(ext)) return 'image';
+    return 'file';
+  }
+
+  function setupGroupChatControls() {
+    cacheGroupModals();
+    const trigger = document.getElementById('group-create-trigger');
+    if (trigger && trigger.dataset.bound !== 'true') {
+      trigger.dataset.bound = 'true';
+      trigger.addEventListener('click', () => toggleGroupCreateModal(true));
+    }
+    const create = state.groupModals.create;
+    if (create.root && create.root.dataset.bound !== 'true') {
+      create.root.dataset.bound = 'true';
+      create.root.addEventListener('click', event => {
+        if (event.target === create.root) {
+          toggleGroupCreateModal(false);
+        }
+      });
+    }
+    create.root?.querySelectorAll('[data-group-create-close]').forEach(node => {
+      if (node.dataset.bound === 'true') return;
+      node.dataset.bound = 'true';
+      node.addEventListener('click', () => toggleGroupCreateModal(false));
+    });
+    if (create.form && create.form.dataset.bound !== 'true') {
+      create.form.dataset.bound = 'true';
+      create.form.addEventListener('submit', handleGroupCreateSubmit);
+    }
+    if (create.avatarInput && create.avatarInput.dataset.bound !== 'true') {
+      create.avatarInput.dataset.bound = 'true';
+      create.avatarInput.addEventListener('change', () => updateGroupAvatarPreview());
+    }
+    const avatarTrigger = document.getElementById('group-avatar-trigger');
+    if (avatarTrigger && avatarTrigger.dataset.bound !== 'true') {
+      avatarTrigger.dataset.bound = 'true';
+      avatarTrigger.addEventListener('click', () => create.avatarInput?.click());
+    }
+    const avatarClear = document.getElementById('group-avatar-clear');
+    if (avatarClear && avatarClear.dataset.bound !== 'true') {
+      avatarClear.dataset.bound = 'true';
+      avatarClear.addEventListener('click', () => clearGroupAvatar());
+    }
+
+    const invite = state.groupModals.invite;
+    if (invite.root && invite.root.dataset.bound !== 'true') {
+      invite.root.dataset.bound = 'true';
+      invite.root.addEventListener('click', event => {
+        if (event.target === invite.root) {
+          toggleGroupInviteModal(false);
+        }
+      });
+    }
+    invite.root?.querySelectorAll('[data-group-invite-close]').forEach(node => {
+      if (node.dataset.bound === 'true') return;
+      node.dataset.bound = 'true';
+      node.addEventListener('click', () => toggleGroupInviteModal(false));
+    });
+    if (invite.form && invite.form.dataset.bound !== 'true') {
+      invite.form.dataset.bound = 'true';
+      invite.form.addEventListener('submit', handleGroupInviteSubmit);
+    }
+  }
+
+  function cacheGroupModals() {
+    const create = state.groupModals.create;
+    if (!create.root) {
+      create.root = document.getElementById('group-create-modal');
+      create.form = document.getElementById('group-create-form');
+      create.feedback = document.getElementById('group-create-feedback');
+      create.avatarInput = document.getElementById('group-avatar-input');
+      create.avatarPreview = document.getElementById('group-avatar-preview');
+      create.membersInput = document.getElementById('group-members');
+    }
+    const invite = state.groupModals.invite;
+    if (!invite.root) {
+      invite.root = document.getElementById('group-invite-modal');
+      invite.form = document.getElementById('group-invite-form');
+      invite.feedback = document.getElementById('group-invite-feedback');
+      invite.title = document.getElementById('group-invite-title');
+      invite.membersInput = document.getElementById('group-invite-members');
+    }
+  }
+
+  function toggleGroupCreateModal(show) {
+    cacheGroupModals();
+    const modal = state.groupModals.create.root;
+    if (!modal) return;
+    if (show) {
+      resetGroupCreateForm();
+      modal.classList.remove('hidden');
+      lockBodyScroll();
+    } else {
+      const wasVisible = !modal.classList.contains('hidden');
+      modal.classList.add('hidden');
+      if (wasVisible) {
+        unlockBodyScroll();
+      }
+    }
+  }
+
+  function toggleGroupInviteModal(show) {
+    cacheGroupModals();
+    const modal = state.groupModals.invite.root;
+    if (!modal) return;
+    if (show) {
+      state.groupModals.invite.membersInput.value = '';
+      if (state.groupModals.invite.feedback) {
+        state.groupModals.invite.feedback.classList.add('hidden');
+      }
+      modal.classList.remove('hidden');
+      lockBodyScroll();
+    } else {
+      const wasVisible = !modal.classList.contains('hidden');
+      modal.classList.add('hidden');
+      if (wasVisible) {
+        unlockBodyScroll();
+      }
+    }
+  }
+
+  function resetGroupCreateForm() {
+    const create = state.groupModals.create;
+    create.form?.reset();
+    if (create.feedback) {
+      create.feedback.classList.add('hidden');
+      create.feedback.textContent = '';
+    }
+    if (create.avatarPreview) {
+      create.avatarPreview.src = DEFAULT_AVATAR;
+    }
+    if (create.avatarInput) {
+      create.avatarInput.value = '';
+    }
+  }
+
+  function updateGroupAvatarPreview() {
+    const create = state.groupModals.create;
+    const file = create.avatarInput?.files && create.avatarInput.files[0];
+    if (!file) {
+      clearGroupAvatar();
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = event => {
+      if (create.avatarPreview) {
+        create.avatarPreview.src = event.target?.result || DEFAULT_AVATAR;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearGroupAvatar() {
+    const create = state.groupModals.create;
+    if (create.avatarPreview) {
+      create.avatarPreview.src = DEFAULT_AVATAR;
+    }
+    if (create.avatarInput) {
+      create.avatarInput.value = '';
+    }
+  }
+
+  async function handleGroupCreateSubmit(event) {
+    event.preventDefault();
+    const create = state.groupModals.create;
+    if (!create.form) return;
+    const feedback = create.feedback;
+    if (feedback) {
+      feedback.classList.add('hidden');
+      feedback.textContent = '';
+    }
+    const formData = new FormData(create.form);
+    const name = String(formData.get('group-name') || '').trim();
+    const members = parseUsernames(String(formData.get('group-members') || ''));
+    if (!name || name.length < 3) {
+      if (feedback) {
+        feedback.textContent = 'Choose a name with at least three characters.';
+        feedback.classList.remove('hidden');
+      }
+      return;
+    }
+    let avatarUrl = null;
+    const avatarFile = create.avatarInput?.files && create.avatarInput.files[0];
+    create.form.classList.add('opacity-70');
+    const submitButton = create.form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      if (avatarFile) {
+        avatarUrl = await uploadMessageAsset(avatarFile);
+      }
+      const payload = {
+        name,
+        members,
+        avatar_url: avatarUrl,
+      };
+      const response = await apiFetch('/messages/groups', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      showToast('Group chat created.', 'success');
+      toggleGroupCreateModal(false);
+      await refreshGroupDirectory();
+      if (response?.id) {
+        state.activeGroupId = response.id;
+        selectGroup(response.id);
+      }
+    } catch (error) {
+      if (feedback) {
+        feedback.textContent = error.message || 'Unable to create group right now.';
+        feedback.classList.remove('hidden');
+      }
+    } finally {
+      create.form.classList.remove('opacity-70');
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  function parseUsernames(raw) {
+    return (raw || '')
+      .split(/[,\n]/)
+      .map(value => value.replace(/^@/, '').trim())
+      .filter(Boolean);
+  }
+
+  function openGroupInviteModal() {
+    if (!state.activeGroupId || !state.activeGroupMeta) {
+      showToast('Select a group first.', 'warning');
+      return;
+    }
+    cacheGroupModals();
+    const invite = state.groupModals.invite;
+    if (!invite.root) return;
+    invite.root.dataset.groupId = String(state.activeGroupId);
+    if (invite.title) {
+      invite.title.textContent = state.activeGroupMeta.name;
+    }
+    if (invite.feedback) {
+      invite.feedback.classList.add('hidden');
+      invite.feedback.textContent = '';
+    }
+    if (invite.membersInput) {
+      invite.membersInput.value = '';
+      invite.membersInput.focus();
+    }
+    toggleGroupInviteModal(true);
+  }
+
+  async function handleGroupInviteSubmit(event) {
+    event.preventDefault();
+    const invite = state.groupModals.invite;
+    if (!invite.form) return;
+    const targetGroupId = invite.root?.dataset.groupId || state.activeGroupId;
+    if (!targetGroupId) {
+      showToast('Select a group first.', 'warning');
+      return;
+    }
+    const usernames = parseUsernames(invite.membersInput?.value || '');
+    if (!usernames.length) {
+      if (invite.feedback) {
+        invite.feedback.textContent = 'Enter at least one username.';
+        invite.feedback.classList.remove('hidden');
+      }
+      return;
+    }
+    invite.form.classList.add('opacity-70');
+    const submitButton = invite.form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    try {
+      const response = await apiFetch(`/messages/groups/${encodeURIComponent(targetGroupId)}/members`, {
+        method: 'POST',
+        body: JSON.stringify({ members: usernames }),
+      });
+      showToast('Invitations sent.', 'success');
+      toggleGroupInviteModal(false);
+      if (response?.id) {
+        state.activeGroupMeta = {
+          id: response.id,
+          name: response.name,
+          members: response.members || [],
+          avatar_url: response.avatar_url || null,
+          owner_id: response.owner_id || null,
+        };
+        state.activeGroupLock = response.lock_code;
+        state.groupChats = state.groupChats.map(chat => (String(chat.id) === String(response.id) ? response : chat));
+        renderGroupList();
+        updateChatHeader();
+      }
+    } catch (error) {
+      if (invite.feedback) {
+        invite.feedback.textContent = error.message || 'Unable to send invites right now.';
+        invite.feedback.classList.remove('hidden');
+      }
+    } finally {
+      invite.form.classList.remove('opacity-70');
+      if (submitButton) submitButton.disabled = false;
+    }
   }
 
   function renderMessageReplyContext(replyTo, outbound) {
@@ -3243,6 +3904,41 @@
     `;
   }
 
+  function renderMessageAttachments(attachments, outbound) {
+    if (!attachments || !attachments.length) return '';
+    const borderClass = outbound ? 'border-white/20' : 'border-slate-700/60';
+    return `
+      <div class="mt-3 space-y-2">
+        ${attachments.map(url => renderSingleAttachment(url, borderClass)).join('')}
+      </div>
+    `;
+  }
+
+  function renderSingleAttachment(url, borderClass) {
+    const safeUrl = escapeHtml(url);
+    const type = detectAttachmentType(url);
+    if (type === 'image') {
+      return `
+        <a href="${safeUrl}" target="_blank" rel="noopener" class="block overflow-hidden rounded-2xl border ${borderClass}">
+          <img src="${safeUrl}" alt="Attachment" class="h-auto w-full object-cover" loading="lazy" />
+        </a>
+      `;
+    }
+    if (type === 'video') {
+      return `
+        <video controls class="w-full rounded-2xl border ${borderClass} bg-black/40" preload="metadata">
+          <source src="${safeUrl}" />
+          <a href="${safeUrl}" target="_blank" rel="noopener">View video</a>
+        </video>
+      `;
+    }
+    return `
+      <a href="${safeUrl}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-2xl border ${borderClass} px-3 py-2 text-[11px] font-semibold">
+        📎 Download file
+      </a>
+    `;
+  }
+
   function createMessageBubble(message, currentUserId) {
     const el = document.createElement('div');
     const outbound = String(message.sender_id) === String(currentUserId);
@@ -3257,7 +3953,10 @@
     const replyMarkup = renderMessageReplyContext(message.reply_to, outbound);
     const bodyMarkup = message.is_deleted
       ? '<p class="italic text-white/80">Message deleted</p>'
-      : `<p class="whitespace-pre-line leading-relaxed">${message.content || ''}</p>`;
+      : (message.content
+          ? `<p class="whitespace-pre-line leading-relaxed">${message.content || ''}</p>`
+          : '');
+    const attachmentsMarkup = renderMessageAttachments(message.attachments, outbound);
     const timestamp = `<span class="mt-2 block text-right text-[11px] ${outbound ? 'text-white/80' : 'text-slate-400'}">${formatDate(
       message.created_at
     )}</span>`;
@@ -3275,7 +3974,7 @@
         </div>
       `
       : '';
-    bubble.innerHTML = `${replyMarkup}${bodyMarkup}${timestamp}${actions}`;
+    bubble.innerHTML = `${replyMarkup}${bodyMarkup}${attachmentsMarkup}${timestamp}${actions}`;
     if (!message.is_deleted) {
       const replyButton = bubble.querySelector('[data-role="message-reply-trigger"]');
       if (replyButton) {

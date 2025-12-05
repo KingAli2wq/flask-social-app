@@ -14,35 +14,52 @@ from ..models import Friendship, GroupChat, Message, User
 from ..schemas import (
     DirectThreadResponse,
     GroupChatCreate,
+    GroupChatInviteRequest,
     GroupChatResponse,
     MessageResponse,
     MessageSendRequest,
     MessageThreadResponse,
 )
 from ..services import (
+    add_group_members,
     create_group_chat,
     decode_access_token,
     delete_message,
     get_current_user,
+    get_group_chat,
+    list_group_chats,
     list_messages,
     require_friendship,
     send_message,
 )
+from ..services.group_crypto import GroupEncryptionError, decrypt_group_payload
 from ..services.message_stream import message_stream_manager
 
 router = APIRouter(prefix="/messages", tags=["messages"])
+
+
+def _resolve_message_content(message: Message, fallback_chat: GroupChat | None = None) -> str:
+    content = message.content or ""
+    chat = message.group_chat or fallback_chat
+    if chat is None or not content:
+        return content
+    try:
+        return decrypt_group_payload(chat.encryption_key, content)
+    except GroupEncryptionError:
+        return "[unable to decrypt message]"
 
 
 def _to_message_response(message: Message) -> MessageResponse:
     attachments = message.attachments or []
     parent = message.parent
     reply_payload = None
+    content = _resolve_message_content(message)
     if parent is not None:
         reply_payload = {
             "id": parent.id,
             "sender_id": parent.sender_id,
             "sender_username": parent.sender.username if parent.sender else None,
-            "content": None if parent.is_deleted else parent.content,
+            "content": None if parent.is_deleted else _resolve_message_content(parent, message.group_chat),
             "is_deleted": parent.is_deleted,
         }
     return MessageResponse(
@@ -50,7 +67,7 @@ def _to_message_response(message: Message) -> MessageResponse:
         chat_id=message.chat_id,
         sender_id=message.sender_id,
         recipient_id=message.recipient_id,
-        content=message.content,
+        content=content,
         attachments=attachments,
         created_at=message.created_at,
         sender_username=message.sender.username if message.sender else None,
@@ -75,7 +92,10 @@ def _to_group_response(chat: GroupChat) -> GroupChatResponse:
         id=chat.id,
         name=chat.name,
         owner=owner_username,
+        owner_id=chat.owner_id,
         members=members,
+        avatar_url=chat.avatar_url,
+        lock_code=chat.lock_code,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
     )
@@ -105,16 +125,6 @@ async def delete_message_endpoint(
     return response
 
 
-@router.get("/{chat_id}", response_model=MessageThreadResponse)
-async def thread_endpoint(
-    chat_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_session),
-) -> MessageThreadResponse:
-    messages = list_messages(db, chat_id=chat_id)
-    return MessageThreadResponse(chat_id=chat_id, messages=[_to_message_response(item) for item in messages])
-
-
 @router.get("/direct/{friend_id}", response_model=DirectThreadResponse)
 async def direct_thread_endpoint(
     friend_id: UUID,
@@ -141,6 +151,46 @@ async def create_group_endpoint(
 ) -> GroupChatResponse:
     chat = create_group_chat(db, current_user, payload)
     return _to_group_response(chat)
+
+
+@router.get("/groups", response_model=list[GroupChatResponse])
+async def list_groups_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> list[GroupChatResponse]:
+    chats = list_group_chats(db, user=current_user)
+    return [_to_group_response(chat) for chat in chats]
+
+
+@router.get("/groups/{group_id}", response_model=GroupChatResponse)
+async def group_detail_endpoint(
+    group_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> GroupChatResponse:
+    chat = get_group_chat(db, chat_id=group_id, requester=current_user)
+    return _to_group_response(chat)
+
+
+@router.post("/groups/{group_id}/members", response_model=GroupChatResponse)
+async def invite_group_members_endpoint(
+    group_id: UUID,
+    payload: GroupChatInviteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> GroupChatResponse:
+    chat = add_group_members(db, chat_id=group_id, requester=current_user, usernames=payload.members)
+    return _to_group_response(chat)
+
+
+@router.get("/{chat_id}", response_model=MessageThreadResponse)
+async def thread_endpoint(
+    chat_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> MessageThreadResponse:
+    messages = list_messages(db, chat_id=chat_id)
+    return MessageThreadResponse(chat_id=chat_id, messages=[_to_message_response(item) for item in messages])
 
 
 @router.websocket("/ws/{chat_id}")
