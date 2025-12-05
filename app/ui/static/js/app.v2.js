@@ -3978,7 +3978,11 @@
 
     const bubbleShell = document.createElement('div');
     bubbleShell.className = 'flex max-w-[75%] flex-col';
-    bubbleShell.classList.add(outbound ? 'items-end text-right' : 'items-start');
+    if (outbound) {
+      bubbleShell.classList.add('items-end', 'text-right');
+    } else {
+      bubbleShell.classList.add('items-start', 'text-left');
+    }
 
     const bubble = document.createElement('div');
     bubble.className = `w-full rounded-2xl px-4 py-3 text-sm shadow-lg ${
