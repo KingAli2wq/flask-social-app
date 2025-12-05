@@ -3295,6 +3295,7 @@
       state.activeThreadLock = data.lock_code;
       state.activeChatId = data.chat_id || null;
       state.activeMessages = Array.isArray(data.messages) ? [...data.messages] : [];
+      primeMessageSenders(state.activeMessages);
       updateChatHeader();
       updateRecipientHint();
       renderMessageThread(state.activeMessages);
@@ -3327,6 +3328,7 @@
       state.activeChatId = detail.id ? String(detail.id) : null;
       const messages = await apiFetch(`/messages/${encodeURIComponent(detail.id)}`);
       state.activeMessages = Array.isArray(messages.messages) ? [...messages.messages] : [];
+      primeMessageSenders(state.activeMessages);
       state.conversationMode = 'group';
       updateChatHeader();
       updateRecipientHint();
@@ -3439,10 +3441,25 @@
       return;
     }
     const currentUser = getAuth().userId;
+    primeMessageSenders(payload);
     payload.forEach(message => {
       thread.appendChild(createMessageBubble(message, currentUser));
     });
     thread.scrollTop = thread.scrollHeight;
+  }
+
+  function primeMessageSender(message) {
+    if (!message || !message.sender_id || !message.sender_avatar_url) {
+      return;
+    }
+    updateAvatarCacheEntry(message.sender_id, message.sender_avatar_url);
+  }
+
+  function primeMessageSenders(records) {
+    if (!Array.isArray(records)) {
+      return;
+    }
+    records.forEach(primeMessageSender);
   }
 
   function setupMessageForm() {
@@ -3940,16 +3957,47 @@
   }
 
   function createMessageBubble(message, currentUserId) {
-    const el = document.createElement('div');
     const outbound = String(message.sender_id) === String(currentUserId);
-    el.className = `flex ${outbound ? 'justify-end' : 'justify-start'}`;
+    const senderKey = message.sender_id ? String(message.sender_id) : null;
+    const cachedAvatar = senderKey ? state.avatarCache[senderKey] : null;
+    const avatarSource = cachedAvatar || (message.sender_avatar_url ? resolveAvatarUrl(message.sender_avatar_url) : DEFAULT_AVATAR);
+    const identityName = outbound
+      ? 'You'
+      : message.sender_display_name ||
+        (message.sender_username ? `@${message.sender_username}` : 'Unknown sender');
+    const container = document.createElement('div');
+    container.className = `mb-5 flex items-start gap-3 ${outbound ? 'flex-row-reverse' : ''}`;
+
+    const avatarWrapper = document.createElement('div');
+    avatarWrapper.className = 'mt-0.5 flex-shrink-0';
+    const avatarImg = document.createElement('img');
+    avatarImg.className = 'h-10 w-10 rounded-full border border-slate-800/70 object-cover shadow-sm';
+    avatarImg.alt = identityName;
+    avatarImg.src = avatarSource || DEFAULT_AVATAR;
+    avatarWrapper.appendChild(avatarImg);
+
+    const bubbleShell = document.createElement('div');
+    bubbleShell.className = 'flex max-w-[75%] flex-col';
+    bubbleShell.classList.add(outbound ? 'items-end text-right' : 'items-start');
+
     const bubble = document.createElement('div');
-    bubble.className = `max-w-[75%] rounded-2xl px-4 py-3 text-sm shadow-lg ${
+    bubble.className = `w-full rounded-2xl px-4 py-3 text-sm shadow-lg ${
       outbound ? 'bg-indigo-600 text-white' : 'bg-slate-800/90 text-slate-100'
     }`;
     if (message.id) {
       bubble.dataset.messageId = String(message.id);
     }
+
+    const safeIdentity = escapeHtml(identityName);
+    const usernameMarkup = message.sender_username
+      ? `<span class="text-[10px] font-normal normal-case opacity-80">@${escapeHtml(message.sender_username)}</span>`
+      : '';
+    const identityMarkup = `
+      <div class="mb-2 flex ${outbound ? 'justify-end text-white/80' : 'justify-start text-emerald-200'} gap-2 text-[11px] font-semibold uppercase tracking-wide">
+        <span>${safeIdentity}</span>
+        ${usernameMarkup}
+      </div>
+    `;
     const replyMarkup = renderMessageReplyContext(message.reply_to, outbound);
     const bodyMarkup = message.is_deleted
       ? '<p class="italic text-white/80">Message deleted</p>'
@@ -3974,7 +4022,8 @@
         </div>
       `
       : '';
-    bubble.innerHTML = `${replyMarkup}${bodyMarkup}${attachmentsMarkup}${timestamp}${actions}`;
+    bubble.innerHTML = `${identityMarkup}${replyMarkup}${bodyMarkup}${attachmentsMarkup}${timestamp}${actions}`;
+
     if (!message.is_deleted) {
       const replyButton = bubble.querySelector('[data-role="message-reply-trigger"]');
       if (replyButton) {
@@ -3987,8 +4036,11 @@
         }
       }
     }
-    el.appendChild(bubble);
-    return el;
+
+    bubbleShell.appendChild(bubble);
+    container.appendChild(avatarWrapper);
+    container.appendChild(bubbleShell);
+    return container;
   }
 
   async function handleDeleteMessage(message, trigger) {
@@ -4021,6 +4073,7 @@
 
   function handleIncomingMessage(message, options = {}) {
     if (!message) return;
+    primeMessageSender(message);
     const { skipToast = false } = options;
     const chatId = message.chat_id ? String(message.chat_id) : null;
     if (!chatId) return;
