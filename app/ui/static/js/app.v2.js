@@ -8,6 +8,7 @@
   const MEDIA_REEL_CACHE_KEY = 'socialsphere:media-reel-cache';
   const MEDIA_REEL_SCROLL_LOCK_MS = 320;
   const MEDIA_REEL_SKELETON_COUNT = 3;
+  const STORY_VIEW_HISTORY_KEY = 'socialsphere:story-views';
   const POST_EDITOR_ROOT_ID = 'post-edit-overlay';
   const FEED_BATCH_SIZE = 5;
   const REALTIME_WS_PATH = '/ws/feed';
@@ -19,6 +20,7 @@
   const MESSAGE_ATTACHMENT_LIMIT = 5;
   const STORY_BACKGROUND_PRESETS = {
     solid: null,
+    clear: null,
     sunset: 'linear-gradient(135deg, rgba(249,115,22,0.92), rgba(190,24,93,0.85))',
     ocean: 'linear-gradient(135deg, rgba(56,189,248,0.88), rgba(16,185,129,0.88))',
     aurora: 'linear-gradient(135deg, rgba(129,140,248,0.88), rgba(14,165,233,0.85))',
@@ -80,6 +82,7 @@
       items: [],
       loading: false,
       signature: null,
+      viewHistory: loadJson(STORY_VIEW_HISTORY_KEY, {}),
       composer: {
         file: null,
         objectUrl: null,
@@ -1253,8 +1256,10 @@
     if (key === 'solid') {
       const modal = state.stories.modal;
       state.stories.composer.textBackground = modal.textBackgroundInput?.value || '#0f172a';
-    } else if (STORY_BACKGROUND_PRESETS[key]) {
-      state.stories.composer.textBackground = STORY_BACKGROUND_PRESETS[key];
+    } else if (key === 'clear') {
+      state.stories.composer.textBackground = null;
+    } else {
+      state.stories.composer.textBackground = STORY_BACKGROUND_PRESETS[key] || state.stories.composer.textBackground;
     }
     highlightStoryBackgroundButtons();
     updateStoryPreview();
@@ -1262,7 +1267,7 @@
 
   function highlightStoryBackgroundButtons() {
     const modal = state.stories.modal;
-    modal.backgroundButtons.forEach(button => {
+    (modal.backgroundButtons || []).forEach(button => {
       const isActive = (button.dataset.storyBg || 'solid') === state.stories.composer.backgroundPreset;
       button.classList.toggle('border-indigo-400', isActive);
       button.classList.toggle('bg-indigo-500/10', isActive);
@@ -1296,26 +1301,35 @@
     if (!overlay) return;
     const composer = state.stories.composer;
     const content = (composer.text || '').trim();
-    overlay.textContent = content || 'Add a quick note…';
+    const hasContent = Boolean(content);
+    overlay.textContent = hasContent ? content : 'Add a quick note…';
     overlay.style.color = composer.textColor || '#f8fafc';
     overlay.style.fontSize = `${composer.fontSize}px`;
     overlay.style.background = 'none';
     overlay.style.backgroundImage = 'none';
-    overlay.style.backgroundColor = 'rgba(15,23,42,0.65)';
-    const backgroundValue = getStoryBackgroundValue();
-    if (backgroundValue) {
+    const backgroundValue = hasContent ? getStoryBackgroundValue() : '#1f2937';
+    if (!hasContent) {
+      overlay.style.backgroundColor = backgroundValue;
+    } else if (backgroundValue === null) {
+      overlay.style.backgroundColor = 'transparent';
+    } else if (backgroundValue) {
       if (backgroundValue.startsWith('linear-gradient')) {
         overlay.style.backgroundImage = backgroundValue;
         overlay.style.backgroundColor = 'transparent';
       } else {
         overlay.style.backgroundColor = backgroundValue;
       }
+    } else {
+      overlay.style.backgroundColor = 'rgba(15,23,42,0.65)';
     }
     applyStoryOverlayPosition(overlay, composer.textPosition);
   }
 
   function getStoryBackgroundValue() {
     const composer = state.stories.composer;
+    if (composer.backgroundPreset === 'clear') {
+      return null;
+    }
     if (composer.backgroundPreset && composer.backgroundPreset !== 'solid') {
       return STORY_BACKGROUND_PRESETS[composer.backgroundPreset] || composer.textBackground;
     }
@@ -1382,13 +1396,14 @@
       if (!uploaded?.id) {
         throw new Error('Upload failed.');
       }
+      const backgroundPayload = getStoryBackgroundValue();
       await apiFetch('/stories/', {
         method: 'POST',
         body: JSON.stringify({
           media_asset_id: uploaded.id,
           text_overlay: composer.text || null,
           text_color: composer.textColor,
-          text_background: getStoryBackgroundValue(),
+          text_background: backgroundPayload,
           text_position: composer.textPosition,
           text_font_size: composer.fontSize,
         }),
@@ -1437,7 +1452,13 @@
         return;
       }
       state.stories.signature = signature;
+      buckets.forEach(bucket => {
+        bucket._viewed = Array.isArray(bucket?.stories)
+          ? bucket.stories.every(story => isStoryViewed(story?.id))
+          : false;
+      });
       state.stories.items = buckets;
+      sortStoryBuckets();
       renderStoryRail();
     } catch (error) {
       if (!silent) {
@@ -1458,12 +1479,18 @@
     state.stories.items.forEach((bucket, bucketIndex) => {
       if (!bucket?.stories?.length) return;
       hasStories = true;
+      const isViewed = Boolean(bucket._viewed);
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'group flex w-24 flex-col items-center gap-2 rounded-2xl bg-slate-900/40 p-2 text-center text-xs text-slate-300 transition hover:bg-slate-900/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400';
+      if (isViewed) {
+        chip.classList.add('opacity-70');
+      }
       chip.addEventListener('click', () => openStoryViewer(bucketIndex, 0));
       const ring = document.createElement('div');
-      ring.className = 'relative h-16 w-16 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-rose-500 p-[3px] shadow-lg shadow-indigo-900/40';
+      ring.className = isViewed
+        ? 'relative h-16 w-16 rounded-full bg-slate-800/80 p-[3px] shadow-inner shadow-black/50'
+        : 'relative h-16 w-16 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-rose-500 p-[3px] shadow-lg shadow-indigo-900/40';
       const inner = document.createElement('div');
       inner.className = 'h-full w-full rounded-full bg-slate-950/80 p-[3px]';
       const avatar = document.createElement('img');
@@ -1474,7 +1501,7 @@
       ring.appendChild(inner);
       chip.appendChild(ring);
       const label = document.createElement('span');
-      label.className = 'max-w-[90px] truncate text-slate-100';
+      label.className = `max-w-[90px] truncate ${isViewed ? 'text-slate-500' : 'text-slate-100'}`;
       label.textContent = bucket.user?.display_name || bucket.user?.username || 'Story';
       chip.appendChild(label);
       list.appendChild(chip);
@@ -1562,6 +1589,8 @@
       return;
     }
 
+    trackStoryView(bucket, story);
+
     const mediaKind = detectStoryMediaKind(story.media_content_type, story.media_url);
     if (mediaKind === 'video') {
       if (viewer.video) {
@@ -1595,14 +1624,19 @@
       viewer.text.style.fontSize = `${fontSize}px`;
       viewer.text.style.background = 'none';
       viewer.text.style.backgroundImage = 'none';
-      viewer.text.style.backgroundColor = overlayText ? 'rgba(15,23,42,0.65)' : 'transparent';
-      if (overlayText && story.text_background) {
+      if (!overlayText) {
+        viewer.text.style.backgroundColor = 'transparent';
+      } else if (story.text_background === null) {
+        viewer.text.style.backgroundColor = 'transparent';
+      } else if (story.text_background) {
         if (story.text_background.startsWith('linear-gradient')) {
           viewer.text.style.backgroundImage = story.text_background;
           viewer.text.style.backgroundColor = 'transparent';
         } else {
           viewer.text.style.backgroundColor = story.text_background;
         }
+      } else {
+        viewer.text.style.backgroundColor = 'rgba(15,23,42,0.65)';
       }
       if (overlayText) {
         applyStoryOverlayPosition(viewer.text, story.text_position || 'bottom-left');
@@ -1671,6 +1705,73 @@
     }
     const inferred = detectAttachmentType(url || '');
     return inferred === 'video' ? 'video' : 'image';
+  }
+
+  function ensureStoryViewHistory() {
+    if (!state.stories.viewHistory || typeof state.stories.viewHistory !== 'object') {
+      state.stories.viewHistory = {};
+    }
+  }
+
+  function isStoryViewed(storyId) {
+    if (!storyId) return false;
+    ensureStoryViewHistory();
+    return Boolean(state.stories.viewHistory[String(storyId)]);
+  }
+
+  function markStoryViewed(storyId) {
+    if (!storyId) return;
+    ensureStoryViewHistory();
+    const key = String(storyId);
+    if (state.stories.viewHistory[key]) {
+      return;
+    }
+    state.stories.viewHistory[key] = Date.now();
+    saveJson(STORY_VIEW_HISTORY_KEY, state.stories.viewHistory);
+  }
+
+  function trackStoryView(bucket, story) {
+    if (!story?.id) return;
+    markStoryViewed(story.id);
+    if (!bucket || bucket._viewed) return;
+    const fullyViewed = Array.isArray(bucket.stories) && bucket.stories.every(item => isStoryViewed(item?.id));
+    if (fullyViewed) {
+      bucket._viewed = true;
+      sortStoryBuckets({ rerender: true });
+    }
+  }
+
+  function getActiveViewerBucket() {
+    const viewer = state.stories.viewer;
+    if (!viewer?.root || viewer.root.classList.contains('hidden')) {
+      return null;
+    }
+    return state.stories.items?.[viewer.bucketIndex] || null;
+  }
+
+  function sortStoryBuckets(options = {}) {
+    if (!Array.isArray(state.stories.items) || state.stories.items.length === 0) return;
+    const { rerender = false } = options;
+    const activeBucket = getActiveViewerBucket();
+    state.stories.items.sort((a, b) => {
+      const viewedA = Number(Boolean(a?._viewed));
+      const viewedB = Number(Boolean(b?._viewed));
+      if (viewedA !== viewedB) {
+        return viewedA - viewedB;
+      }
+      const latestA = Date.parse(a?.stories?.[0]?.created_at || '') || 0;
+      const latestB = Date.parse(b?.stories?.[0]?.created_at || '') || 0;
+      return latestB - latestA;
+    });
+    if (activeBucket) {
+      const nextIndex = state.stories.items.indexOf(activeBucket);
+      if (nextIndex >= 0) {
+        state.stories.viewer.bucketIndex = nextIndex;
+      }
+    }
+    if (rerender) {
+      renderStoryRail();
+    }
   }
 
   function setupComposer() {
