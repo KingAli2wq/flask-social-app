@@ -8,6 +8,7 @@ from .media import MediaAsset, MediaComment, MediaDislike, MediaLike
 from .message import Message
 from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
+from .story import Story
 from .user import User
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "PostLike",
     "PostDislike",
     "PostComment",
+    "Story",
     "User",
 ]

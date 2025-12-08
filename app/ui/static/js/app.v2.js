@@ -17,6 +17,12 @@
   const POST_MEDIA_IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'heic', 'bmp']);
   const INVALID_POST_MEDIA_URL_STRINGS = new Set(['', 'null', 'none', 'undefined', 'post media']);
   const MESSAGE_ATTACHMENT_LIMIT = 5;
+  const STORY_BACKGROUND_PRESETS = {
+    solid: null,
+    sunset: 'linear-gradient(135deg, rgba(249,115,22,0.92), rgba(190,24,93,0.85))',
+    ocean: 'linear-gradient(135deg, rgba(56,189,248,0.88), rgba(16,185,129,0.88))',
+    aurora: 'linear-gradient(135deg, rgba(129,140,248,0.88), rgba(14,165,233,0.85))',
+  };
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -70,6 +76,52 @@
     },
     threadLoading: false,
     mediaHistory: loadJson(MEDIA_HISTORY_KEY, []),
+    stories: {
+      items: [],
+      loading: false,
+      signature: null,
+      composer: {
+        file: null,
+        objectUrl: null,
+        text: '',
+        textColor: '#f8fafc',
+        textBackground: '#0f172a',
+        backgroundPreset: 'solid',
+        textPosition: 'bottom-left',
+        fontSize: 22,
+      },
+      modal: {
+        root: null,
+        form: null,
+        fileInput: null,
+        textInput: null,
+        textColorInput: null,
+        textBackgroundInput: null,
+        backgroundButtons: [],
+        positionButtons: [],
+        fontSlider: null,
+        fontLabel: null,
+        previewImage: null,
+        previewVideo: null,
+        previewOverlay: null,
+        feedback: null,
+        submit: null,
+      },
+      viewer: {
+        root: null,
+        image: null,
+        video: null,
+        overlay: null,
+        text: null,
+        author: null,
+        meta: null,
+        prev: null,
+        next: null,
+        closeButtons: [],
+        bucketIndex: 0,
+        storyIndex: 0,
+      },
+    },
     avatarCache: {},               // user_id -> resolved avatar URL
     currentProfileAvatar: null,    // raw URL from backend for current user
     feedRefreshHandle: null,
@@ -900,10 +952,725 @@
 
   async function initFeedPage() {
     initThemeToggle();
-    await loadFeed();
+    setupStoriesUI();
+    await Promise.allSettled([loadStories(), loadFeed()]);
     setupComposer();
     initRealtimeUpdates();
     startFeedAutoRefresh(15000);
+  }
+
+  function setupStoriesUI() {
+    setupStoryComposer();
+    setupStoryViewer();
+  }
+
+  function cacheStoryModalElements() {
+    const modal = state.stories.modal;
+    if (!modal.root) {
+      modal.root = document.getElementById('story-modal');
+      modal.form = document.getElementById('story-form');
+      modal.fileInput = document.getElementById('story-file-input');
+      modal.textInput = document.getElementById('story-text-input');
+      modal.textColorInput = document.getElementById('story-text-color');
+      modal.textBackgroundInput = document.getElementById('story-text-background');
+      modal.fontSlider = document.getElementById('story-font-size');
+      modal.fontLabel = document.getElementById('story-font-size-label');
+      modal.previewImage = document.getElementById('story-preview-image');
+      modal.previewVideo = document.getElementById('story-preview-video');
+      modal.previewOverlay = document.getElementById('story-preview-overlay');
+      modal.feedback = document.getElementById('story-modal-feedback');
+      modal.submit = document.getElementById('story-form-submit');
+    }
+    modal.backgroundButtons = Array.from(document.querySelectorAll('[data-story-bg]'));
+    modal.positionButtons = Array.from(document.querySelectorAll('[data-story-position]'));
+  }
+
+  function cacheStoryViewerElements() {
+    const viewer = state.stories.viewer;
+    if (!viewer.root) {
+      viewer.root = document.getElementById('story-viewer');
+      viewer.image = document.getElementById('story-viewer-image');
+      viewer.video = document.getElementById('story-viewer-video');
+      viewer.text = document.getElementById('story-viewer-text');
+      viewer.author = document.getElementById('story-viewer-author');
+      viewer.meta = document.getElementById('story-viewer-meta');
+      viewer.prev = document.getElementById('story-viewer-prev');
+      viewer.next = document.getElementById('story-viewer-next');
+    }
+    viewer.closeButtons = Array.from(document.querySelectorAll('[data-story-viewer-close]'));
+  }
+
+  function setupStoryComposer() {
+    cacheStoryModalElements();
+    const modal = state.stories.modal;
+    const triggers = [document.getElementById('story-create-button'), document.getElementById('story-self-pill')];
+    triggers.forEach(trigger => {
+      if (!trigger || trigger.dataset.bound === 'true') return;
+      trigger.dataset.bound = 'true';
+      trigger.addEventListener('click', () => openStoryModal());
+    });
+
+    if (!modal.root) return;
+
+    if (modal.root.dataset.bound !== 'true') {
+      modal.root.dataset.bound = 'true';
+      modal.root.addEventListener('click', event => {
+        if (event.target === modal.root) {
+          closeStoryModal(true);
+        }
+      });
+    }
+
+    modal.root.querySelectorAll('[data-story-close]').forEach(button => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => closeStoryModal(true));
+    });
+
+    if (modal.fileInput && modal.fileInput.dataset.bound !== 'true') {
+      modal.fileInput.dataset.bound = 'true';
+      modal.fileInput.addEventListener('change', () => {
+        const file = modal.fileInput.files && modal.fileInput.files[0];
+        handleStoryFileSelection(file || null);
+      });
+    }
+
+    if (modal.textInput && modal.textInput.dataset.bound !== 'true') {
+      modal.textInput.dataset.bound = 'true';
+      modal.textInput.addEventListener('input', event => handleStoryTextInput(event.target.value));
+    }
+
+    if (modal.textColorInput && modal.textColorInput.dataset.bound !== 'true') {
+      modal.textColorInput.dataset.bound = 'true';
+      modal.textColorInput.addEventListener('input', event => handleStoryTextColorChange(event.target.value));
+    }
+
+    if (modal.textBackgroundInput && modal.textBackgroundInput.dataset.bound !== 'true') {
+      modal.textBackgroundInput.dataset.bound = 'true';
+      modal.textBackgroundInput.addEventListener('input', event => handleStoryBackgroundColorChange(event.target.value));
+    }
+
+    (modal.backgroundButtons || []).forEach(button => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => handleStoryBackgroundPresetChange(button.dataset.storyBg || 'solid'));
+    });
+
+    (modal.positionButtons || []).forEach(button => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => handleStoryPositionChange(button.dataset.storyPosition || 'bottom-left'));
+    });
+
+    if (modal.fontSlider && modal.fontSlider.dataset.bound !== 'true') {
+      modal.fontSlider.dataset.bound = 'true';
+      modal.fontSlider.addEventListener('input', event => handleStoryFontSizeChange(event.target.value));
+    }
+
+    if (modal.form && modal.form.dataset.bound !== 'true') {
+      modal.form.dataset.bound = 'true';
+      modal.form.addEventListener('submit', handleStorySubmit);
+    }
+
+    resetStoryComposer();
+  }
+
+  function setupStoryViewer() {
+    cacheStoryViewerElements();
+    const viewer = state.stories.viewer;
+    if (!viewer.root) return;
+
+    if (viewer.root.dataset.bound !== 'true') {
+      viewer.root.dataset.bound = 'true';
+      viewer.root.addEventListener('click', event => {
+        if (event.target === viewer.root) {
+          closeStoryViewer();
+        }
+      });
+    }
+
+    (viewer.closeButtons || []).forEach(button => {
+      if (button.dataset.bound === 'true') return;
+      button.dataset.bound = 'true';
+      button.addEventListener('click', () => closeStoryViewer());
+    });
+
+    if (viewer.prev && viewer.prev.dataset.bound !== 'true') {
+      viewer.prev.dataset.bound = 'true';
+      viewer.prev.addEventListener('click', () => stepStory(-1));
+    }
+
+    if (viewer.next && viewer.next.dataset.bound !== 'true') {
+      viewer.next.dataset.bound = 'true';
+      viewer.next.addEventListener('click', () => stepStory(1));
+    }
+  }
+
+  function openStoryModal() {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    cacheStoryModalElements();
+    const modal = state.stories.modal.root;
+    if (!modal) return;
+    resetStoryComposer();
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    lockBodyScroll();
+  }
+
+  function closeStoryModal(reset = false) {
+    const modal = state.stories.modal.root;
+    if (!modal) return;
+    const wasVisible = !modal.classList.contains('hidden');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    if (wasVisible) {
+      unlockBodyScroll();
+    }
+    if (reset) {
+      resetStoryComposer();
+    }
+  }
+
+  function resetStoryComposer() {
+    const composer = state.stories.composer;
+    if (composer.objectUrl) {
+      URL.revokeObjectURL(composer.objectUrl);
+      composer.objectUrl = null;
+    }
+    composer.file = null;
+    composer.text = '';
+    composer.textColor = '#f8fafc';
+    composer.textBackground = '#0f172a';
+    composer.backgroundPreset = 'solid';
+    composer.textPosition = 'bottom-left';
+    composer.fontSize = 22;
+
+    const modal = state.stories.modal;
+    if (modal.form) {
+      modal.form.reset();
+    }
+    if (modal.textColorInput) modal.textColorInput.value = composer.textColor;
+    if (modal.textBackgroundInput) modal.textBackgroundInput.value = composer.textBackground;
+    if (modal.fontSlider) modal.fontSlider.value = String(composer.fontSize);
+    if (modal.fontLabel) modal.fontLabel.textContent = `${composer.fontSize}px`;
+    if (modal.feedback) {
+      modal.feedback.textContent = '';
+      modal.feedback.classList.add('hidden');
+    }
+    if (modal.previewImage) {
+      modal.previewImage.src = '';
+      modal.previewImage.classList.add('hidden');
+    }
+    if (modal.previewVideo) {
+      modal.previewVideo.pause?.();
+      modal.previewVideo.src = '';
+      modal.previewVideo.classList.add('hidden');
+    }
+    (modal.backgroundButtons || []).forEach(button => {
+      const isActive = (button.dataset.storyBg || 'solid') === composer.backgroundPreset;
+      button.classList.toggle('border-indigo-400', isActive);
+      button.classList.toggle('bg-indigo-500/10', isActive);
+      button.classList.toggle('text-white', isActive);
+    });
+    modal.positionButtons.forEach(button => {
+      const isActive = (button.dataset.storyPosition || 'bottom-left') === composer.textPosition;
+      button.classList.toggle('border-indigo-400', isActive);
+      button.classList.toggle('text-white', isActive);
+    });
+    updateStoryPreview();
+  }
+
+  function handleStoryFileSelection(file) {
+    const composer = state.stories.composer;
+    const modal = state.stories.modal;
+    if (composer.objectUrl) {
+      URL.revokeObjectURL(composer.objectUrl);
+      composer.objectUrl = null;
+    }
+    composer.file = null;
+    if (!file) {
+      if (modal.previewVideo) {
+        modal.previewVideo.pause?.();
+        modal.previewVideo.src = '';
+        modal.previewVideo.classList.add('hidden');
+      }
+      if (modal.previewImage) {
+        modal.previewImage.src = '';
+        modal.previewImage.classList.add('hidden');
+      }
+      return;
+    }
+
+    composer.file = file;
+    composer.objectUrl = URL.createObjectURL(file);
+    const isVideo = (file.type || '').toLowerCase().startsWith('video/');
+    if (isVideo) {
+      if (modal.previewVideo) {
+        modal.previewVideo.src = composer.objectUrl;
+        modal.previewVideo.classList.remove('hidden');
+        modal.previewVideo.play?.().catch(() => {
+          /* ignore */
+        });
+      }
+      if (modal.previewImage) {
+        modal.previewImage.classList.add('hidden');
+      }
+    } else if (modal.previewImage) {
+      modal.previewImage.src = composer.objectUrl;
+      modal.previewImage.classList.remove('hidden');
+      if (modal.previewVideo) {
+        modal.previewVideo.pause?.();
+        modal.previewVideo.src = '';
+        modal.previewVideo.classList.add('hidden');
+      }
+    }
+  }
+
+  function handleStoryTextInput(value) {
+    state.stories.composer.text = value || '';
+    updateStoryPreview();
+  }
+
+  function handleStoryTextColorChange(value) {
+    state.stories.composer.textColor = value || '#f8fafc';
+    updateStoryPreview();
+  }
+
+  function handleStoryBackgroundColorChange(value) {
+    state.stories.composer.backgroundPreset = 'solid';
+    state.stories.composer.textBackground = value || '#0f172a';
+    highlightStoryBackgroundButtons();
+    updateStoryPreview();
+  }
+
+  function handleStoryBackgroundPresetChange(preset) {
+    const key = preset || 'solid';
+    state.stories.composer.backgroundPreset = key;
+    if (key === 'solid') {
+      const modal = state.stories.modal;
+      state.stories.composer.textBackground = modal.textBackgroundInput?.value || '#0f172a';
+    } else if (STORY_BACKGROUND_PRESETS[key]) {
+      state.stories.composer.textBackground = STORY_BACKGROUND_PRESETS[key];
+    }
+    highlightStoryBackgroundButtons();
+    updateStoryPreview();
+  }
+
+  function highlightStoryBackgroundButtons() {
+    const modal = state.stories.modal;
+    modal.backgroundButtons.forEach(button => {
+      const isActive = (button.dataset.storyBg || 'solid') === state.stories.composer.backgroundPreset;
+      button.classList.toggle('border-indigo-400', isActive);
+      button.classList.toggle('bg-indigo-500/10', isActive);
+      button.classList.toggle('text-white', isActive);
+    });
+  }
+
+  function handleStoryPositionChange(position) {
+    state.stories.composer.textPosition = position || 'bottom-left';
+    const modal = state.stories.modal;
+    modal.positionButtons.forEach(button => {
+      const isActive = (button.dataset.storyPosition || 'bottom-left') === state.stories.composer.textPosition;
+      button.classList.toggle('border-indigo-400', isActive);
+      button.classList.toggle('text-white', isActive);
+    });
+    updateStoryPreview();
+  }
+
+  function handleStoryFontSizeChange(nextSize) {
+    const parsed = parseInt(nextSize, 10);
+    const clamped = Number.isFinite(parsed) ? Math.min(48, Math.max(16, parsed)) : 22;
+    state.stories.composer.fontSize = clamped;
+    if (state.stories.modal.fontLabel) {
+      state.stories.modal.fontLabel.textContent = `${clamped}px`;
+    }
+    updateStoryPreview();
+  }
+
+  function updateStoryPreview() {
+    const overlay = state.stories.modal.previewOverlay;
+    if (!overlay) return;
+    const composer = state.stories.composer;
+    const content = (composer.text || '').trim();
+    overlay.textContent = content || 'Add a quick note…';
+    overlay.style.color = composer.textColor || '#f8fafc';
+    overlay.style.fontSize = `${composer.fontSize}px`;
+    overlay.style.background = 'none';
+    overlay.style.backgroundImage = 'none';
+    overlay.style.backgroundColor = 'rgba(15,23,42,0.65)';
+    const backgroundValue = getStoryBackgroundValue();
+    if (backgroundValue) {
+      if (backgroundValue.startsWith('linear-gradient')) {
+        overlay.style.backgroundImage = backgroundValue;
+        overlay.style.backgroundColor = 'transparent';
+      } else {
+        overlay.style.backgroundColor = backgroundValue;
+      }
+    }
+    applyStoryOverlayPosition(overlay, composer.textPosition);
+  }
+
+  function getStoryBackgroundValue() {
+    const composer = state.stories.composer;
+    if (composer.backgroundPreset && composer.backgroundPreset !== 'solid') {
+      return STORY_BACKGROUND_PRESETS[composer.backgroundPreset] || composer.textBackground;
+    }
+    return composer.textBackground;
+  }
+
+  function applyStoryOverlayPosition(node, position) {
+    if (!node) return;
+    node.style.top = 'auto';
+    node.style.bottom = 'auto';
+    node.style.left = 'auto';
+    node.style.right = 'auto';
+    node.style.transform = 'none';
+    const offset = '1.5rem';
+    switch ((position || '').toLowerCase()) {
+      case 'top-left':
+        node.style.top = offset;
+        node.style.left = offset;
+        break;
+      case 'top-right':
+        node.style.top = offset;
+        node.style.right = offset;
+        break;
+      case 'bottom-right':
+        node.style.bottom = offset;
+        node.style.right = offset;
+        break;
+      case 'center':
+        node.style.top = '50%';
+        node.style.left = '50%';
+        node.style.transform = 'translate(-50%, -50%)';
+        break;
+      case 'bottom-left':
+      default:
+        node.style.bottom = offset;
+        node.style.left = offset;
+        break;
+    }
+  }
+
+  async function handleStorySubmit(event) {
+    event.preventDefault();
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    const composer = state.stories.composer;
+    const modal = state.stories.modal;
+    if (!composer.file) {
+      showToast('Choose a photo or short clip for your story.', 'warning');
+      return;
+    }
+    if (modal.feedback) {
+      modal.feedback.classList.add('hidden');
+      modal.feedback.textContent = '';
+    }
+    if (modal.submit) {
+      modal.submit.disabled = true;
+      modal.submit.classList.add('opacity-70');
+    }
+    try {
+      const uploaded = await uploadStoryMedia(composer.file);
+      if (!uploaded?.id) {
+        throw new Error('Upload failed.');
+      }
+      await apiFetch('/stories/', {
+        method: 'POST',
+        body: JSON.stringify({
+          media_asset_id: uploaded.id,
+          text_overlay: composer.text || null,
+          text_color: composer.textColor,
+          text_background: getStoryBackgroundValue(),
+          text_position: composer.textPosition,
+          text_font_size: composer.fontSize,
+        }),
+      });
+      showToast('Story shared—followers can view it for 24 hours.', 'success');
+      closeStoryModal(true);
+      await loadStories({ force: true, silent: true });
+    } catch (error) {
+      if (modal.feedback) {
+        modal.feedback.textContent = error.message || 'Unable to share story.';
+        modal.feedback.classList.remove('hidden');
+      }
+      showToast(error.message || 'Unable to share story.', 'error');
+    } finally {
+      if (modal.submit) {
+        modal.submit.disabled = false;
+        modal.submit.classList.remove('opacity-70');
+      }
+    }
+  }
+
+  async function uploadStoryMedia(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiFetch('/media/upload?scope=stories', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  async function loadStories(options = {}) {
+    const normalized = typeof options === 'boolean' ? { force: options } : options;
+    const { force = false, silent = false } = normalized;
+    const list = document.getElementById('story-rail-items');
+    if (!list || state.stories.loading) return;
+    state.stories.loading = true;
+    const loading = document.getElementById('story-loading');
+    if (loading && !silent) loading.classList.remove('hidden');
+    try {
+      const response = await apiFetch('/stories/feed');
+      const buckets = Array.isArray(response.items) ? response.items : [];
+      const signature = buckets
+        .map(bucket => `${bucket?.user?.id ?? 'anon'}:${bucket?.stories?.[0]?.id ?? 'none'}`)
+        .join('|');
+      if (!force && signature === state.stories.signature) {
+        return;
+      }
+      state.stories.signature = signature;
+      state.stories.items = buckets;
+      renderStoryRail();
+    } catch (error) {
+      if (!silent) {
+        showToast(error.message || 'Unable to load stories.', 'error');
+      }
+    } finally {
+      state.stories.loading = false;
+      if (loading) loading.classList.add('hidden');
+    }
+  }
+
+  function renderStoryRail() {
+    const list = document.getElementById('story-rail-items');
+    if (!list) return;
+    list.innerHTML = '';
+    const empty = document.getElementById('story-empty');
+    let hasStories = false;
+    state.stories.items.forEach((bucket, bucketIndex) => {
+      if (!bucket?.stories?.length) return;
+      hasStories = true;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'group flex w-24 flex-col items-center gap-2 rounded-2xl bg-slate-900/40 p-2 text-center text-xs text-slate-300 transition hover:bg-slate-900/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400';
+      chip.addEventListener('click', () => openStoryViewer(bucketIndex, 0));
+      const ring = document.createElement('div');
+      ring.className = 'relative h-16 w-16 rounded-full bg-gradient-to-tr from-indigo-500 via-fuchsia-500 to-rose-500 p-[3px] shadow-lg shadow-indigo-900/40';
+      const inner = document.createElement('div');
+      inner.className = 'h-full w-full rounded-full bg-slate-950/80 p-[3px]';
+      const avatar = document.createElement('img');
+      avatar.src = resolveAvatarUrl(bucket.user?.avatar_url) || DEFAULT_AVATAR;
+      avatar.alt = bucket.user?.username || 'Story avatar';
+      avatar.className = 'h-full w-full rounded-full object-cover';
+      inner.appendChild(avatar);
+      ring.appendChild(inner);
+      chip.appendChild(ring);
+      const label = document.createElement('span');
+      label.className = 'max-w-[90px] truncate text-slate-100';
+      label.textContent = bucket.user?.display_name || bucket.user?.username || 'Story';
+      chip.appendChild(label);
+      list.appendChild(chip);
+    });
+    if (empty) {
+      empty.classList.toggle('hidden', hasStories);
+    }
+    updateSelfStoryBadge();
+  }
+
+  function updateSelfStoryBadge() {
+    const pill = document.getElementById('story-self-pill');
+    if (!pill) return;
+    const { userId } = getAuth();
+    const hasStory = Boolean(
+      userId &&
+        state.stories.items.some(bucket => bucket?.user?.id && String(bucket.user.id) === String(userId) && bucket.stories?.length)
+    );
+    pill.classList.toggle('border-indigo-400', hasStory);
+    pill.classList.toggle('text-indigo-200', hasStory);
+    const status = pill.querySelector('[data-story-self-status]');
+    if (status) {
+      status.textContent = hasStory ? 'Live now' : 'Tap to add';
+      status.classList.toggle('text-emerald-300', hasStory);
+      status.classList.toggle('text-slate-500', !hasStory);
+    }
+  }
+
+  function openStoryViewer(bucketIndex, storyIndex) {
+    cacheStoryViewerElements();
+    const viewer = state.stories.viewer;
+    if (!viewer.root) return;
+    viewer.bucketIndex = bucketIndex;
+    viewer.storyIndex = storyIndex;
+    renderStoryViewer();
+    viewer.root.classList.remove('hidden');
+    viewer.root.classList.add('flex');
+    lockBodyScroll();
+  }
+
+  function closeStoryViewer() {
+    const viewer = state.stories.viewer;
+    if (!viewer.root) return;
+    const wasVisible = !viewer.root.classList.contains('hidden');
+    viewer.root.classList.add('hidden');
+    viewer.root.classList.remove('flex');
+    if (viewer.video) {
+      viewer.video.pause?.();
+      viewer.video.src = '';
+    }
+    if (viewer.image) {
+      viewer.image.src = '';
+    }
+    if (wasVisible) {
+      unlockBodyScroll();
+    }
+  }
+
+  function stepStory(direction) {
+    const next = findStoryNeighbor(direction);
+    if (!next) {
+      closeStoryViewer();
+      return;
+    }
+    state.stories.viewer.bucketIndex = next.bucketIndex;
+    state.stories.viewer.storyIndex = next.storyIndex;
+    renderStoryViewer();
+  }
+
+  function renderStoryViewer() {
+    const viewer = state.stories.viewer;
+    const buckets = state.stories.items;
+    if (!viewer.root || !Array.isArray(buckets) || !buckets.length) {
+      closeStoryViewer();
+      return;
+    }
+    const bucket = buckets[viewer.bucketIndex];
+    if (!bucket || !bucket.stories?.length) {
+      closeStoryViewer();
+      return;
+    }
+    const story = bucket.stories[viewer.storyIndex];
+    if (!story) {
+      closeStoryViewer();
+      return;
+    }
+
+    const mediaKind = detectStoryMediaKind(story.media_content_type, story.media_url);
+    if (mediaKind === 'video') {
+      if (viewer.video) {
+        viewer.video.src = story.media_url;
+        viewer.video.classList.remove('hidden');
+        viewer.video.play?.().catch(() => {
+          /* noop */
+        });
+      }
+      if (viewer.image) {
+        viewer.image.classList.add('hidden');
+        viewer.image.src = '';
+      }
+    } else if (viewer.image) {
+      viewer.image.src = story.media_url;
+      viewer.image.classList.remove('hidden');
+      if (viewer.video) {
+        viewer.video.pause?.();
+        viewer.video.src = '';
+        viewer.video.classList.add('hidden');
+      }
+    }
+
+    if (viewer.text) {
+      const overlayText = (story.text_overlay || '').trim();
+      viewer.text.textContent = overlayText;
+      viewer.text.style.display = overlayText ? 'inline-flex' : 'none';
+      viewer.text.classList.toggle('hidden', !overlayText);
+      viewer.text.style.color = story.text_color || '#f8fafc';
+      const fontSize = story.text_font_size || 22;
+      viewer.text.style.fontSize = `${fontSize}px`;
+      viewer.text.style.background = 'none';
+      viewer.text.style.backgroundImage = 'none';
+      viewer.text.style.backgroundColor = overlayText ? 'rgba(15,23,42,0.65)' : 'transparent';
+      if (overlayText && story.text_background) {
+        if (story.text_background.startsWith('linear-gradient')) {
+          viewer.text.style.backgroundImage = story.text_background;
+          viewer.text.style.backgroundColor = 'transparent';
+        } else {
+          viewer.text.style.backgroundColor = story.text_background;
+        }
+      }
+      if (overlayText) {
+        applyStoryOverlayPosition(viewer.text, story.text_position || 'bottom-left');
+      }
+    }
+
+    if (viewer.author) {
+      viewer.author.textContent = bucket.user?.display_name || bucket.user?.username || 'Story';
+    }
+    if (viewer.meta) {
+      viewer.meta.textContent = `Posted ${formatDate(story.created_at)}`;
+    }
+    if (viewer.prev) {
+      viewer.prev.disabled = !findStoryNeighbor(-1);
+    }
+    if (viewer.next) {
+      viewer.next.disabled = !findStoryNeighbor(1);
+    }
+  }
+
+  function findStoryNeighbor(direction) {
+    const buckets = state.stories.items;
+    if (!Array.isArray(buckets) || !buckets.length) return null;
+    let bucketIndex = state.stories.viewer.bucketIndex;
+    let storyIndex = state.stories.viewer.storyIndex + direction;
+
+    if (direction < 0) {
+      while (bucketIndex >= 0) {
+        const stories = buckets[bucketIndex]?.stories || [];
+        if (storyIndex >= 0 && storyIndex < stories.length) {
+          return { bucketIndex, storyIndex };
+        }
+        bucketIndex -= 1;
+        if (bucketIndex < 0) break;
+        const prevStories = buckets[bucketIndex]?.stories || [];
+        if (prevStories.length) {
+          storyIndex = prevStories.length - 1;
+          return { bucketIndex, storyIndex };
+        }
+      }
+      return null;
+    }
+
+    while (bucketIndex < buckets.length) {
+      const stories = buckets[bucketIndex]?.stories || [];
+      if (storyIndex >= 0 && storyIndex < stories.length) {
+        return { bucketIndex, storyIndex };
+      }
+      bucketIndex += 1;
+      storyIndex = 0;
+      if (bucketIndex >= buckets.length) break;
+      const nextStories = buckets[bucketIndex]?.stories || [];
+      if (nextStories.length) {
+        return { bucketIndex, storyIndex };
+      }
+    }
+    return null;
+  }
+
+  function detectStoryMediaKind(contentType, url) {
+    if (typeof contentType === 'string' && contentType.toLowerCase().startsWith('video/')) {
+      return 'video';
+    }
+    if (typeof contentType === 'string' && contentType.toLowerCase().startsWith('image/')) {
+      return 'image';
+    }
+    const inferred = detectAttachmentType(url || '');
+    return inferred === 'video' ? 'video' : 'image';
   }
 
   function setupComposer() {

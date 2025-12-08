@@ -26,6 +26,7 @@ from .routers import (
     profiles_router,
     realtime_router,
     settings_router,
+    stories_router,
     uploads_router,
 )
 from .services import CleanupError, run_cleanup
@@ -68,6 +69,7 @@ app.include_router(notifications_router)
 app.include_router(profiles_router)
 app.include_router(realtime_router)
 app.include_router(settings_router)
+app.include_router(stories_router)
 app.include_router(uploads_router)
 
 _CLEANUP_INTERVAL = timedelta(hours=24)
@@ -87,8 +89,9 @@ async def _run_cleanup_once() -> None:
     try:
         summary = await asyncio.to_thread(run_cleanup, create_session, retention=_CLEANUP_RETENTION)
         logger.info(
-            "Cleanup summary (posts=%d, direct_messages=%d, group_messages=%d, notifications=%d, detached_media=%d, total=%d)",
+            "Cleanup summary (posts=%d, stories=%d, direct_messages=%d, group_messages=%d, notifications=%d, detached_media=%d, total=%d)",
             summary.posts,
+            summary.stories,
             summary.direct_messages,
             summary.group_messages,
             summary.notifications,

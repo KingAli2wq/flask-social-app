@@ -42,6 +42,7 @@ from .settings import (
     SettingsProfileUpdate,
     SettingsResponse,
 )
+from .stories import StoryAuthor, StoryBucket, StoryCreate, StoryFeedResponse, StoryItem
 from .moderation import (
     ModerationDashboardResponse,
     ModerationMediaDetail,
@@ -117,4 +118,9 @@ __all__ = [
     "PostResponse",
     "ProfileResponse",
     "ProfileUpdateRequest",
+    "StoryCreate",
+    "StoryItem",
+    "StoryAuthor",
+    "StoryBucket",
+    "StoryFeedResponse",
 ]

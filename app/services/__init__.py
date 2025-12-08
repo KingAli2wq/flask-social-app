@@ -82,6 +82,7 @@ from .settings_service import (
     update_profile_settings,
 )
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, get_spaces_client, upload_file_to_spaces
+from .story_service import create_story, list_active_stories
 
 __all__ = [
     "authenticate_user",
@@ -143,6 +144,8 @@ __all__ = [
     "set_post_dislike_state",
     "set_post_like_state",
     "update_post_record",
+    "create_story",
+    "list_active_stories",
     "FollowStats",
     "follow_user",
     "unfollow_user",

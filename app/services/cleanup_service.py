@@ -11,7 +11,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from ..models import MediaAsset, Message, Notification, Post
+from ..models import MediaAsset, Message, Notification, Post, Story
 from .media_service import media_url_is_fetchable
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class CleanupSummary:
     """Represents the number of records deleted during a cleanup run."""
 
     posts: int
+    stories: int
     direct_messages: int
     group_messages: int
     notifications: int
@@ -37,7 +38,7 @@ class CleanupSummary:
     def total(self) -> int:
         """Return the total number of deleted rows."""
 
-        return self.posts + self.direct_messages + self.group_messages + self.notifications
+        return self.posts + self.stories + self.direct_messages + self.group_messages + self.notifications
 
 
 def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTION) -> CleanupSummary:
@@ -79,10 +80,12 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
         Message.chat_id.is_not(None),
     ).returning(Message.id)
     delete_notifications = delete(Notification).where(Notification.created_at < cutoff).returning(Notification.id)
+    delete_stories = delete(Story).where(Story.expires_at < datetime.now(timezone.utc)).returning(Story.id)
 
     try:
         detached_media_posts = _detach_broken_post_media(session)
         posts_deleted = _execute_delete(session, delete_posts)
+        stories_deleted = _execute_delete(session, delete_stories)
         direct_deleted = _execute_delete(session, delete_direct_messages)
         group_deleted = _execute_delete(session, delete_group_messages)
         notifications_deleted = _execute_delete(session, delete_notifications)
@@ -95,6 +98,7 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
 
     summary = CleanupSummary(
         posts=posts_deleted,
+        stories=stories_deleted,
         direct_messages=direct_deleted,
         group_messages=group_deleted,
         notifications=notifications_deleted,
@@ -102,8 +106,9 @@ def perform_cleanup(session: Session, *, retention: timedelta = DEFAULT_RETENTIO
     )
 
     logger.info(
-        "Cleanup finished (posts=%d, direct_messages=%d, group_messages=%d, notifications=%d, total=%d)",
+        "Cleanup finished (posts=%d, stories=%d, direct_messages=%d, group_messages=%d, notifications=%d, total=%d)",
         summary.posts,
+        summary.stories,
         summary.direct_messages,
         summary.group_messages,
         summary.notifications,

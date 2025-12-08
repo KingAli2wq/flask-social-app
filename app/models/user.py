@@ -64,6 +64,7 @@ class User(Base):
     owned_group_chats = relationship("GroupChat", back_populates="owner", cascade="all, delete-orphan")
     group_memberships = relationship("GroupChat", secondary=group_chat_members, back_populates="members")
     media_assets = relationship("MediaAsset", back_populates="uploader", cascade="all, delete-orphan")
+    stories = relationship("Story", back_populates="author", cascade="all, delete-orphan")
     friendships_a = relationship(
         "Friendship",
         foreign_keys="Friendship.user_a_id",
