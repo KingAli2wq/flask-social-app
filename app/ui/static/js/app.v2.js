@@ -2630,7 +2630,7 @@
         if (avatarFileChosen) {
           const uploadData = new FormData();
           uploadData.append('file', uploadInput.files[0]);
-          const uploadResult = await apiFetch('/media/upload', {
+          const uploadResult = await apiFetch('/media/upload?scope=avatars', {
             method: 'POST',
             body: uploadData
           });
@@ -3588,10 +3588,11 @@
     renderAttachmentPreview();
   }
 
-  async function uploadMessageAsset(file) {
+  async function uploadMessageAsset(file, scope = 'messages') {
     const formData = new FormData();
     formData.append('file', file);
-    const response = await apiFetch('/media/upload', {
+    const targetScope = scope || 'messages';
+    const response = await apiFetch(`/media/upload?scope=${encodeURIComponent(targetScope)}`, {
       method: 'POST',
       body: formData,
     });
@@ -3796,7 +3797,7 @@
     if (submitButton) submitButton.disabled = true;
     try {
       if (avatarFile) {
-        avatarUrl = await uploadMessageAsset(avatarFile);
+        avatarUrl = await uploadMessageAsset(avatarFile, 'avatars');
       }
       const payload = {
         name,
@@ -5894,7 +5895,7 @@
     payload.append('file', file);
 
     try {
-      const uploadResult = await apiFetch('/media/upload', {
+      const uploadResult = await apiFetch('/media/upload?scope=avatars', {
         method: 'POST',
         body: payload
       });

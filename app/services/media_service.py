@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 import requests
 from fastapi import HTTPException, UploadFile, status
 from requests import RequestException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,7 @@ def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
 
 
 MAX_MEDIA_FEED_LIMIT = 50
+PUBLIC_MEDIA_FOLDERS: tuple[str, ...] = ("media", "posts")
 
 
 def media_url_is_fetchable(url: str | None, *, timeout: float = 3.0) -> bool:
@@ -182,6 +183,14 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
         .order_by(MediaAsset.created_at.desc())
         .limit(clamped_limit)
     )
+
+    if PUBLIC_MEDIA_FOLDERS:
+        statement = statement.where(
+            or_(
+                MediaAsset.folder.is_(None),
+                MediaAsset.folder.in_(PUBLIC_MEDIA_FOLDERS),
+            )
+        )
 
     rows = db.execute(statement).all()
     invalid_asset_ids: list[UUID] = []

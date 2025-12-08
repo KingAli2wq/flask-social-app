@@ -2,7 +2,7 @@
 from __future__ import annotations
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Query
 from sqlalchemy.orm import Session
 
 from ..database import get_session
@@ -33,11 +33,25 @@ from ..services import (
 router = APIRouter(prefix="/media", tags=["media"])
 
 
+def _resolve_upload_folder(scope: str | None) -> str:
+    """Map a requested scope to an internal storage folder."""
+
+    normalized = (scope or "media").strip().lower()
+    if normalized in {"message", "messages", "dm", "dms", "group", "groups", "chat", "chats", "private"}:
+        return "messages"
+    if normalized in {"avatar", "avatars", "profile", "profiles"}:
+        return "avatars"
+    if normalized in {"post", "posts"}:
+        return "posts"
+    return "media"
+
+
 @router.post("/upload", response_model=MediaUploadResponse)
 async def upload_media(
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
+    scope: str = Query("media", max_length=32, description="Controls where the upload is surfaced (media, messages, avatars)."),
 ) -> MediaUploadResponse:
     """Upload media assets to Spaces, persist metadata, and return the stored asset."""
 
@@ -58,8 +72,10 @@ async def upload_media(
         except (TypeError, ValueError) as exc:
             raise HTTPException(status_code=500, detail="Invalid user identifier.") from exc
 
+    folder = _resolve_upload_folder(scope)
+
     try:
-        result = await upload_file_to_spaces(file, folder="media", db=db, user_id=user_id)
+        result = await upload_file_to_spaces(file, folder=folder, db=db, user_id=user_id)
     except SpacesConfigurationError as exc:
         print("CONFIG ERROR:", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

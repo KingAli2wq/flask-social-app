@@ -25,12 +25,15 @@ from .group_crypto import (
 def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> GroupChat:
     """Create a persisted group chat and attach the requested members."""
 
-    candidate_usernames = _collect_unique_usernames(owner.username, payload.members)
+    owner_username = cast(str | None, getattr(owner, "username", None))
+    candidate_usernames = _collect_unique_usernames(owner_username, payload.members)
     members = _load_members_by_username(db, candidate_usernames)
+
+    owner_id = _cast_uuid(cast(UUID | None, getattr(owner, "id", None)))
 
     chat = GroupChat(
         name=payload.name.strip(),
-        owner_id=owner.id,
+        owner_id=owner_id,
         avatar_url=(payload.avatar_url or None),
         encryption_key=generate_group_encryption_key(),
         lock_code=generate_group_lock_code(),
@@ -114,7 +117,7 @@ def send_message(
             target_group_chat = db.get(GroupChat, group_chat_uuid)
             if target_group_chat is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
-            _ensure_group_membership(target_group_chat, sender.id)
+            _ensure_group_membership(target_group_chat, cast(UUID | None, getattr(sender, "id", None)))
             group_chat_id = cast(UUID, target_group_chat.id)
             chat_identifier = str(target_group_chat.id)
 
@@ -132,7 +135,10 @@ def send_message(
     message_content = payload.content or ""
     if target_group_chat is not None:
         try:
-            message_content = encrypt_group_payload(target_group_chat.encryption_key, message_content)
+            encryption_key = cast(str | None, getattr(target_group_chat, "encryption_key", None))
+            if not encryption_key:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Group chat is missing an encryption key")
+            message_content = encrypt_group_payload(encryption_key, message_content)
         except GroupEncryptionError as exc:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt message") from exc
 
@@ -220,7 +226,7 @@ def delete_old_messages(db: Session, *, older_than: timedelta | None = None) -> 
 def list_group_chats(db: Session, *, user: User) -> list[GroupChat]:
     stmt = (
         select(GroupChat)
-        .where(GroupChat.members.any(User.id == user.id))
+        .where(GroupChat.members.any(User.id == _cast_uuid(cast(UUID | None, getattr(user, "id", None)))))
         .options(selectinload(GroupChat.members), selectinload(GroupChat.owner))
         .order_by(GroupChat.updated_at.desc())
     )
@@ -230,7 +236,10 @@ def list_group_chats(db: Session, *, user: User) -> list[GroupChat]:
 def get_group_chat(db: Session, *, chat_id: UUID, requester: User) -> GroupChat:
     stmt = (
         select(GroupChat)
-        .where(GroupChat.id == chat_id, GroupChat.members.any(User.id == requester.id))
+        .where(
+            GroupChat.id == chat_id,
+            GroupChat.members.any(User.id == _cast_uuid(cast(UUID | None, getattr(requester, "id", None)))),
+        )
         .options(selectinload(GroupChat.members), selectinload(GroupChat.owner))
     )
     chat = db.scalar(stmt)
@@ -248,13 +257,13 @@ def add_group_members(db: Session, *, chat_id: UUID, requester: User, usernames:
     if chat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
 
-    _ensure_group_membership(chat, requester.id)
+    _ensure_group_membership(chat, cast(UUID | None, getattr(requester, "id", None)))
 
     new_members = _load_members_by_username(db, normalized)
-    existing_ids = {_cast_uuid(member.id) for member in chat.members}
+    existing_ids = {_cast_uuid(cast(UUID | None, getattr(member, "id", None))) for member in chat.members}
     added = False
     for user in new_members:
-        user_id = _cast_uuid(user.id)
+        user_id = _cast_uuid(cast(UUID | None, getattr(user, "id", None)))
         if user_id in existing_ids:
             continue
         chat.members.append(user)
