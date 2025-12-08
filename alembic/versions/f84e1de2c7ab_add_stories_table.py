@@ -7,7 +7,7 @@ from sqlalchemy.dialects import postgresql as psql
 
 # revision identifiers, used by Alembic.
 revision: str = "f84e1de2c7ab"
-down_revision: str = "5bf92dc3c91e"
+down_revision: str = "20251205_add_group_chat_security"
 branch_labels = None
 depends_on = None
 
