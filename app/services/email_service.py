@@ -8,12 +8,27 @@ from email.message import EmailMessage
 import requests
 
 from ..config import get_settings
+from ..security.secrets import MissingSecretError, is_placeholder, require_secret
 
 logger = logging.getLogger(__name__)
 
 
 class EmailDeliveryError(RuntimeError):
     """Raised when the SMTP transport fails."""
+
+
+def _resolve_email_password() -> str:
+    try:
+        return require_secret("EMAIL_PASSWORD")
+    except MissingSecretError as exc:
+        raise EmailDeliveryError(str(exc)) from exc
+
+
+def _resolve_mailgun_api_key() -> str:
+    try:
+        return require_secret("MAILGUN_API_KEY")
+    except MissingSecretError as exc:
+        raise EmailDeliveryError(str(exc)) from exc
 
 
 def _smtp_enabled() -> bool:
@@ -23,7 +38,10 @@ def _smtp_enabled() -> bool:
 
 def _mailgun_enabled() -> bool:
     settings = get_settings()
-    return bool(settings.mailgun_api_key and settings.mailgun_domain and settings.email_from_address)
+    api_key = settings.mailgun_api_key
+    if not api_key or is_placeholder(api_key):
+        return False
+    return bool(settings.mailgun_domain and settings.email_from_address)
 
 
 def _send_via_smtp(to_address: str, subject: str, body: str) -> None:
@@ -39,12 +57,15 @@ def _send_via_smtp(to_address: str, subject: str, body: str) -> None:
     message["To"] = to_address
     message.set_content(body)
 
+    username = (settings.email_username or "").strip()
+
     try:
         with smtplib.SMTP(host, settings.email_port, timeout=20) as smtp:
             if settings.email_use_tls:
                 smtp.starttls()
-            if settings.email_username and settings.email_password:
-                smtp.login(settings.email_username, settings.email_password)
+            if username:
+                password = _resolve_email_password()
+                smtp.login(username, password)
             smtp.send_message(message)
     except Exception as exc:  # pragma: no cover - network interactions
         logger.exception("SMTP delivery failed for %s", to_address)
@@ -54,10 +75,10 @@ def _send_via_smtp(to_address: str, subject: str, body: str) -> None:
 def _send_via_mailgun(to_address: str, subject: str, body: str) -> None:
     settings = get_settings()
     domain = settings.mailgun_domain
-    api_key = settings.mailgun_api_key
     from_address = settings.email_from_address
-    if not domain or not api_key or not from_address:
+    if not domain or not from_address:
         raise EmailDeliveryError("Mailgun is not configured")
+    api_key = _resolve_mailgun_api_key()
 
     url = f"https://api.mailgun.net/v3/{domain}/messages"
     try:

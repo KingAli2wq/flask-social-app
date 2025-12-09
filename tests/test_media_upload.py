@@ -20,6 +20,7 @@ from app.main import app  # noqa: E402
 from app.models import MediaAsset, Post, User  # noqa: E402
 from app.services import post_service, spaces_service  # noqa: E402
 from app.services.spaces_service import SpacesUploadResult  # noqa: E402
+from app.services.media_crypto import reveal_media_value  # noqa: E402
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -142,16 +143,16 @@ def test_upload_creates_media_asset_with_complete_metadata(authed_client, monkey
     assert response.status_code == 201
     payload = response.json()
     assert payload["media_asset_id"] == str(created_assets[0].id)
-    assert payload["media_url"] == created_assets[0].url
+    assert payload["media_url"] == reveal_media_value(created_assets[0].url)
     assert created_assets[0].user_id == user.id
 
     with SessionLocal() as session:
         persisted_post = session.get(Post, UUID(payload["id"]))
         assert persisted_post is not None
         persisted_media_asset_id = cast(UUID | None, persisted_post.media_asset_id)
-        persisted_media_url = cast(str | None, persisted_post.media_url)
+        persisted_media_url = reveal_media_value(cast(str | None, persisted_post.media_url))
         assert persisted_media_asset_id == created_assets[0].id
-        assert persisted_media_url == created_assets[0].url
+        assert persisted_media_url == reveal_media_value(created_assets[0].url)
 
 
 def test_reuse_existing_media_asset(authed_client):
@@ -178,4 +179,4 @@ def test_reuse_existing_media_asset(authed_client):
     assert response.status_code == 201
     payload = response.json()
     assert payload["media_asset_id"] == str(asset.id)
-    assert payload["media_url"] == asset.url
+    assert payload["media_url"] == reveal_media_value(asset.url)

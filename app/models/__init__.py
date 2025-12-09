@@ -1,5 +1,6 @@
 """Convenience exports for ORM models."""
 from .associations import group_chat_members
+from .chatbot import AiChatMessage, AiChatSession
 from .friend_request import FriendRequest
 from .friendship import Friendship
 from .follow import Follow
@@ -29,4 +30,6 @@ __all__ = [
     "PostComment",
     "Story",
     "User",
+    "AiChatSession",
+    "AiChatMessage",
 ]

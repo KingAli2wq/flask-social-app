@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable
+from typing import Callable, cast
 from uuid import UUID
 
 from sqlalchemy import delete, or_, select
@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import MediaAsset, Message, Notification, Post, Story
+from .media_crypto import reveal_media_value
 from .media_service import media_url_is_fetchable
 
 logger = logging.getLogger(__name__)
@@ -152,7 +153,9 @@ def _detach_broken_post_media(session: Session) -> int:
 
     broken_post_ids: list[UUID] = []
     for post_id, post_media_url, _media_asset_id, asset_url in session.execute(stmt):
-        candidate_url = (post_media_url or asset_url or "").strip()
+        post_url_plain = reveal_media_value(cast(str | None, post_media_url))
+        asset_url_plain = reveal_media_value(cast(str | None, asset_url))
+        candidate_url = (post_url_plain or asset_url_plain or "").strip()
         if not candidate_url or not media_url_is_fetchable(candidate_url):
             broken_post_ids.append(post_id)
 

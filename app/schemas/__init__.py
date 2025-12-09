@@ -1,5 +1,11 @@
 """Convenience exports for schema layer."""
 from .auth import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
+from .chatbot import (
+    ChatbotMessagePayload,
+    ChatbotPromptRequest,
+    ChatbotSessionResponse,
+    ChatbotSessionSummary,
+)
 from .friends import FriendSearchResponse, FriendSearchResult
 from .follow import FollowActionResponse, FollowStatsResponse
 from .media import (
@@ -15,7 +21,9 @@ from .media import (
 from .messages import (
     DirectThreadResponse,
     GroupChatCreate,
+    GroupChatMemberRemoveRequest,
     GroupChatInviteRequest,
+    GroupChatUpdateRequest,
     GroupChatResponse,
     MessageReplyContext,
     MessageResponse,
@@ -65,6 +73,10 @@ __all__ = [
     "LoginRequest",
     "RegisterRequest",
     "UserPublicProfile",
+    "ChatbotPromptRequest",
+    "ChatbotMessagePayload",
+    "ChatbotSessionResponse",
+    "ChatbotSessionSummary",
     "MediaUploadResponse",
     "MediaFeedItem",
     "MediaFeedResponse",
@@ -79,7 +91,9 @@ __all__ = [
     "FollowStatsResponse",
     "DirectThreadResponse",
     "GroupChatCreate",
+    "GroupChatMemberRemoveRequest",
     "GroupChatInviteRequest",
+    "GroupChatUpdateRequest",
     "GroupChatResponse",
     "MessageReplyContext",
     "MessageResponse",

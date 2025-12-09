@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
+from .media_crypto import protect_media_value, reveal_media_value
 from .media_service import delete_media_asset
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
 
@@ -40,7 +41,7 @@ def _resolve_media_asset_url(db: Session, asset_id: UUID) -> str:
     asset = db.get(MediaAsset, asset_id)
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
-    url = cast(str | None, asset.url)
+    url = reveal_media_value(cast(str | None, asset.url))
     if not url:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -118,7 +119,12 @@ async def create_post_record(
     if normalized_asset_id is not None and file is None:
         media_url = _resolve_media_asset_url(db, normalized_asset_id)
 
-    post = Post(user_id=user_id, caption=caption, media_url=media_url, media_asset_id=normalized_asset_id)
+    post = Post(
+        user_id=user_id,
+        caption=caption,
+        media_url=protect_media_value(media_url),
+        media_asset_id=normalized_asset_id,
+    )
     db.add(post)
     db.commit()
     db.refresh(post)
@@ -166,7 +172,7 @@ async def update_post_record(
             changed = True
 
     next_asset_id = post.media_asset_id
-    next_media_url = post.media_url
+    next_media_url = reveal_media_value(cast(str | None, post.media_url))
 
     if remove_media:
         if next_asset_id is not None or next_media_url is not None:
@@ -187,7 +193,7 @@ async def update_post_record(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes detected")
 
     post.media_asset_id = next_asset_id
-    post.media_url = next_media_url
+    post.media_url = protect_media_value(next_media_url)
 
     try:
         db.commit()
@@ -312,8 +318,10 @@ def list_feed_records(
 
         username = cast(str | None, username_value)
         avatar_url = cast(str | None, avatar_value)
+        post_media_url_value = reveal_media_value(cast(str | None, post.media_url))
+        asset_media_url_plain = reveal_media_value(cast(str | None, media_asset_url_value))
         # Media validation is handled asynchronously by the cleanup task to keep feed requests fast.
-        record_media_url = post.media_url or cast(str | None, media_asset_url_value)
+        record_media_url = post_media_url_value or asset_media_url_plain
         media_content_type = cast(str | None, media_content_type_value)
 
         record: dict[str, Any] = {

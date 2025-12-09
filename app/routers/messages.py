@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -15,11 +16,14 @@ from ..schemas import (
     DirectThreadResponse,
     GroupChatCreate,
     GroupChatInviteRequest,
+    GroupChatMemberRemoveRequest,
     GroupChatResponse,
+    GroupChatUpdateRequest,
     MessageResponse,
     MessageSendRequest,
     MessageThreadResponse,
 )
+from ..security.data_vault import DataVaultError, decrypt_structured, decrypt_text as vault_decrypt_text
 from ..services import (
     add_group_members,
     create_group_chat,
@@ -29,8 +33,10 @@ from ..services import (
     get_group_chat,
     list_group_chats,
     list_messages,
+    remove_group_members,
     require_friendship,
     send_message,
+    update_group_chat,
 )
 from ..services.group_crypto import GroupEncryptionError, decrypt_group_payload
 from ..services.message_stream import message_stream_manager
@@ -39,14 +45,54 @@ router = APIRouter(prefix="/messages", tags=["messages"])
 
 
 def _resolve_message_content(message: Message, fallback_chat: GroupChat | None = None) -> str:
-    content = message.content or ""
+    content = cast(str | None, message.content) or ""
     chat = message.group_chat or fallback_chat
-    if chat is None or not content:
-        return content
+    if not content:
+        return ""
+    if chat is not None:
+        try:
+            return decrypt_group_payload(chat.encryption_key, content)
+        except GroupEncryptionError:
+            return "[unable to decrypt message]"
     try:
-        return decrypt_group_payload(chat.encryption_key, content)
-    except GroupEncryptionError:
+        return vault_decrypt_text(content)
+    except DataVaultError:
         return "[unable to decrypt message]"
+
+
+def _resolve_message_attachments(message: Message, fallback_chat: GroupChat | None = None) -> list[str]:
+    payload: Any = message.attachments
+    if not payload:
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, str)]
+    if not isinstance(payload, dict) or "ciphertext" not in payload:
+        return []
+    ciphertext = payload.get("ciphertext")
+    if not isinstance(ciphertext, str):
+        return []
+    scheme = payload.get("scheme")
+    encoding = payload.get("encoding")
+    if scheme == "group.v1" and encoding == "json":
+        chat = message.group_chat or fallback_chat
+        if chat is None:
+            return []
+        try:
+            decrypted = decrypt_group_payload(chat.encryption_key, ciphertext)
+        except GroupEncryptionError:
+            return []
+        try:
+            data = json.loads(decrypted)
+        except json.JSONDecodeError:
+            return []
+        return [item for item in data if isinstance(item, str)]
+    try:
+        data = decrypt_structured(payload)
+    except DataVaultError:
+        return []
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, str)]
+    return []
 
 
 def _sender_display_name(user: User | None) -> str | None:
@@ -56,7 +102,7 @@ def _sender_display_name(user: User | None) -> str | None:
 
 
 def _to_message_response(message: Message) -> MessageResponse:
-    attachments = message.attachments or []
+    attachments = _resolve_message_attachments(message)
     parent = message.parent
     reply_payload = None
     content = _resolve_message_content(message)
@@ -195,6 +241,34 @@ async def invite_group_members_endpoint(
     db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = add_group_members(db, chat_id=group_id, requester=current_user, usernames=payload.members)
+    return _to_group_response(chat)
+
+
+@router.patch("/groups/{group_id}", response_model=GroupChatResponse)
+async def update_group_endpoint(
+    group_id: UUID,
+    payload: GroupChatUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> GroupChatResponse:
+    chat = update_group_chat(
+        db,
+        chat_id=group_id,
+        requester=current_user,
+        name=payload.name,
+        avatar_url=payload.avatar_url,
+    )
+    return _to_group_response(chat)
+
+
+@router.post("/groups/{group_id}/members/remove", response_model=GroupChatResponse)
+async def remove_group_members_endpoint(
+    group_id: UUID,
+    payload: GroupChatMemberRemoveRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> GroupChatResponse:
+    chat = remove_group_members(db, chat_id=group_id, requester=current_user, usernames=payload.members)
     return _to_group_response(chat)
 
 

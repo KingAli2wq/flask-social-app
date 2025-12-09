@@ -84,6 +84,35 @@ class GroupChatInviteRequest(BaseModel):
         return self
 
 
+class GroupChatUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=3, max_length=60)
+    avatar_url: str | None = Field(default=None, max_length=512)
+
+    @model_validator(mode="after")
+    def ensure_changes(self) -> "GroupChatUpdateRequest":
+        cleaned_name = (self.name or "").strip()
+        cleaned_avatar = (self.avatar_url or "").strip()
+        if not cleaned_name and not cleaned_avatar:
+            raise ValueError("Provide at least one field to update")
+        if cleaned_name and len(cleaned_name) < 3:
+            raise ValueError("Group name must be at least 3 characters long")
+        self.name = cleaned_name or None
+        self.avatar_url = cleaned_avatar or None
+        return self
+
+
+class GroupChatMemberRemoveRequest(BaseModel):
+    members: List[str] = Field(..., min_length=1, description="Usernames to remove from the chat")
+
+    @model_validator(mode="after")
+    def ensure_members(self) -> "GroupChatMemberRemoveRequest":
+        cleaned = [member.strip() for member in self.members if member and member.strip()]
+        if not cleaned:
+            raise ValueError("At least one username is required")
+        self.members = cleaned
+        return self
+
+
 class GroupChatResponse(BaseModel):
     id: UUID
     name: str
@@ -105,4 +134,6 @@ __all__ = [
     "GroupChatCreate",
     "GroupChatResponse",
     "GroupChatInviteRequest",
+    "GroupChatUpdateRequest",
+    "GroupChatMemberRemoveRequest",
 ]

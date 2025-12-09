@@ -23,6 +23,7 @@ from ..models import (
     PostLike,
     User,
 )
+from .media_crypto import reveal_media_value
 from ..schemas import (
     ModerationDashboardResponse,
     ModerationMediaDetail,
@@ -341,7 +342,7 @@ def delete_moderation_user(db: Session, *, actor: User, user_id: UUID) -> None:
 
     assets = list(db.query(MediaAsset).where(MediaAsset.user_id == target_id).all())
     for asset in assets:
-        asset_key = cast(str | None, asset.key)
+        asset_key = reveal_media_value(cast(str | None, asset.key))
         if not asset_key:
             continue
         try:
@@ -542,7 +543,7 @@ def _summarize_post(
     display_name = cast(str | None, author.display_name)
     role = cast(str | None, author.role)
     media_asset_id = cast(UUID | None, post.media_asset_id)
-    media_url = cast(str | None, post.media_url)
+    media_url = reveal_media_value(cast(str | None, post.media_url))
     return ModerationPostSummary(
         id=post_id,
         caption=caption,
@@ -571,8 +572,8 @@ def _summarize_media_asset(
 ) -> ModerationMediaSummary:
     asset_id = cast(UUID, asset.id)
     owner_id = cast(UUID | None, asset.user_id)
-    url = cast(str, asset.url)
-    key = cast(str, asset.key)
+    url = reveal_media_value(cast(str | None, asset.url)) or ""
+    key = reveal_media_value(cast(str | None, asset.key)) or ""
     bucket = cast(str, asset.bucket)
     folder = cast(str | None, asset.folder)
     content_type = cast(str | None, asset.content_type)

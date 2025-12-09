@@ -31,11 +31,18 @@ from ..services import (
     set_post_like_state,
     update_post_record,
 )
+from ..services.media_crypto import reveal_media_value
 from ..services.realtime import feed_updates_manager
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_post_model(post) -> PostResponse:
+    response = PostResponse.model_validate(post)
+    response.media_url = reveal_media_value(response.media_url)
+    return response
 
 
 @router.post("/", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
@@ -82,7 +89,7 @@ async def create_post_endpoint(
     except Exception:  # pragma: no cover - best effort logging
         logger.exception("Failed to broadcast feed update")
 
-    return PostResponse.model_validate(post)
+    return _serialize_post_model(post)
 
 
 @router.patch("/{post_id}", response_model=PostResponse)
@@ -105,7 +112,7 @@ async def update_post_endpoint(
         file=file,
         remove_media=remove_media,
     )
-    return PostResponse.model_validate(post)
+    return _serialize_post_model(post)
 
 
 @router.get("/feed", response_model=PostFeedResponse)

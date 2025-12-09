@@ -10,6 +10,7 @@ from app.database import get_session
 from app.models import User
 from app.schemas import StoryAuthor, StoryBucket, StoryCreate, StoryFeedResponse, StoryItem
 from app.services import create_story, get_current_user, get_optional_user, list_active_stories
+from app.services.media_crypto import reveal_media_value
 
 router = APIRouter(prefix="/stories", tags=["stories"])
 
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/stories", tags=["stories"])
 def _serialize_story(story) -> StoryItem:
     return StoryItem(
         id=story.id,
-        media_url=story.media_url,
+        media_url=reveal_media_value(getattr(story, "media_url", None)) or "",
         media_content_type=story.media_content_type,
         text_overlay=story.text_overlay,
         text_color=story.text_color,

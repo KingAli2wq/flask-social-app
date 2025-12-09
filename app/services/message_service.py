@@ -1,8 +1,9 @@
 """Messaging domain services backed by PostgreSQL."""
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Iterable, Sequence, cast
+from typing import Any, Iterable, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -12,6 +13,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from ..models import GroupChat, Message, User
 from ..schemas import GroupChatCreate, MessageSendRequest
+from ..security.data_vault import (
+    DataVaultError,
+    decrypt_text as vault_decrypt_text,
+    encrypt_structured as vault_encrypt_structured,
+    encrypt_text as vault_encrypt_text,
+)
 from .friendship_service import require_friendship
 from .notification_service import NotificationType, add_notification
 from .group_crypto import (
@@ -58,6 +65,31 @@ def _attachments_or_none(values: Iterable[str] | None) -> list[str] | None:
     return cleaned or None
 
 
+def _encrypt_message_body(content: str, *, group_key: str | None) -> str:
+    if group_key:
+        return encrypt_group_payload(group_key, content)
+    return vault_encrypt_text(content)
+
+
+def _encrypt_message_attachments(
+    attachments: list[str] | None,
+    *,
+    group_key: str | None,
+) -> dict[str, Any] | list[str] | None:
+    if not attachments:
+        return None
+    if group_key:
+        blob = json.dumps(attachments, separators=(",", ":"))
+        ciphertext = encrypt_group_payload(group_key, blob)
+        return {
+            "ciphertext": ciphertext,
+            "encoding": "json",
+            "scheme": "group.v1",
+            "version": 1,
+        }
+    return vault_encrypt_structured(attachments)
+
+
 def _collect_unique_usernames(owner_username: str | None, extras: Sequence[str] | None) -> list[str]:
     candidates: list[str] = []
     ordered_source: list[str] = [owner_username or ""]
@@ -99,6 +131,7 @@ def send_message(
     group_chat_id: UUID | None = None
     chat_identifier = payload.chat_id
     target_group_chat: GroupChat | None = None
+    group_encryption_key: str | None = None
 
     recipient_id: UUID | None = None
     parent_message: Message | None = None
@@ -135,12 +168,21 @@ def send_message(
     message_content = payload.content or ""
     if target_group_chat is not None:
         try:
-            encryption_key = cast(str | None, getattr(target_group_chat, "encryption_key", None))
-            if not encryption_key:
-                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Group chat is missing an encryption key")
-            message_content = encrypt_group_payload(encryption_key, message_content)
-        except GroupEncryptionError as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt message") from exc
+            group_encryption_key = cast(str | None, getattr(target_group_chat, "encryption_key", None))
+        except AttributeError:  # pragma: no cover - defensive
+            group_encryption_key = None
+        if not group_encryption_key:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Group chat is missing an encryption key")
+    plaintext_content = payload.content or ""
+    try:
+        message_content = _encrypt_message_body(plaintext_content, group_key=group_encryption_key)
+    except (GroupEncryptionError, DataVaultError) as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt message") from exc
+
+    try:
+        encrypted_attachments = _encrypt_message_attachments(attachments, group_key=group_encryption_key)
+    except (GroupEncryptionError, DataVaultError) as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to encrypt attachments") from exc
 
     message = Message(
         chat_id=chat_identifier,
@@ -148,7 +190,7 @@ def send_message(
         sender_id=sender.id,
         recipient_id=recipient_id,
         content=message_content,
-        attachments=attachments,
+        attachments=encrypted_attachments,
         parent_id=parent_message.id if parent_message else None,
     )
 
@@ -162,7 +204,13 @@ def send_message(
     db.refresh(message)
 
     if recipient_id is not None:
-        _notify_direct_message(db, sender=sender, recipient_id=recipient_id, message=message)
+        _notify_direct_message(
+            db,
+            sender=sender,
+            recipient_id=recipient_id,
+            message=message,
+            plaintext_preview=plaintext_content,
+        )
 
     return message
 
@@ -258,6 +306,7 @@ def add_group_members(db: Session, *, chat_id: UUID, requester: User, usernames:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
 
     _ensure_group_membership(chat, cast(UUID | None, getattr(requester, "id", None)))
+    _ensure_group_owner(chat, cast(UUID | None, getattr(requester, "id", None)))
 
     new_members = _load_members_by_username(db, normalized)
     existing_ids = {_cast_uuid(cast(UUID | None, getattr(member, "id", None))) for member in chat.members}
@@ -283,6 +332,90 @@ def add_group_members(db: Session, *, chat_id: UUID, requester: User, usernames:
     return chat
 
 
+def update_group_chat(
+    db: Session,
+    *,
+    chat_id: UUID,
+    requester: User,
+    name: str | None,
+    avatar_url: str | None,
+) -> GroupChat:
+    chat = db.get(GroupChat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+
+    requester_id = cast(UUID | None, getattr(requester, "id", None))
+    _ensure_group_membership(chat, requester_id)
+    _ensure_group_owner(chat, requester_id)
+
+    changed = False
+    if name is not None and name.strip() and name.strip() != chat.name:
+        setattr(chat, "name", name.strip())
+        changed = True
+    if avatar_url is not None:
+        normalized_avatar = avatar_url.strip() or None
+        if normalized_avatar != chat.avatar_url:
+            setattr(chat, "avatar_url", normalized_avatar)
+            changed = True
+
+    if not changed:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes provided")
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update group chat") from exc
+
+    db.refresh(chat)
+    return chat
+
+
+def remove_group_members(
+    db: Session,
+    *,
+    chat_id: UUID,
+    requester: User,
+    usernames: Sequence[str],
+) -> GroupChat:
+    normalized = [username.strip() for username in usernames if username and username.strip()]
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one username is required")
+
+    chat = db.get(GroupChat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+
+    requester_id = cast(UUID | None, getattr(requester, "id", None))
+    _ensure_group_membership(chat, requester_id)
+    _ensure_group_owner(chat, requester_id)
+
+    owner_uuid = _cast_uuid(cast(UUID | None, getattr(chat, "owner_id", None)))
+    members_by_username = {member.username: member for member in chat.members if member.username}
+    removed = False
+    for username in normalized:
+        member = members_by_username.get(username)
+        if member is None:
+            continue
+        member_uuid = _cast_uuid(cast(UUID | None, getattr(member, "id", None)))
+        if member_uuid == owner_uuid:
+            continue
+        chat.members.remove(member)
+        removed = True
+
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No members were removed")
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update members") from exc
+
+    db.refresh(chat)
+    return chat
+
+
 __all__ = [
     "create_group_chat",
     "send_message",
@@ -292,13 +425,29 @@ __all__ = [
     "list_group_chats",
     "get_group_chat",
     "add_group_members",
+    "update_group_chat",
+    "remove_group_members",
 ]
 
 
-def _notify_direct_message(db: Session, *, sender: User, recipient_id: UUID, message: Message) -> None:
+def _notify_direct_message(
+    db: Session,
+    *,
+    sender: User,
+    recipient_id: UUID,
+    message: Message,
+    plaintext_preview: str | None = None,
+) -> None:
     if recipient_id == sender.id:
         return
-    preview = (message.content or "").strip()
+    preview = (plaintext_preview or "").strip()
+    if not preview:
+        encrypted_value = cast(str | None, getattr(message, "content", None))
+        if encrypted_value:
+            try:
+                preview = vault_decrypt_text(encrypted_value).strip()
+            except DataVaultError:
+                preview = ""
     sender_id = cast(UUID, sender.id)
     chat_identifier = cast(str | None, message.chat_id)
     payload = {
@@ -329,3 +478,11 @@ def _ensure_group_membership(chat: GroupChat, user_id: UUID | None) -> None:
     member_ids = {_cast_uuid(member.id) for member in chat.members}
     if _cast_uuid(user_id) not in member_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not part of this group chat")
+
+
+def _ensure_group_owner(chat: GroupChat, user_id: UUID | None) -> None:
+    owner_id = cast(UUID | None, getattr(chat, "owner_id", None))
+    if owner_id is None or user_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Group owner permissions required")
+    if _cast_uuid(owner_id) != _cast_uuid(user_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Group owner permissions required")

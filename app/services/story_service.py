@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -10,6 +10,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from app.models import Follow, MediaAsset, Story, User
+from .media_crypto import protect_media_value, reveal_media_value
 
 _ALLOWED_POSITIONS = {"top-left", "top-right", "bottom-left", "bottom-right", "center"}
 _DEFAULT_POSITION = "bottom-left"
@@ -61,7 +62,7 @@ def list_active_stories(db: Session, *, viewer_id: UUID | None) -> list[dict[str
         bucket["stories"].append(
             {
                 "id": story.id,
-                "media_url": story.media_url,
+                "media_url": reveal_media_value(getattr(story, "media_url", None)) or "",
                 "media_content_type": story.media_content_type,
                 "text_overlay": story.text_overlay,
                 "text_color": story.text_color,
@@ -97,7 +98,7 @@ def create_story(
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media asset not found")
 
-    media_url_value = getattr(asset, "url", None)
+    media_url_value = reveal_media_value(cast(str | None, getattr(asset, "url", None)))
     if not media_url_value:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Media asset is missing a URL")
     media_content_type = getattr(asset, "content_type", None)
@@ -120,7 +121,7 @@ def create_story(
     story = Story(
         user_id=user_id,
         media_asset_id=media_asset_id,
-        media_url=media_url_value,
+        media_url=protect_media_value(media_url_value),
         media_content_type=media_content_type,
         text_overlay=normalized_overlay,
         text_color=normalized_color,

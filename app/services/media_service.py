@@ -16,10 +16,30 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import MediaAsset, MediaComment, MediaDislike, MediaLike, Post, User
+from ..security.data_vault import DataVaultError
+from .media_crypto import reveal_media_value
 from .spaces_service import SpacesDeletionError, delete_file_from_spaces
 
 
 logger = logging.getLogger(__name__)
+
+
+def _asset_public_url(asset: MediaAsset) -> str | None:
+    raw_value = cast(str | None, getattr(asset, "url", None))
+    try:
+        return reveal_media_value(raw_value)
+    except DataVaultError as exc:  # pragma: no cover - defensive logging
+        logger.warning("Unable to decrypt media url for asset %s: %s", getattr(asset, "id", "?"), exc)
+        return None
+
+
+def _asset_storage_key(asset: MediaAsset) -> str | None:
+    raw_value = cast(str | None, getattr(asset, "key", None))
+    try:
+        return reveal_media_value(raw_value)
+    except DataVaultError as exc:  # pragma: no cover
+        logger.warning("Unable to decrypt media key for asset %s: %s", getattr(asset, "id", "?"), exc)
+        return None
 
 
 def list_media_for_user(db: Session, user_id: UUID) -> list[MediaAsset]:
@@ -65,8 +85,10 @@ def _media_asset_is_fetchable(asset: MediaAsset, *, timeout: float = 3.0) -> boo
 
     if asset is None:
         return False
-
-    return media_url_is_fetchable(asset.url, timeout=timeout)
+    url = _asset_public_url(asset)
+    if not url:
+        return False
+    return media_url_is_fetchable(url, timeout=timeout)
 
 
 def _detach_posts_for_assets(db: Session, asset_ids: list[UUID]) -> None:
@@ -96,7 +118,7 @@ def _delete_media_asset_objects(
 
     if delete_remote:
         for asset in asset_list:
-            key = (asset.key or "").strip()
+            key = (_asset_storage_key(asset) or "").strip()
             if not key:
                 continue
             try:
@@ -248,7 +270,7 @@ def list_media_feed(db: Session, *, viewer_id: UUID | None = None, limit: int = 
             "display_name": cast(str | None, display_name_value),
             "avatar_url": cast(str | None, avatar_value),
             "role": cast(str | None, role_value),
-            "url": asset.url,
+            "url": _asset_public_url(asset) or "",
             "content_type": asset.content_type,
             "created_at": asset.created_at,
             "like_count": int(like_count_value or 0),

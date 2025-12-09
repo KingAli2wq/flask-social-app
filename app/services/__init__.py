@@ -18,6 +18,15 @@ from .friendship_service import (
     require_friendship,
     send_friend_request,
 )
+from .chatbot_service import (
+    ChatbotServiceError,
+    ChatbotTranscript,
+    ChatbotSessionSummaryDTO,
+    get_chatbot_transcript,
+    list_chatbot_sessions,
+    send_chat_prompt,
+    set_llm_client,
+)
 from .media_service import (
     create_media_comment,
     delete_media_asset,
@@ -38,7 +47,9 @@ from .message_service import (
     get_group_chat,
     list_group_chats,
     list_messages,
+    remove_group_members,
     send_message,
+    update_group_chat,
 )
 from .moderation_service import (
     delete_moderation_user,
@@ -99,6 +110,8 @@ __all__ = [
     "list_group_chats",
     "delete_message",
     "list_messages",
+    "update_group_chat",
+    "remove_group_members",
     "send_message",
     "delete_old_messages",
     "list_friends",
@@ -163,4 +176,11 @@ __all__ = [
     "SpacesUploadError",
     "get_spaces_client",
     "upload_file_to_spaces",
+    "send_chat_prompt",
+    "list_chatbot_sessions",
+    "get_chatbot_transcript",
+    "ChatbotTranscript",
+    "ChatbotSessionSummaryDTO",
+    "ChatbotServiceError",
+    "set_llm_client",
 ]

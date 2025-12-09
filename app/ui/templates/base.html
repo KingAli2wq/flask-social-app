@@ -112,6 +112,91 @@
     <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
         {% block content %}{% endblock %}
     </main>
+    <div
+        id="social-ai-overlay"
+        class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 px-4 py-10 backdrop-blur"
+        data-social-ai-overlay="true"
+    >
+        <div data-social-ai-panel class="relative flex h-[80vh] w-full max-w-3xl flex-col rounded-3xl border border-slate-800/70 bg-slate-950 text-white shadow-2xl shadow-black/40">
+            <header class="flex flex-wrap items-center justify-between gap-4 border-b border-white/5 px-6 py-5">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.3em] text-fuchsia-300/70">Social AI</p>
+                    <h2 class="text-2xl font-semibold">Your creative co-pilot</h2>
+                    <p class="text-sm text-slate-400">Summaries, drafting help, and conversation ideas—without leaving your inbox.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="relative" data-social-ai-mode-menu-root>
+                        <button
+                            id="social-ai-mode-button"
+                            type="button"
+                            class="inline-flex flex-col rounded-2xl border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-left text-xs font-semibold text-slate-200 transition hover:border-fuchsia-500/60 hover:text-white"
+                        >
+                            <span class="text-[10px] uppercase tracking-wide text-slate-500">Mode</span>
+                            <span data-social-ai-mode-label>Default</span>
+                        </button>
+                        <div
+                            id="social-ai-mode-menu"
+                            class="absolute right-0 top-full z-10 mt-2 hidden w-60 rounded-2xl border border-slate-800/70 bg-slate-950/95 p-2 shadow-2xl shadow-black/50"
+                        >
+                            <button type="button" data-social-ai-mode-option="default" class="flex w-full flex-col rounded-2xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-900/70">
+                                <span class="font-semibold">Default</span>
+                                <span class="text-xs text-slate-500">Friendly guidance + context</span>
+                            </button>
+                            <button type="button" data-social-ai-mode-option="freaky" class="mt-1 flex w-full flex-col rounded-2xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-900/70">
+                                <span class="font-semibold">Freaky</span>
+                                <span class="text-xs text-slate-500">Playful, chaotic brainstorming</span>
+                            </button>
+                            <button type="button" data-social-ai-mode-option="deep" class="mt-1 flex w-full flex-col rounded-2xl px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-slate-900/70">
+                                <span class="font-semibold">Deep understanding</span>
+                                <span class="text-xs text-slate-500">Structured, thoughtful analysis</span>
+                            </button>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        class="rounded-full border border-slate-700/70 p-2 text-slate-300 transition hover:border-rose-500/60 hover:text-rose-200"
+                        data-social-ai-close="true"
+                        aria-label="Close Social AI"
+                    >
+                        ✕
+                    </button>
+                </div>
+            </header>
+            <div class="flex flex-1 flex-col gap-4 px-6 py-5">
+                <div id="social-ai-loading" class="hidden rounded-3xl border border-slate-900/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-300">
+                    Preparing Social AI…
+                </div>
+                <div id="social-ai-error" class="hidden rounded-3xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"></div>
+                <div id="social-ai-thread" class="scrollbar-thin flex-1 space-y-3 overflow-y-auto rounded-3xl border border-slate-900/60 bg-slate-950/60 p-4"></div>
+                <div id="social-ai-empty" class="rounded-3xl border border-slate-900/60 bg-slate-950/70 p-6 text-center text-sm text-slate-400">
+                    <p class="text-base font-semibold text-white">Start a chat with Social AI</p>
+                    <p class="mt-1 text-xs text-slate-500">Ask for response drafts, recap a conversation, or plan a group hangout.</p>
+                </div>
+            </div>
+            <form id="social-ai-form" class="border-t border-slate-900/70 px-6 py-5">
+                <label class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Prompt
+                    <textarea
+                        id="social-ai-input"
+                        rows="3"
+                        class="mt-2 w-full rounded-2xl border border-slate-800/70 bg-slate-950/80 p-3 text-sm text-white placeholder:text-slate-500 focus:border-fuchsia-500 focus:outline-none"
+                        placeholder="Ask for a reply, recap, or creative idea…"
+                        required
+                    ></textarea>
+                </label>
+                <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-[11px] text-slate-500">Modes adjust tone without compromising community safety.</p>
+                    <button
+                        id="social-ai-send"
+                        type="submit"
+                        class="inline-flex items-center gap-2 rounded-full bg-fuchsia-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-500/30 transition hover:bg-fuchsia-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <span>Send</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
     <script src="/assets/js/app.v2.js" defer></script>
     <script>
         (() => {

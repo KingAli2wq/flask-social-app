@@ -25,6 +25,23 @@
     ocean: 'linear-gradient(135deg, rgba(56,189,248,0.88), rgba(16,185,129,0.88))',
     aurora: 'linear-gradient(135deg, rgba(129,140,248,0.88), rgba(14,165,233,0.85))',
   };
+  const SOCIAL_AI_MODES = {
+    default: {
+      label: 'Default',
+      description: 'Friendly guidance',
+      includeContext: true,
+    },
+    freaky: {
+      label: 'Freaky',
+      description: 'Playful chaos',
+      includeContext: false,
+    },
+    deep: {
+      label: 'Deep understanding',
+      description: 'Structured analysis',
+      includeContext: true,
+    },
+  };
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -250,6 +267,31 @@
         accept: null,
         cancel: null,
         resolver: null,
+      },
+    },
+    socialAi: {
+      initialized: false,
+      open: false,
+      mode: 'default',
+      sessionByMode: {},
+      messagesByMode: {},
+      loading: false,
+      sending: false,
+      error: null,
+      documentHandlerBound: false,
+      elements: {
+        root: null,
+        panel: null,
+        thread: null,
+        empty: null,
+        loading: null,
+        error: null,
+        input: null,
+        send: null,
+        form: null,
+        modeButton: null,
+        modeMenu: null,
+        modeMenuRoot: null,
       },
     },
   };
@@ -614,6 +656,334 @@
         setState(false);
       }
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Social AI Companion
+  // -----------------------------------------------------------------------
+
+  function normalizeSocialAiMode(mode) {
+    const raw = (mode || '').toString().toLowerCase().trim();
+    if (!raw) return 'default';
+    const slug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) return 'default';
+    if (slug === 'deep-understanding') return 'deep';
+    return SOCIAL_AI_MODES[slug] ? slug : 'default';
+  }
+
+  function getSocialAiModeMeta(mode) {
+    const key = normalizeSocialAiMode(mode);
+    return { key, meta: SOCIAL_AI_MODES[key] || SOCIAL_AI_MODES.default };
+  }
+
+  function initSocialAi() {
+    const controller = state.socialAi;
+    controller.elements.root = document.getElementById('social-ai-overlay');
+    if (!controller.elements.root) {
+      return;
+    }
+    controller.elements.panel = controller.elements.root.querySelector('[data-social-ai-panel]');
+    controller.elements.thread = document.getElementById('social-ai-thread');
+    controller.elements.empty = document.getElementById('social-ai-empty');
+    controller.elements.loading = document.getElementById('social-ai-loading');
+    controller.elements.error = document.getElementById('social-ai-error');
+    controller.elements.input = document.getElementById('social-ai-input');
+    controller.elements.send = document.getElementById('social-ai-send');
+    controller.elements.form = document.getElementById('social-ai-form');
+    controller.elements.modeButton = document.getElementById('social-ai-mode-button');
+    controller.elements.modeMenu = document.getElementById('social-ai-mode-menu');
+    controller.elements.modeMenuRoot = controller.elements.root.querySelector('[data-social-ai-mode-menu-root]');
+
+    if (!controller.initialized) {
+      controller.initialized = true;
+      if (controller.elements.form) {
+        controller.elements.form.addEventListener('submit', handleSocialAiSubmit);
+      }
+      if (controller.elements.root) {
+        controller.elements.root.addEventListener('click', event => {
+          if (event.target === controller.elements.root) {
+            closeSocialAi();
+          }
+        });
+      }
+      document.querySelectorAll('[data-social-ai-close]').forEach(button => {
+        if (button.dataset.bound === 'true') return;
+        button.dataset.bound = 'true';
+        button.addEventListener('click', event => {
+          event.preventDefault();
+          closeSocialAi();
+        });
+      });
+      if (controller.elements.modeButton) {
+        controller.elements.modeButton.addEventListener('click', event => {
+          event.preventDefault();
+          toggleSocialAiModeMenu();
+        });
+      }
+      document.querySelectorAll('[data-social-ai-mode-option]').forEach(option => {
+        if (option.dataset.bound === 'true') return;
+        option.dataset.bound = 'true';
+        option.addEventListener('click', event => {
+          event.preventDefault();
+          const mode = option.dataset.socialAiModeOption;
+          setSocialAiMode(mode);
+        });
+      });
+    }
+
+    if (!controller.documentHandlerBound) {
+      document.addEventListener('click', handleSocialAiDocumentClick);
+      controller.documentHandlerBound = true;
+    }
+
+    bindSocialAiTriggers();
+  }
+
+  function bindSocialAiTriggers() {
+    document.querySelectorAll('[data-social-ai-open]').forEach(trigger => {
+      if (trigger.dataset.socialAiBound === 'true') return;
+      trigger.dataset.socialAiBound = 'true';
+      trigger.addEventListener('click', event => {
+        event.preventDefault();
+        openSocialAi(trigger.dataset.socialAiMode || null);
+      });
+    });
+  }
+
+  function handleSocialAiDocumentClick(event) {
+    const controller = state.socialAi;
+    if (!controller.open) return;
+    const menuRoot = controller.elements.modeMenuRoot;
+    if (!menuRoot) return;
+    if (controller.elements.modeMenu && !controller.elements.modeMenu.classList.contains('hidden')) {
+      if (!menuRoot.contains(event.target)) {
+        toggleSocialAiModeMenu(false);
+      }
+    }
+  }
+
+  function openSocialAi(preferredMode = null) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!state.socialAi.initialized) {
+      initSocialAi();
+    }
+    const controller = state.socialAi;
+    const root = controller.elements.root;
+    if (!root) return;
+    controller.mode = normalizeSocialAiMode(preferredMode || controller.mode);
+    controller.open = true;
+    updateSocialAiModeLabel();
+    root.classList.remove('hidden');
+    lockBodyScroll();
+    toggleSocialAiModeMenu(false);
+    showSocialAiError('');
+    if (controller.elements.input) {
+      controller.elements.input.focus();
+      const value = controller.elements.input.value;
+      controller.elements.input.setSelectionRange(value.length, value.length);
+    }
+    const cache = controller.messagesByMode[controller.mode];
+    if (Array.isArray(cache) && cache.length) {
+      renderSocialAiMessages();
+    } else if (Array.isArray(cache) && cache.length === 0) {
+      renderSocialAiMessages();
+    } else {
+      controller.messagesByMode[controller.mode] = [];
+      hydrateSocialAiHistory(controller.mode);
+    }
+  }
+
+  function closeSocialAi() {
+    const controller = state.socialAi;
+    const root = controller.elements.root;
+    if (!root || root.classList.contains('hidden')) return;
+    controller.open = false;
+    toggleSocialAiModeMenu(false);
+    root.classList.add('hidden');
+    unlockBodyScroll();
+  }
+
+  function toggleSocialAiModeMenu(force) {
+    const controller = state.socialAi;
+    const menu = controller.elements.modeMenu;
+    if (!menu) return;
+    const shouldOpen = typeof force === 'boolean' ? force : menu.classList.contains('hidden');
+    menu.classList.toggle('hidden', !shouldOpen);
+  }
+
+  function updateSocialAiModeLabel() {
+    const controller = state.socialAi;
+    const labelNode = controller.elements.modeButton?.querySelector('[data-social-ai-mode-label]') || controller.elements.modeButton;
+    if (!labelNode) return;
+    const { meta } = getSocialAiModeMeta(controller.mode);
+    if (labelNode.dataset && labelNode.dataset.socialAiModeLabel !== undefined) {
+      labelNode.dataset.socialAiModeLabel = meta.label;
+    }
+    if (labelNode.textContent !== undefined) {
+      labelNode.textContent = meta.label;
+    }
+  }
+
+  function setSocialAiMode(mode) {
+    const controller = state.socialAi;
+    const normalized = normalizeSocialAiMode(mode);
+    if (controller.mode === normalized) {
+      toggleSocialAiModeMenu(false);
+      return;
+    }
+    controller.mode = normalized;
+    controller.error = null;
+    updateSocialAiModeLabel();
+    toggleSocialAiModeMenu(false);
+    const cached = controller.messagesByMode[normalized];
+    if (Array.isArray(cached)) {
+      renderSocialAiMessages();
+    } else {
+      controller.messagesByMode[normalized] = [];
+      hydrateSocialAiHistory(normalized, { forceRefresh: true });
+    }
+  }
+
+  function setSocialAiLoading(isLoading) {
+    const controller = state.socialAi;
+    controller.loading = Boolean(isLoading);
+    if (controller.elements.loading) {
+      controller.elements.loading.classList.toggle('hidden', !controller.loading);
+    }
+  }
+
+  function showSocialAiError(message) {
+    const controller = state.socialAi;
+    controller.error = message || '';
+    const node = controller.elements.error;
+    if (!node) return;
+    if (controller.error) {
+      node.textContent = controller.error;
+      node.classList.remove('hidden');
+    } else {
+      node.textContent = '';
+      node.classList.add('hidden');
+    }
+  }
+
+  async function hydrateSocialAiHistory(mode, options = {}) {
+    const controller = state.socialAi;
+    if (!controller.elements.thread) return;
+    const normalized = normalizeSocialAiMode(mode);
+    const forceRefresh = Boolean(options.forceRefresh);
+    setSocialAiLoading(true);
+    showSocialAiError('');
+    try {
+      let sessionId = controller.sessionByMode[normalized] || null;
+      if (!sessionId || forceRefresh) {
+        const sessions = await apiFetch('/chatbot/sessions');
+        if (Array.isArray(sessions)) {
+          const match = sessions.find(item => normalizeSocialAiMode(item.persona) === normalized);
+          sessionId = match ? match.session_id : null;
+          controller.sessionByMode[normalized] = sessionId || null;
+        }
+      }
+      if (sessionId) {
+        const transcript = await apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}`);
+        controller.sessionByMode[normalized] = transcript.session_id || sessionId;
+        controller.messagesByMode[normalized] = Array.isArray(transcript.messages) ? transcript.messages : [];
+      } else {
+        controller.messagesByMode[normalized] = [];
+      }
+      renderSocialAiMessages();
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to load Social AI.');
+    } finally {
+      setSocialAiLoading(false);
+    }
+  }
+
+  function renderSocialAiMessages() {
+    const controller = state.socialAi;
+    const thread = controller.elements.thread;
+    if (!thread) return;
+    const messages = controller.messagesByMode[controller.mode] || [];
+    thread.innerHTML = '';
+    const emptyState = controller.elements.empty;
+    if (!messages.length) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      return;
+    }
+    if (emptyState) emptyState.classList.add('hidden');
+    messages.forEach(message => {
+      const wrapper = document.createElement('div');
+      const isAssistant = (message.role || '').toLowerCase() !== 'user';
+      wrapper.className = `rounded-3xl border px-4 py-3 text-sm shadow-sm ${
+        isAssistant
+          ? 'border-slate-800/70 bg-slate-900/70 text-slate-100'
+          : 'border-fuchsia-500/40 bg-fuchsia-500/15 text-white'
+      }`;
+      const author = document.createElement('p');
+      author.className = 'text-xs font-semibold uppercase tracking-wide opacity-70';
+      author.textContent = isAssistant ? 'Social AI' : 'You';
+      const body = document.createElement('p');
+      body.className = 'mt-1 whitespace-pre-wrap text-sm';
+      body.textContent = message.content || '';
+      wrapper.appendChild(author);
+      wrapper.appendChild(body);
+      thread.appendChild(wrapper);
+    });
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function handleSocialAiSubmit(event) {
+    event.preventDefault();
+    const controller = state.socialAi;
+    if (controller.sending) return;
+    const input = controller.elements.input;
+    if (!input) return;
+    const value = input.value.trim();
+    if (!value) {
+      showToast('Enter a prompt for Social AI.', 'warning');
+      return;
+    }
+    sendSocialAiPrompt(value);
+  }
+
+  async function sendSocialAiPrompt(text) {
+    const controller = state.socialAi;
+    const meta = getSocialAiModeMeta(controller.mode);
+    const sendButton = controller.elements.send;
+    controller.sending = true;
+    if (sendButton) {
+      sendButton.disabled = true;
+      sendButton.textContent = 'Sending…';
+    }
+    try {
+      const payload = {
+        message: text,
+        session_id: controller.sessionByMode[meta.key] || null,
+        persona: meta.key,
+        include_public_context: meta.meta.includeContext !== false,
+      };
+      const response = await apiFetch('/chatbot/messages', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      controller.sessionByMode[meta.key] = response.session_id || controller.sessionByMode[meta.key] || null;
+      controller.messagesByMode[meta.key] = Array.isArray(response.messages) ? response.messages : [];
+      if (controller.elements.input) {
+        controller.elements.input.value = '';
+      }
+      renderSocialAiMessages();
+    } catch (error) {
+      showSocialAiError(error.message || 'Social AI is unavailable right now.');
+    } finally {
+      controller.sending = false;
+      if (sendButton) {
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send';
+      }
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -8323,7 +8693,14 @@
     if (confirmRoot && !confirmRoot.classList.contains('hidden')) {
       finalizeModerationConfirm(false);
     }
+    const socialOverlay = state.socialAi.elements.root;
+    if (socialOverlay && !socialOverlay.classList.contains('hidden')) {
+      closeSocialAi();
+    }
   });
 
-  document.addEventListener('DOMContentLoaded', initThemeToggle);
+  document.addEventListener('DOMContentLoaded', () => {
+    initThemeToggle();
+    initSocialAi();
+  });
 })();

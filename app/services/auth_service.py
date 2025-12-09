@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from uuid import UUID
 
+from functools import lru_cache
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -18,6 +20,7 @@ from sqlalchemy.orm import Session
 from ..database import get_session
 from ..models import User
 from ..schemas import RegisterRequest
+from ..security.secrets import MissingSecretError, require_secret
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +31,12 @@ ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 DEFAULT_TOKEN_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", "1440"))
 
 
+@lru_cache(maxsize=1)
 def _get_jwt_secret() -> str:
-    secret = os.getenv("JWT_SECRET_KEY")
-    if not secret:
-        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
-    return secret
+    try:
+        return require_secret("JWT_SECRET_KEY")
+    except MissingSecretError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def hash_password(password: str) -> str:

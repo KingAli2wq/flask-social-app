@@ -1,3 +1,13 @@
+# 🗓️ **December 8, 2025 - Chatbot Harness & Security Prep**
+
+### ✅ **Completed Today:**
+1. **CLI Chatbot Harness:** Added `tools/chatbot_harness.py`, a zero-dependency command-line wrapper so engineers can exercise the chatbot stack without standing up HTTP routes. It can send prompts, continue existing sessions, and auto-provision a throwaway user for quick experiments.
+2. **Session Explorer:** The harness doubles as a session inspector via `python tools/chatbot_harness.py sessions --username devchat`, printing persona, update timestamps, and previews for faster debugging.
+
+### 🧪 **Validation:**
+- Ran `python tools/chatbot_harness.py chat "Plan my day" --username devchat --auto-create` locally with the OpenAI sandbox key to confirm transcripts persist and stream back in the console.
+- Listed previous sessions with the new `sessions` subcommand to verify summaries mirror the `/chatbot/sessions` API output.
+
 - **Group Chats**: Creation, renames, member changes, announcements, invite tokens, and live message delivery
 # DevEcho Development Notebook
 *Comprehensive documentation of all improvements, optimizations, and changes*

@@ -21,6 +21,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 
 from ..models import MediaAsset
+from ..security.secrets import MissingSecretError, is_placeholder, require_secret
+from .media_crypto import protect_media_value
 
 load_dotenv()
 
@@ -80,11 +82,22 @@ def load_spaces_config() -> SpacesConfig:
             "Missing required DigitalOcean Spaces configuration: " + ", ".join(sorted(missing))
         )
 
-    key = cast(str, required["DO_SPACES_KEY"]).strip()
-    secret = cast(str, required["DO_SPACES_SECRET"]).strip()
+    try:
+        key = require_secret("DO_SPACES_KEY")
+        secret = require_secret("DO_SPACES_SECRET")
+    except MissingSecretError as exc:
+        raise SpacesConfigurationError(str(exc)) from exc
+
     region = cast(str, required["DO_SPACES_REGION"]).strip()
     bucket = cast(str, required["DO_SPACES_NAME"]).strip()
     endpoint_raw = cast(str, required["DO_SPACES_ENDPOINT"]).strip()
+
+    if is_placeholder(region):
+        raise SpacesConfigurationError("DO_SPACES_REGION must be set to a valid region identifier")
+    if is_placeholder(bucket):
+        raise SpacesConfigurationError("DO_SPACES_NAME must be set to the target bucket name")
+    if is_placeholder(endpoint_raw):
+        raise SpacesConfigurationError("DO_SPACES_ENDPOINT must point to your Spaces CDN endpoint")
 
     public_endpoint = endpoint_raw.rstrip("/")
     parsed = urlparse(public_endpoint)
@@ -235,8 +248,8 @@ async def upload_file_to_spaces(
     if db is not None:
         asset = MediaAsset(
             user_id=user_id,
-            key=key,
-            url=url,
+            key=protect_media_value(key) or "",
+            url=protect_media_value(url) or "",
             bucket=config.bucket,
             content_type=content_type,
             folder=folder,
