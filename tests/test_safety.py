@@ -4,6 +4,10 @@ from fastapi import HTTPException
 from app.services.safety import check_content_policy, enforce_safe_text, SafetyViolation
 
 
+def _build_word(points):
+    return "".join(chr(value) for value in points)
+
+
 def test_check_content_policy_allows_clean_text():
     result = check_content_policy("Let's plan a picnic by the lake tomorrow.")
     assert result.allowed is True
@@ -25,6 +29,25 @@ def test_check_content_policy_blocks_abusive_text(text, expected_violation):
     result = check_content_policy(text)
     assert result.allowed is False
     assert expected_violation in result.violations
+
+
+def test_check_content_policy_detects_leetspeak_profanity():
+    result = check_content_policy("F.u.c.k this thread right now")
+    assert result.allowed is False
+    assert SafetyViolation.SEXUAL in result.violations
+
+
+def test_check_content_policy_detects_slur_stems():
+    slur = _build_word((110, 105, 103, 103, 101, 114))
+    result = check_content_policy(f"That {slur} remark isn't tolerated here.")
+    assert result.allowed is False
+    assert SafetyViolation.HATE in result.violations
+
+
+def test_check_content_policy_respects_adult_override():
+    result = check_content_policy("Posting tasteful nude art", allow_adult_nsfw=True)
+    assert result.allowed is True
+    assert SafetyViolation.SEXUAL not in result.violations
 
 
 def test_enforce_safe_text_raises_for_blocked_content():

@@ -391,10 +391,89 @@
       : await response.text();
 
     if (!response.ok) {
-      const message = (payload && payload.detail) || response.statusText || 'Request failed';
-      throw new Error(message);
+      let detail = null;
+      if (payload && typeof payload === 'object') {
+        detail = Object.prototype.hasOwnProperty.call(payload, 'detail') ? payload.detail : payload;
+      }
+      const message = deriveApiErrorMessage(payload, detail, response.statusText || 'Request failed');
+      const error = new Error(message);
+      error.status = response.status;
+      if (detail !== null && detail !== undefined) {
+        error.detail = detail;
+      }
+      error.payload = payload;
+      throw error;
     }
     return payload;
+  }
+
+  function deriveApiErrorMessage(payload, detail, fallback) {
+    const fallbackMessage = typeof fallback === 'string' && fallback.trim() ? fallback.trim() : 'Request failed';
+    const detailMessage = extractDetailMessage(detail);
+    if (detailMessage) {
+      return detailMessage;
+    }
+    if (payload && typeof payload === 'object') {
+      const direct = typeof payload.message === 'string' ? payload.message.trim() : '';
+      if (direct) {
+        return direct;
+      }
+    } else if (typeof payload === 'string') {
+      const text = payload.trim();
+      if (text) {
+        return text;
+      }
+    }
+    return fallbackMessage;
+  }
+
+  function extractDetailMessage(detail) {
+    if (!detail) return '';
+    if (typeof detail === 'string') {
+      return detail.trim();
+    }
+    if (Array.isArray(detail) && detail.length) {
+      const first = detail[0];
+      if (typeof first === 'string') {
+        return first.trim();
+      }
+      if (first && typeof first === 'object') {
+        const msg = typeof first.msg === 'string' ? first.msg.trim() : '';
+        if (msg) return msg;
+        const message = typeof first.message === 'string' ? first.message.trim() : '';
+        if (message) return message;
+      }
+    }
+    if (detail && typeof detail === 'object') {
+      const message = typeof detail.message === 'string' ? detail.message.trim() : '';
+      const reason = typeof detail.reason === 'string' ? detail.reason.trim() : '';
+      if (message && reason && message !== reason) {
+        return `${message} ${reason}`.trim();
+      }
+      if (message) return message;
+      if (reason) return reason;
+      if (Array.isArray(detail.violations) && detail.violations.length) {
+        const violations = detail.violations.join(', ');
+        return `Content violates policy (${violations})`;
+      }
+    }
+    return '';
+  }
+
+  function getErrorMessage(error, fallback = 'Request failed') {
+    if (!error) return fallback;
+    if (typeof error === 'string') {
+      return error;
+    }
+    const detail = error.detail ?? (error.payload && error.payload.detail) ?? null;
+    const detailMessage = extractDetailMessage(detail);
+    if (detailMessage) {
+      return detailMessage;
+    }
+    if (typeof error.message === 'string' && error.message.trim()) {
+      return error.message.trim();
+    }
+    return fallback;
   }
 
   function ensureAuthenticated() {
@@ -1106,10 +1185,27 @@
         body: JSON.stringify(payload),
       });
     } catch (error) {
-      throw new Error(error?.message || 'AI stream failed');
+      throw new Error(getErrorMessage(error, 'AI stream failed'));
     }
     if (!response.ok) {
-      throw new Error('AI stream failed');
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        try {
+          payload = await response.text();
+        } catch {
+          payload = null;
+        }
+      }
+      const detail = payload && typeof payload === 'object' ? (payload.detail ?? payload) : null;
+      const message = deriveApiErrorMessage(payload, detail, 'AI stream failed');
+      const error = new Error(message);
+      error.status = response.status;
+      if (detail) {
+        error.detail = detail;
+      }
+      throw error;
     }
     if (!response.body || typeof response.body.getReader !== 'function') {
       throw new Error('Streaming is not supported in this browser.');
@@ -1439,7 +1535,7 @@
         await sendSocialAiPromptViaApi(text, meta);
       }
     } catch (error) {
-      showSocialAiError(error.message || 'Social AI is unavailable right now.');
+      showSocialAiError(getErrorMessage(error, 'Social AI is unavailable right now.'));
     } finally {
       controller.sending = false;
       if (!useStreaming) {
@@ -2791,7 +2887,7 @@
         }
         await loadFeed({ forceRefresh: true });
       } catch (error) {
-        showToast(error.message || 'Unable to publish post.', 'error');
+        showToast(getErrorMessage(error, 'Unable to publish post.'), 'error');
       }
     });
   }
@@ -3852,7 +3948,7 @@
       setPostEngagementSnapshot(snapshot);
       showToast('Comment added.', 'success');
     } catch (error) {
-      showToast(error.message || 'Unable to add comment.', 'error');
+      showToast(getErrorMessage(error, 'Unable to add comment.'), 'error');
     } finally {
       form.classList.remove('opacity-70');
       if (submitButton) submitButton.disabled = false;
@@ -5324,10 +5420,12 @@
         handleIncomingMessage(message, { skipToast: true });
         focusMessageComposer();
       } catch (error) {
+        const message = getErrorMessage(error, 'Failed to send message');
         if (feedback) {
-          feedback.textContent = error.message || 'Failed to send message';
+          feedback.textContent = message;
           feedback.classList.remove('hidden');
         }
+        showToast(message, 'error');
       }
     });
   }

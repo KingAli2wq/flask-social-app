@@ -150,7 +150,8 @@ async def update_post_record(
     post = _get_post_or_404(db, post_id)
     normalized_role = (requester_role or "").lower()
     can_edit_any = normalized_role in {"owner", "admin"}
-    if post.user_id != requester_id and not can_edit_any:
+    post_owner_id = cast(UUID, post.user_id)
+    if post_owner_id != requester_id and not can_edit_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to edit this post")
 
     normalized_asset_id = _normalize_media_asset_id(media_asset_id)
@@ -173,11 +174,12 @@ async def update_post_record(
         if not text:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Caption cannot be empty")
         enforce_safe_text(text, field_name="caption")
-        if text != post.caption:
-            post.caption = text
+        current_caption = cast(str | None, post.caption)
+        if text != current_caption:
+            setattr(post, "caption", text)
             changed = True
 
-    next_asset_id = post.media_asset_id
+    next_asset_id = cast(UUID | None, post.media_asset_id)
     next_media_url = reveal_media_value(cast(str | None, post.media_url))
 
     if remove_media:
@@ -198,8 +200,8 @@ async def update_post_record(
     if not changed:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No changes detected")
 
-    post.media_asset_id = next_asset_id
-    post.media_url = protect_media_value(next_media_url)
+    setattr(post, "media_asset_id", next_asset_id)
+    setattr(post, "media_url", protect_media_value(next_media_url))
 
     try:
         db.commit()
@@ -467,6 +469,7 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
     roots: list[dict[str, Any]] = []
 
     for comment, username, avatar_url, role in rows:
+        parent_id_value = cast(UUID | None, comment.parent_id)
         node = {
             "id": comment.id,
             "post_id": comment.post_id,
@@ -475,13 +478,13 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
             "avatar_url": cast(str | None, avatar_url),
             "role": cast(str | None, role),
             "content": comment.content,
-            "parent_id": comment.parent_id,
+            "parent_id": parent_id_value,
             "created_at": comment.created_at,
             "replies": [],
         }
         nodes[comment.id] = node
-        if comment.parent_id and comment.parent_id in nodes:
-            nodes[comment.parent_id]["replies"].append(node)
+        if parent_id_value is not None and parent_id_value in nodes:
+            nodes[parent_id_value]["replies"].append(node)
         else:
             roots.append(node)
 
@@ -505,7 +508,8 @@ def create_post_comment(
     parent: PostComment | None = None
     if parent_id is not None:
         parent = db.get(PostComment, parent_id)
-        if parent is None or parent.post_id != post.id:
+        parent_post_id = cast(UUID | None, parent.post_id) if parent is not None else None
+        if parent is None or parent_post_id != post_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid parent comment")
 
     comment = PostComment(post_id=post.id, user_id=author.id, content=text, parent_id=parent.id if parent else None)
@@ -517,6 +521,7 @@ def create_post_comment(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add comment") from exc
 
     db.refresh(comment)
+    parent_value = cast(UUID | None, comment.parent_id)
     return {
         "id": comment.id,
         "post_id": comment.post_id,
@@ -525,7 +530,7 @@ def create_post_comment(
         "avatar_url": author.avatar_url,
         "role": getattr(author, "role", None),
         "content": comment.content,
-        "parent_id": comment.parent_id,
+        "parent_id": parent_value,
         "created_at": comment.created_at,
         "replies": [],
     }
@@ -549,11 +554,11 @@ def delete_post_record(
     can_delete_any = normalized_role in {"owner", "admin"}
     if post_author_id != requester_id and not can_delete_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this post")
-    asset_id = post.media_asset_id
+    asset_id = cast(UUID | None, post.media_asset_id)
     db.delete(post)
     db.commit()
 
-    if delete_media and asset_id:
+    if delete_media and asset_id is not None:
         try:
             delete_media_asset(db, asset_id=asset_id, delete_remote=True)
         except HTTPException as exc:

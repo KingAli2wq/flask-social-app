@@ -1,6 +1,7 @@
 """Lightweight, rule-based moderation helpers for Social AI prompts."""
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import List
 
@@ -21,6 +22,27 @@ class SafetyResult(BaseModel):
     allowed: bool
     violations: List[SafetyViolation] = []
     reason: str = ""
+
+
+_LEETSPEAK_TABLE = str.maketrans(
+    {
+        "0": "o",
+        "1": "i",
+        "2": "z",
+        "3": "e",
+        "4": "a",
+        "5": "s",
+        "6": "g",
+        "7": "t",
+        "8": "b",
+        "9": "g",
+        "$": "s",
+        "@": "a",
+        "!": "i",
+        "|": "i",
+    }
+)
+_COMPACT_RE = re.compile(r"[^a-z0-9]+")
 
 
 # TODO: Replace keyword heuristics with an ML-based moderation model when available.
@@ -97,8 +119,44 @@ _VIOLENCE_KEYWORDS = [
 ]
 
 
-def _match_any(text: str, keywords: list[str]) -> bool:
-    return any(term in text for term in keywords)
+def _build_token(points: tuple[int, ...]) -> str:
+    return "".join(chr(value) for value in points)
+
+
+_HATE_SLUR_STEMS = [
+    _build_token((110, 105, 103, 103)),  # common ethnic slur stem
+    _build_token((102, 97, 103, 103)),
+    _build_token((115, 112, 105, 99)),
+    _build_token((107, 105, 107, 101)),
+    _build_token((99, 104, 105, 110, 107)),
+    _build_token((103, 111, 111, 107)),
+    _build_token((119, 101, 116, 98)),
+    _build_token((116, 114, 97, 110, 110)),
+    _build_token((99, 111, 111, 110)),
+]
+
+
+def _strip_non_alnum(value: str) -> str:
+    return _COMPACT_RE.sub("", value)
+
+
+def _normalize_variants(text: str) -> tuple[str, str]:
+    collapsed = text.translate(_LEETSPEAK_TABLE)
+    squashed = _strip_non_alnum(collapsed)
+    return collapsed, squashed
+
+
+def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str]) -> bool:
+    for keyword in keywords:
+        normalized_keyword = (keyword or "").lower().strip()
+        if not normalized_keyword:
+            continue
+        compact = _strip_non_alnum(normalized_keyword)
+        if normalized_keyword in collapsed:
+            return True
+        if compact and compact in squashed:
+            return True
+    return False
 
 
 def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyResult:
@@ -108,30 +166,35 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
     if not normalized.strip():
         return SafetyResult(allowed=True, violations=[], reason="")
 
+    collapsed, squashed = _normalize_variants(normalized)
+
     violations: list[SafetyViolation] = []
     reasons: list[str] = []
 
-    if _match_any(normalized, _MINOR_KEYWORDS):
+    if _contains_keyword_variants(collapsed, squashed, _MINOR_KEYWORDS):
         violations.append(SafetyViolation.MINORS)
         reasons.append("Content references minors")
 
-    if _match_any(normalized, _SEXUAL_KEYWORDS):
+    if not allow_adult_nsfw and _contains_keyword_variants(collapsed, squashed, _SEXUAL_KEYWORDS):
         violations.append(SafetyViolation.SEXUAL)
         reasons.append("Sexual content is not allowed")
 
-    if _match_any(normalized, _NSFW_KEYWORDS):
+    if not allow_adult_nsfw and _contains_keyword_variants(collapsed, squashed, _NSFW_KEYWORDS):
         violations.append(SafetyViolation.NSFW)
         reasons.append("NSFW content is blocked")
 
-    if _match_any(normalized, _HATE_PARTIALS):
+    hate_detected = _contains_keyword_variants(collapsed, squashed, _HATE_PARTIALS)
+    if not hate_detected:
+        hate_detected = any(stem and stem in squashed for stem in _HATE_SLUR_STEMS)
+    if hate_detected:
         violations.append(SafetyViolation.HATE)
         reasons.append("Hateful or targeting language detected")
 
-    if _match_any(normalized, _HARASSMENT_PATTERNS):
+    if _contains_keyword_variants(collapsed, squashed, _HARASSMENT_PATTERNS):
         violations.append(SafetyViolation.HARASSMENT)
         reasons.append("Harassing or bullying language detected")
 
-    if _match_any(normalized, _VIOLENCE_KEYWORDS):
+    if _contains_keyword_variants(collapsed, squashed, _VIOLENCE_KEYWORDS):
         violations.append(SafetyViolation.VIOLENCE)
         reasons.append("Graphic violence references detected")
 
