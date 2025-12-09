@@ -15,6 +15,7 @@ from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLik
 from .media_crypto import protect_media_value, reveal_media_value
 from .media_service import delete_media_asset
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
+from .safety import enforce_safe_text
 
 
 logger = logging.getLogger(__name__)
@@ -119,9 +120,13 @@ async def create_post_record(
     if normalized_asset_id is not None and file is None:
         media_url = _resolve_media_asset_url(db, normalized_asset_id)
 
+    normalized_caption = (caption or "").strip()
+    if normalized_caption:
+        enforce_safe_text(normalized_caption, field_name="caption")
+
     post = Post(
         user_id=user_id,
-        caption=caption,
+        caption=normalized_caption,
         media_url=protect_media_value(media_url),
         media_asset_id=normalized_asset_id,
     )
@@ -167,6 +172,7 @@ async def update_post_record(
         text = caption.strip()
         if not text:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Caption cannot be empty")
+        enforce_safe_text(text, field_name="caption")
         if text != post.caption:
             post.caption = text
             changed = True
@@ -494,6 +500,7 @@ def create_post_comment(
     text = (content or "").strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
+    enforce_safe_text(text, field_name="comment")
 
     parent: PostComment | None = None
     if parent_id is not None:

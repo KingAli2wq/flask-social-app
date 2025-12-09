@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..models import AiChatMessage, AiChatSession, Post, Story, User
 from ..security.data_vault import DataVaultError, decrypt_text, encrypt_text
+from .safety import enforce_safe_text
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
@@ -391,6 +392,7 @@ def send_chat_prompt(
     cleaned_message = (message or "").strip()
     if not cleaned_message:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Message cannot be empty")
+    enforce_safe_text(cleaned_message, field_name="message")
     session = _ensure_session(db, user=user, session_id=session_id, persona=persona, title=title)
     session_identifier = cast(UUID, session.id)
     _persist_message(db, session_id=session_identifier, role="user", content=cleaned_message)

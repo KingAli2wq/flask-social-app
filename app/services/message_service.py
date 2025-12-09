@@ -27,6 +27,7 @@ from .group_crypto import (
     generate_group_encryption_key,
     generate_group_lock_code,
 )
+from .safety import enforce_safe_text
 
 
 def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> GroupChat:
@@ -173,7 +174,9 @@ def send_message(
             group_encryption_key = None
         if not group_encryption_key:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Group chat is missing an encryption key")
-    plaintext_content = payload.content or ""
+    plaintext_content = (payload.content or "").strip()
+    if plaintext_content:
+        enforce_safe_text(plaintext_content, field_name="message")
     try:
         message_content = _encrypt_message_body(plaintext_content, group_key=group_encryption_key)
     except (GroupEncryptionError, DataVaultError) as exc:
