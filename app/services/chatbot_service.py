@@ -17,6 +17,9 @@ from sqlalchemy.orm import Session
 from ..models import AiChatMessage, AiChatSession, Post, Story, User
 from ..security.data_vault import DataVaultError, decrypt_text, encrypt_text
 
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
+AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
+
 _DEFAULT_SYSTEM_PROMPT = (
     "You are SocialSphere, an in-app AI companion. Offer concise, friendly answers, "
     "reference public posts or stories when helpful, and guide users toward positive community interactions."
@@ -75,32 +78,42 @@ class LLMClient(Protocol):
 
 
 class SocialAIChatClient(LLMClient):
-    """HTTP client for the self-hosted Social AI service."""
+    """HTTP client that proxies chatbot requests through the internal /ai/chat endpoint."""
 
-    def __init__(
-        self,
-        *,
-        endpoint: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
-        timeout: float = 15.0,
-    ) -> None:
-        self._endpoint = (endpoint or os.getenv("SOCIAL_AI_ENDPOINT") or "").strip() or "http://localhost:8080/v1/chat"
-        self._model = model or os.getenv("SOCIAL_AI_MODEL", "social-ai")
-        self._api_key = api_key or os.getenv("SOCIAL_AI_API_KEY")
+    def __init__(self, *, endpoint: str | None = None, timeout: float = 15.0) -> None:
+        self._endpoint = (endpoint or AI_CHAT_URL).rstrip("/")
         self._client = httpx.Client(timeout=timeout)
 
     def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
+        if not messages:
+            raise ChatbotServiceError("No messages provided")
+
+        latest_user = next((msg for msg in reversed(messages) if msg.get("role") == "user"), None)
+        if latest_user is None:
+            raise ChatbotServiceError("No user message found in messages")
+
+        user_message = cast(str, latest_user.get("content") or "").strip()
+        if not user_message:
+            raise ChatbotServiceError("User message was empty")
+
+        history: list[dict[str, str]] = []
+        for msg in messages:
+            if msg is latest_user:
+                continue
+            role = msg.get("role")
+            content = (msg.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                history.append({"role": cast(str, role), "content": content})
+
         payload = {
-            "model": self._model,
-            "messages": list(messages),
-            "temperature": temperature,
+            "message": user_message,
+            "mode": "default",
+            "history": history,
+            "confirmed_adult": False,
         }
-        headers = {"Content-Type": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
+
         try:
-            response = self._client.post(self._endpoint, json=payload, headers=headers)
+            response = self._client.post(self._endpoint, json=payload)
             response.raise_for_status()
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
             raise ChatbotServiceError("Social AI request failed") from exc
@@ -110,38 +123,11 @@ class SocialAIChatClient(LLMClient):
         except ValueError as exc:
             raise ChatbotServiceError("Social AI response was not valid JSON") from exc
 
-        content, prompt_tokens, completion_tokens, model = self._parse_completion(data)
-        return ChatCompletionResult(
-            content=content,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            model=model,
-        )
+        reply = data.get("reply")
+        if not isinstance(reply, str):
+            raise ChatbotServiceError("Invalid AI response format")
 
-    def _parse_completion(self, payload: dict[str, Any]) -> tuple[str, int, int, str]:
-        # Support both native Social AI schema and legacy choice-based responses for flexibility.
-        if "content" in payload:
-            usage = payload.get("usage") or {}
-            return (
-                cast(str, payload.get("content") or ""),
-                int(cast(Any, usage.get("prompt_tokens") or 0)),
-                int(cast(Any, usage.get("completion_tokens") or 0)),
-                cast(str, payload.get("model") or self._model),
-            )
-
-        choices = cast(list[dict[str, Any]] | None, payload.get("choices"))
-        if choices:
-            first = choices[0] or {}
-            message = cast(dict[str, Any] | None, first.get("message")) or {}
-            usage = payload.get("usage") or {}
-            return (
-                cast(str, message.get("content") or ""),
-                int(cast(Any, usage.get("prompt_tokens") or 0)),
-                int(cast(Any, usage.get("completion_tokens") or 0)),
-                cast(str, payload.get("model") or self._model),
-            )
-
-        raise ChatbotServiceError("Social AI response missing content")
+        return ChatCompletionResult(content=reply, prompt_tokens=0, completion_tokens=0, model="social-ai-local")
 
 
 @dataclass(slots=True)
