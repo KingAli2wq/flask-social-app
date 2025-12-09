@@ -5,19 +5,17 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Final, List, Protocol, Sequence, cast
+from typing import Any, Final, List, Protocol, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from openai import OpenAI, OpenAIError
-from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
+import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import AiChatMessage, AiChatSession, Post, Story, User
 from ..security.data_vault import DataVaultError, decrypt_text, encrypt_text
-from ..security.secrets import MissingSecretError, require_secret
 
 _DEFAULT_SYSTEM_PROMPT = (
     "You are SocialSphere, an in-app AI companion. Offer concise, friendly answers, "
@@ -76,45 +74,74 @@ class LLMClient(Protocol):
         ...
 
 
-class OpenAIChatClient(LLMClient):
-    """Thin wrapper around openai.ChatCompletions for dependency injection."""
+class SocialAIChatClient(LLMClient):
+    """HTTP client for the self-hosted Social AI service."""
 
-    def __init__(self, *, api_key: str | None = None, model: str | None = None, temperature: float = 0.2) -> None:
-        if api_key:
-            key = api_key
-        else:
-            try:
-                key = require_secret("OPENAI_API_KEY")
-            except MissingSecretError as exc:
-                raise ChatbotServiceError(str(exc)) from exc
-        self._model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        self._temperature = temperature
-        self._client = OpenAI(api_key=key)
+    def __init__(
+        self,
+        *,
+        endpoint: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout: float = 15.0,
+    ) -> None:
+        self._endpoint = (endpoint or os.getenv("SOCIAL_AI_ENDPOINT") or "").strip() or "http://localhost:8080/v1/chat"
+        self._model = model or os.getenv("SOCIAL_AI_MODEL", "social-ai")
+        self._api_key = api_key or os.getenv("SOCIAL_AI_API_KEY")
+        self._client = httpx.Client(timeout=timeout)
 
     def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
-        response = self._create_completion(messages=messages, temperature=temperature)
-        choice = response.choices[0]
-        content = choice.message.content if choice.message else ""
-        usage = response.usage
+        payload = {
+            "model": self._model,
+            "messages": list(messages),
+            "temperature": temperature,
+        }
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        try:
+            response = self._client.post(self._endpoint, json=payload, headers=headers)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            raise ChatbotServiceError("Social AI request failed") from exc
+
+        try:
+            data = cast(dict[str, Any], response.json())
+        except ValueError as exc:
+            raise ChatbotServiceError("Social AI response was not valid JSON") from exc
+
+        content, prompt_tokens, completion_tokens, model = self._parse_completion(data)
         return ChatCompletionResult(
-            content=content or "",
-            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
-            completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
-            model=response.model or self._model,
+            content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            model=model,
         )
 
-    def _create_completion(
-        self, *, messages: Sequence[dict[str, str]], temperature: float | None
-    ) -> ChatCompletion:
-        typed_messages = cast(list[ChatCompletionMessageParam], list(messages))
-        try:
-            return self._client.chat.completions.create(
-                model=self._model,
-                messages=typed_messages,
-                temperature=temperature or self._temperature,
+    def _parse_completion(self, payload: dict[str, Any]) -> tuple[str, int, int, str]:
+        # Support both native Social AI schema and legacy choice-based responses for flexibility.
+        if "content" in payload:
+            usage = payload.get("usage") or {}
+            return (
+                cast(str, payload.get("content") or ""),
+                int(cast(Any, usage.get("prompt_tokens") or 0)),
+                int(cast(Any, usage.get("completion_tokens") or 0)),
+                cast(str, payload.get("model") or self._model),
             )
-        except OpenAIError as exc:  # pragma: no cover - network failure path
-            raise ChatbotServiceError("OpenAI request failed") from exc
+
+        choices = cast(list[dict[str, Any]] | None, payload.get("choices"))
+        if choices:
+            first = choices[0] or {}
+            message = cast(dict[str, Any] | None, first.get("message")) or {}
+            usage = payload.get("usage") or {}
+            return (
+                cast(str, message.get("content") or ""),
+                int(cast(Any, usage.get("prompt_tokens") or 0)),
+                int(cast(Any, usage.get("completion_tokens") or 0)),
+                cast(str, payload.get("model") or self._model),
+            )
+
+        raise ChatbotServiceError("Social AI response missing content")
 
 
 @dataclass(slots=True)
@@ -159,7 +186,7 @@ def set_llm_client(client: LLMClient | None) -> None:
 def _get_llm_client() -> LLMClient:
     global _llm_client
     if _llm_client is None:
-        _llm_client = OpenAIChatClient()
+        _llm_client = SocialAIChatClient()
     return _llm_client
 
 

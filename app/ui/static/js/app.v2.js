@@ -8659,6 +8659,149 @@
   }
 
   // -----------------------------------------------------------------------
+  // Inline AI Chat Widget
+  // -----------------------------------------------------------------------
+
+  let aiChatHistory = [];
+  let aiCurrentMode = 'default';
+  let aiConfirmedAdult = false;
+  let aiChatSending = false;
+
+  const aiChatElements = {
+    container: null,
+    log: null,
+    input: null,
+    send: null,
+    modeSelect: null,
+    confirmCheckbox: null,
+  };
+
+  function initInlineAiChat() {
+    aiChatElements.container = document.getElementById('ai-chat-container');
+    aiChatElements.log = document.getElementById('ai-chat-log');
+    aiChatElements.input = document.getElementById('ai-chat-input');
+    aiChatElements.send = document.getElementById('ai-chat-send');
+    aiChatElements.modeSelect = document.getElementById('ai-mode-select');
+    aiChatElements.confirmCheckbox = document.getElementById('ai-confirm-adult');
+
+    if (!aiChatElements.container || !aiChatElements.input || !aiChatElements.send || !aiChatElements.log) {
+      return;
+    }
+
+    if (aiChatElements.modeSelect) {
+      aiCurrentMode = aiChatElements.modeSelect.value || aiCurrentMode;
+      aiChatElements.modeSelect.addEventListener('change', () => {
+        aiCurrentMode = aiChatElements.modeSelect.value || 'default';
+      });
+    }
+
+    if (aiChatElements.confirmCheckbox) {
+      aiConfirmedAdult = aiChatElements.confirmCheckbox.checked;
+      aiChatElements.confirmCheckbox.addEventListener('change', () => {
+        aiConfirmedAdult = aiChatElements.confirmCheckbox.checked;
+      });
+    }
+
+    aiChatElements.send.addEventListener('click', handleInlineAiSend);
+    aiChatElements.input.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        handleInlineAiSend();
+      }
+    });
+  }
+
+  async function sendInlineAiChatMessage(message) {
+    const payload = {
+      message,
+      mode: aiCurrentMode,
+      history: aiChatHistory,
+      confirmed_adult: aiConfirmedAdult,
+    };
+
+    const response = await fetch('/ai/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      let errDetail = 'AI request failed.';
+      try {
+        const err = await response.json();
+        if (err && typeof err === 'object') {
+          if (typeof err.message === 'string') {
+            errDetail = err.message;
+          } else if (err.detail) {
+            if (typeof err.detail === 'string') {
+              errDetail = err.detail;
+            } else if (typeof err.detail.message === 'string') {
+              errDetail = err.detail.message;
+            }
+          }
+        }
+      } catch {
+        // Ignore JSON parse errors and use default message
+      }
+      throw new Error(errDetail);
+    }
+
+    const data = await response.json();
+    return data.reply;
+  }
+
+  function renderInlineAiMessage(role, content) {
+    if (!aiChatElements.log) return;
+    if (aiChatElements.log.dataset.aiFilled !== 'true') {
+      aiChatElements.log.innerHTML = '';
+      aiChatElements.log.dataset.aiFilled = 'true';
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+    const bubble = document.createElement('div');
+    const base = 'max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg shadow-black/20';
+    if (role === 'user') {
+      bubble.className = `${base} bg-indigo-500/20 text-indigo-50`;
+    } else {
+      bubble.className = `${base} bg-slate-800/80 text-slate-100`;
+    }
+    bubble.textContent = content;
+    wrapper.appendChild(bubble);
+    aiChatElements.log.appendChild(wrapper);
+    aiChatElements.log.scrollTop = aiChatElements.log.scrollHeight;
+  }
+
+  function setInlineAiSending(sending) {
+    aiChatSending = Boolean(sending);
+    if (aiChatElements.send) {
+      aiChatElements.send.disabled = aiChatSending;
+      aiChatElements.send.classList.toggle('opacity-60', aiChatSending);
+    }
+  }
+
+  async function handleInlineAiSend() {
+    if (aiChatSending) return;
+    const text = (aiChatElements.input?.value || '').trim();
+    if (!text) return;
+
+    aiChatHistory.push({ role: 'user', content: text });
+    renderInlineAiMessage('user', text);
+    aiChatElements.input.value = '';
+    setInlineAiSending(true);
+
+    try {
+      const reply = await sendInlineAiChatMessage(text);
+      aiChatHistory.push({ role: 'assistant', content: reply });
+      renderInlineAiMessage('assistant', reply);
+    } catch (error) {
+      const message = error?.message || 'Sorry, the AI is unavailable right now.';
+      renderInlineAiMessage('assistant', message);
+    } finally {
+      setInlineAiSending(false);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
 
@@ -8702,5 +8845,6 @@
   document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initSocialAi();
+    initInlineAiChat();
   });
 })();

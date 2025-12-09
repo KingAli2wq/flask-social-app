@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import get_settings
 from .database import create_session, init_db
 from .routers import (
+    ai_router,
     auth_router,
     chatbot_router,
     friends_router,
@@ -59,6 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(ui_router)
+app.include_router(ai_router)
 app.include_router(auth_router)
 app.include_router(chatbot_router)
 app.include_router(friends_router)

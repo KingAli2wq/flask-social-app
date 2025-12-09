@@ -98,6 +98,49 @@
                 Upload new media to see a preview here.
             </div>
         </section>
+        <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h2 class="text-base font-semibold text-white">Social AI companion</h2>
+                    <p class="text-sm text-slate-400">Chat with your on-platform assistant for ideas and guidance.</p>
+                </div>
+                <span class="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-fuchsia-200">Beta</span>
+            </div>
+            <div id="ai-chat-container" class="mt-4 flex flex-col gap-4">
+                <div id="ai-chat-log" class="scrollbar-thin h-64 space-y-3 overflow-y-auto rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
+                    <p class="text-xs text-slate-500">Conversations reset when you refresh the page.</p>
+                </div>
+                <div id="ai-chat-controls" class="flex flex-col gap-3 text-sm">
+                    <label class="flex flex-col gap-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                        Tone
+                        <select id="ai-mode-select" class="rounded-2xl border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-fuchsia-400 focus:outline-none">
+                            <option value="default">Default</option>
+                            <option value="freaky">Freaky</option>
+                            <option value="deep">Deep</option>
+                        </select>
+                    </label>
+                    <label class="inline-flex items-center gap-2 text-xs text-slate-400">
+                        <input type="checkbox" id="ai-confirm-adult" class="h-4 w-4 rounded border-slate-700/70 bg-transparent" />
+                        I am 18+ and consent to optional adult content
+                    </label>
+                </div>
+                <div id="ai-chat-input-row" class="flex flex-col gap-2 sm:flex-row">
+                    <input
+                        id="ai-chat-input"
+                        type="text"
+                        placeholder="Ask Social AI something..."
+                        class="flex-1 rounded-2xl border border-slate-700/70 bg-slate-900/60 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-fuchsia-400 focus:outline-none"
+                    />
+                    <button
+                        id="ai-chat-send"
+                        type="button"
+                        class="rounded-2xl bg-fuchsia-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-fuchsia-500/30 transition hover:bg-fuchsia-500"
+                    >
+                        Send
+                    </button>
+                </div>
+            </div>
+        </section>
     </aside>
 </section>
 

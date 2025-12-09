@@ -5,7 +5,7 @@
 2. **Session Explorer:** The harness doubles as a session inspector via `python tools/chatbot_harness.py sessions --username devchat`, printing persona, update timestamps, and previews for faster debugging.
 
 ### 🧪 **Validation:**
-- Ran `python tools/chatbot_harness.py chat "Plan my day" --username devchat --auto-create` locally with the OpenAI sandbox key to confirm transcripts persist and stream back in the console.
+- Ran `python tools/chatbot_harness.py chat "Plan my day" --username devchat --auto-create` locally against the Social AI sandbox endpoint (`SOCIAL_AI_ENDPOINT` + optional `SOCIAL_AI_API_KEY`) to confirm transcripts persist and stream back in the console.
 - Listed previous sessions with the new `sessions` subcommand to verify summaries mirror the `/chatbot/sessions` API output.
 
 - **Group Chats**: Creation, renames, member changes, announcements, invite tokens, and live message delivery
