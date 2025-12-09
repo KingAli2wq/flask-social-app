@@ -5,7 +5,7 @@ import json
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,6 +40,7 @@ from ..services import (
 )
 from ..services.group_crypto import GroupEncryptionError, decrypt_group_payload
 from ..services.message_stream import message_stream_manager
+from ..services.moderation_service import ModerationResult, moderate_text
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 
@@ -168,6 +169,16 @@ async def send_message_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> MessageResponse:
+    moderation: ModerationResult = moderate_text(payload.content or "")
+    if not moderation.is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Your message violates our community guidelines.",
+                "reasons": moderation.reasons,
+            },
+        )
+
     record = send_message(db, sender=current_user, payload=payload)
     response = _to_message_response(record)
     await _broadcast_message(response)

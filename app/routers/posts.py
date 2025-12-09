@@ -33,6 +33,7 @@ from ..services import (
 )
 from ..services.media_crypto import reveal_media_value
 from ..services.realtime import feed_updates_manager
+from ..services.moderation_service import ModerationResult, moderate_text
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -67,6 +68,16 @@ async def create_post_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide either a file upload or a media_asset_id, not both",
+        )
+
+    moderation: ModerationResult = moderate_text(caption)
+    if not moderation.is_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Your post violates our community guidelines.",
+                "reasons": moderation.reasons,
+            },
         )
 
     post = await create_post_record(

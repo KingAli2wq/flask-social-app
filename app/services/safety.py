@@ -108,6 +108,11 @@ _HARASSMENT_PATTERNS = [
     "idiot",
     "stupid",
     "hate you",
+    "bitch",
+    "trash",
+    "moron",
+    "dumb",
+    "jerk",
 ]
 
 _VIOLENCE_KEYWORDS = [

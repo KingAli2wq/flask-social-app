@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import cast
+import json
+from pathlib import Path
+import re
+from typing import Dict, List, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -43,6 +47,86 @@ _VALID_ROLES = {"owner", "admin", "user"}
 MAX_PAGE_LIMIT = 100
 
 logger = logging.getLogger(__name__)
+
+BLOCKLIST_PATH = Path(__file__).with_name("blocklist.json")
+
+
+@dataclass
+class ModerationResult:
+    """Simple reusable moderation result container."""
+
+    is_allowed: bool
+    reasons: List[str]
+
+
+def _load_blocklist() -> Dict[str, List[str]]:
+    try:
+        with BLOCKLIST_PATH.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        logger.warning("Blocklist JSON is invalid; ignoring content")
+        return {}
+
+    blocklist: Dict[str, List[str]] = {}
+    for category, phrases in data.items():
+        if not isinstance(category, str) or not isinstance(phrases, list):
+            continue
+        normalized_category = category.strip().lower()
+        if not normalized_category:
+            continue
+        normalized_phrases = [
+            phrase.strip().lower()
+            for phrase in phrases
+            if isinstance(phrase, str) and phrase.strip()
+        ]
+        if normalized_phrases:
+            blocklist[normalized_category] = normalized_phrases
+    return blocklist
+
+
+_BLOCKLIST_CACHE = _load_blocklist()
+
+
+def check_blocklist(text: str) -> List[str]:
+    """Return blocklist categories contained in the supplied text."""
+
+    normalized = (text or "").lower()
+    matches: List[str] = []
+    for category, phrases in _BLOCKLIST_CACHE.items():
+        if any(phrase in normalized for phrase in phrases):
+            matches.append(category)
+    return matches
+
+
+_PATTERN_MAP: Dict[str, re.Pattern[str]] = {
+    "sexual_content": re.compile(r"\b(?:sex|sexual|nsfw|nude|explicit|porn|18\+)\b", re.IGNORECASE),
+    "threats": re.compile(r"\b(?:kill|murder|threaten|attack|harm)\b", re.IGNORECASE),
+}
+
+
+def check_patterns(text: str) -> List[str]:
+    """High-level regex checks for generic policy violations."""
+
+    normalized = text or ""
+    matches: List[str] = []
+    for label, pattern in _PATTERN_MAP.items():
+        if pattern.search(normalized):
+            matches.append(label)
+    return matches
+
+
+def moderate_text(text: str | None) -> ModerationResult:
+    """Combine blocklist + pattern checks into one reusable helper."""
+
+    normalized = (text or "").strip()
+    if not normalized:
+        return ModerationResult(is_allowed=True, reasons=[])
+    reasons = check_blocklist(normalized)
+    reasons.extend(check_patterns(normalized))
+    unique = sorted(set(reason for reason in reasons if reason))
+    return ModerationResult(is_allowed=not unique, reasons=unique)
 
 
 def _normalize_pagination(skip: int | None, limit: int | None) -> tuple[int, int]:
@@ -598,6 +682,10 @@ def _summarize_media_asset(
 
 
 __all__ = [
+    "ModerationResult",
+    "check_blocklist",
+    "check_patterns",
+    "moderate_text",
     "load_moderation_dashboard",
     "list_moderation_users",
     "get_moderation_user",

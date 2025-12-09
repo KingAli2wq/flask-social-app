@@ -50,6 +50,21 @@ def test_check_content_policy_respects_adult_override():
     assert SafetyViolation.SEXUAL not in result.violations
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Stop being such a bitch",
+        "You're absolute trash",
+        "This moron can't code",
+        "What a dumb jerk",
+    ],
+)
+def test_check_content_policy_blocks_common_harassment_terms(text):
+    result = check_content_policy(text)
+    assert result.allowed is False
+    assert SafetyViolation.HARASSMENT in result.violations
+
+
 def test_enforce_safe_text_raises_for_blocked_content():
     with pytest.raises(HTTPException) as exc:
         enforce_safe_text("Send nudes please", field_name="message")
