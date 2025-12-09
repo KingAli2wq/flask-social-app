@@ -15,7 +15,7 @@ from app.services.safety import SafetyViolation, check_content_policy
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://143.198.39.198:11434").rstrip("/")
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
-LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "openhermes")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "huihui_ai/qwen3-abliterated:0.6b-q4_K_M")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 ALLOW_ADULT_NSFW = os.getenv("ALLOW_ADULT_NSFW", "false").lower() == "true"
 
