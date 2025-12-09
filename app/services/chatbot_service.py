@@ -1,6 +1,7 @@
 """Domain helpers for the AI chatbot experience."""
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from ..security.data_vault import DataVaultError, decrypt_text, encrypt_text
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_SYSTEM_PROMPT = (
     "You are SocialSphere, an in-app AI companion. Offer concise, friendly answers, "
@@ -116,9 +119,38 @@ class SocialAIChatClient(LLMClient):
         try:
             response = self._client.post(self._endpoint, json=payload)
             response.raise_for_status()
-        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+        except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatClient timeout | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
             raise ChatbotServiceError("Local LLM request timed out") from exc
+        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatClient timeout | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Local LLM request timed out") from exc
+        except httpx.HTTPStatusError as exc:  # pragma: no cover - status path
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            logger.error(
+                "SocialAIChatClient HTTP status error | endpoint=%s status=%s timeout=%s",
+                self._endpoint,
+                status,
+                OLLAMA_TIMEOUT,
+            )
+            raise ChatbotServiceError("Social AI request failed") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            logger.error(
+                "SocialAIChatClient transport error | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
             raise ChatbotServiceError("Social AI request failed") from exc
 
         try:

@@ -676,6 +676,154 @@
     return { key, meta: SOCIAL_AI_MODES[key] || SOCIAL_AI_MODES.default };
   }
 
+  function isSocialAiStreamingEnabled() {
+    return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
+  }
+
+  function getSocialAiAdultConfirmation() {
+    const overlayCheckbox = document.getElementById('social-ai-confirm-adult');
+    if (overlayCheckbox) {
+      return overlayCheckbox.checked;
+    }
+    const inlineCheckbox = document.getElementById('ai-confirm-adult');
+    return inlineCheckbox ? inlineCheckbox.checked : false;
+  }
+
+  function createSocialAiTypingIndicator() {
+    const indicator = document.createElement('span');
+    indicator.className = 'ml-2 inline-flex items-center gap-1 text-xs text-slate-400 opacity-80';
+    for (let i = 0; i < 3; i += 1) {
+      const dot = document.createElement('span');
+      dot.className = 'h-1.5 w-1.5 rounded-full bg-current opacity-70 animate-bounce';
+      dot.style.animationDelay = `${i * 120}ms`;
+      indicator.appendChild(dot);
+    }
+    return indicator;
+  }
+
+  function createSocialAiMessageNode({ role, content, streaming = false }) {
+    const wrapper = document.createElement('div');
+    const isAssistant = (role || '').toLowerCase() !== 'user';
+    wrapper.className = `rounded-3xl border px-4 py-3 text-sm shadow-sm ${
+      isAssistant
+        ? 'border-slate-800/70 bg-slate-900/70 text-slate-100'
+        : 'border-fuchsia-500/40 bg-fuchsia-500/15 text-white'
+    }`;
+    if (streaming && isAssistant) {
+      wrapper.classList.add('chat-message--streaming');
+    }
+    const author = document.createElement('p');
+    author.className = 'text-xs font-semibold uppercase tracking-wide opacity-70';
+    author.textContent = isAssistant ? 'Social AI' : 'You';
+    const body = document.createElement('p');
+    body.className = 'mt-1 whitespace-pre-wrap text-sm';
+    const textNode = document.createElement('span');
+    textNode.textContent = content || '';
+    body.appendChild(textNode);
+    let typingIndicator = null;
+    if (streaming && isAssistant) {
+      typingIndicator = createSocialAiTypingIndicator();
+      body.appendChild(typingIndicator);
+    }
+    wrapper.appendChild(author);
+    wrapper.appendChild(body);
+    return { wrapper, textNode, typingIndicator };
+  }
+
+  function scrollSocialAiThreadToBottom() {
+    const thread = state.socialAi.elements.thread;
+    if (thread) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  }
+
+  function appendSocialAiMessage(message, options = {}) {
+    const controller = state.socialAi;
+    const thread = controller.elements.thread;
+    if (!thread) return null;
+    if (controller.elements.empty) {
+      controller.elements.empty.classList.add('hidden');
+    }
+    const node = createSocialAiMessageNode({
+      role: message.role,
+      content: message.content,
+      streaming: Boolean(options.streaming),
+    });
+    thread.appendChild(node.wrapper);
+    scrollSocialAiThreadToBottom();
+    return node;
+  }
+
+  function createLocalSocialAiMessage(role, content = '') {
+    return {
+      id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      role,
+      content,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  function buildSocialAiHistoryPayload(messages = []) {
+    return messages
+      .map(message => {
+        const role = (message.role || '').toLowerCase() === 'user' ? 'user' : 'assistant';
+        const content = (message.content || '').trim();
+        if (!content) {
+          return null;
+        }
+        return { role, content };
+      })
+      .filter(Boolean);
+  }
+
+  async function streamLocalAiReply({ message, mode, history = [], confirmedAdult = false, onChunk }) {
+    const headers = new Headers({
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    });
+    const auth = getAuth();
+    if (auth.token) {
+      headers.set('Authorization', `Bearer ${auth.token}`);
+    }
+    const payload = {
+      message,
+      mode,
+      history,
+      confirmed_adult: Boolean(confirmedAdult),
+    };
+    let response;
+    try {
+      response = await fetch('/ai/chat/stream', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      throw new Error(error?.message || 'AI stream failed');
+    }
+    if (!response.ok) {
+      throw new Error('AI stream failed');
+    }
+    if (!response.body || typeof response.body.getReader !== 'function') {
+      throw new Error('Streaming is not supported in this browser.');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let accumulated = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const chunk = decoder.decode(value, { stream: true });
+      if (!chunk) continue;
+      accumulated += chunk;
+      if (typeof onChunk === 'function') {
+        onChunk(chunk, accumulated);
+      }
+    }
+    return accumulated;
+  }
+
   function initSocialAi() {
     const controller = state.socialAi;
     controller.elements.root = document.getElementById('social-ai-overlay');
@@ -915,24 +1063,10 @@
     }
     if (emptyState) emptyState.classList.add('hidden');
     messages.forEach(message => {
-      const wrapper = document.createElement('div');
-      const isAssistant = (message.role || '').toLowerCase() !== 'user';
-      wrapper.className = `rounded-3xl border px-4 py-3 text-sm shadow-sm ${
-        isAssistant
-          ? 'border-slate-800/70 bg-slate-900/70 text-slate-100'
-          : 'border-fuchsia-500/40 bg-fuchsia-500/15 text-white'
-      }`;
-      const author = document.createElement('p');
-      author.className = 'text-xs font-semibold uppercase tracking-wide opacity-70';
-      author.textContent = isAssistant ? 'Social AI' : 'You';
-      const body = document.createElement('p');
-      body.className = 'mt-1 whitespace-pre-wrap text-sm';
-      body.textContent = message.content || '';
-      wrapper.appendChild(author);
-      wrapper.appendChild(body);
-      thread.appendChild(wrapper);
+      const node = createSocialAiMessageNode({ role: message.role, content: message.content });
+      thread.appendChild(node.wrapper);
     });
-    thread.scrollTop = thread.scrollHeight;
+    scrollSocialAiThreadToBottom();
   }
 
   function handleSocialAiSubmit(event) {
@@ -958,23 +1092,25 @@
       sendButton.disabled = true;
       sendButton.textContent = 'Sending…';
     }
+    showSocialAiError('');
+    if (controller.elements.input) {
+      controller.elements.input.value = '';
+    }
+    if (!Array.isArray(controller.messagesByMode[meta.key])) {
+      controller.messagesByMode[meta.key] = [];
+    }
+    const useStreaming = isSocialAiStreamingEnabled();
+    if (!useStreaming) {
+      const userMessage = createLocalSocialAiMessage('user', text);
+      controller.messagesByMode[meta.key].push(userMessage);
+      appendSocialAiMessage(userMessage);
+    }
     try {
-      const payload = {
-        message: text,
-        session_id: controller.sessionByMode[meta.key] || null,
-        persona: meta.key,
-        include_public_context: meta.meta.includeContext !== false,
-      };
-      const response = await apiFetch('/chatbot/messages', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      controller.sessionByMode[meta.key] = response.session_id || controller.sessionByMode[meta.key] || null;
-      controller.messagesByMode[meta.key] = Array.isArray(response.messages) ? response.messages : [];
-      if (controller.elements.input) {
-        controller.elements.input.value = '';
+      if (useStreaming) {
+        await sendSocialAiPromptStreaming(text, meta);
+      } else {
+        await sendSocialAiPromptViaApi(text, meta);
       }
-      renderSocialAiMessages();
     } catch (error) {
       showSocialAiError(error.message || 'Social AI is unavailable right now.');
     } finally {
@@ -983,6 +1119,91 @@
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
       }
+    }
+  }
+
+  async function sendSocialAiPromptViaApi(text, meta) {
+    const controller = state.socialAi;
+    const payload = {
+      message: text,
+      session_id: controller.sessionByMode[meta.key] || null,
+      persona: meta.key,
+      include_public_context: meta.meta.includeContext !== false,
+    };
+    const response = await apiFetch('/chatbot/messages', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    controller.sessionByMode[meta.key] = response.session_id || controller.sessionByMode[meta.key] || null;
+    controller.messagesByMode[meta.key] = Array.isArray(response.messages) ? response.messages : [];
+    renderSocialAiMessages();
+  }
+
+  async function sendSocialAiPromptStreaming(text, meta) {
+    const controller = state.socialAi;
+    if (!Array.isArray(controller.messagesByMode[meta.key])) {
+      controller.messagesByMode[meta.key] = [];
+    }
+    const thread = controller.elements.thread;
+    if (!thread) {
+      // Fallback to the legacy pathway if the DOM is not ready.
+      await sendSocialAiPromptViaApi(text, meta);
+      return;
+    }
+    const messages = controller.messagesByMode[meta.key];
+    const historyPayload = buildSocialAiHistoryPayload(messages);
+    const userMessage = createLocalSocialAiMessage('user', text);
+    messages.push(userMessage);
+    appendSocialAiMessage(userMessage);
+
+    const assistantMessage = {
+      ...createLocalSocialAiMessage('assistant', ''),
+      streaming: true,
+    };
+    messages.push(assistantMessage);
+    const assistantNode = appendSocialAiMessage(assistantMessage, { streaming: true }) || {};
+
+    const handleChunk = chunk => {
+      assistantMessage.content += chunk;
+      if (assistantNode.textNode) {
+        assistantNode.textNode.textContent = assistantMessage.content;
+      }
+      scrollSocialAiThreadToBottom();
+    };
+
+    try {
+      const finalText = await streamLocalAiReply({
+        message: text,
+        mode: meta.key,
+        history: historyPayload,
+        confirmedAdult: getSocialAiAdultConfirmation(),
+        onChunk: handleChunk,
+      });
+      assistantMessage.content = finalText;
+      assistantMessage.streaming = false;
+      if (assistantNode.textNode) {
+        assistantNode.textNode.textContent = finalText;
+      }
+    } catch (error) {
+      const fallback = error?.message || 'The AI request failed, please try again.';
+      assistantMessage.content = fallback;
+      assistantMessage.streaming = false;
+      if (assistantNode.textNode) {
+        assistantNode.textNode.textContent = fallback;
+        assistantNode.textNode.classList.add('text-rose-200');
+      }
+      if (assistantNode.wrapper) {
+        assistantNode.wrapper.classList.add('chat-message--error', 'border-rose-500/60');
+      }
+      throw error;
+    } finally {
+      if (assistantNode.typingIndicator && assistantNode.typingIndicator.parentNode) {
+        assistantNode.typingIndicator.parentNode.removeChild(assistantNode.typingIndicator);
+      }
+      if (assistantNode.wrapper) {
+        assistantNode.wrapper.classList.remove('chat-message--streaming');
+      }
+      scrollSocialAiThreadToBottom();
     }
   }
 
