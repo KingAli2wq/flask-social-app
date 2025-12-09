@@ -19,6 +19,7 @@ from ..security.data_vault import DataVaultError, decrypt_text, encrypt_text
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 _DEFAULT_SYSTEM_PROMPT = (
     "You are SocialSphere, an in-app AI companion. Offer concise, friendly answers, "
@@ -80,9 +81,9 @@ class LLMClient(Protocol):
 class SocialAIChatClient(LLMClient):
     """HTTP client that proxies chatbot requests through the internal /ai/chat endpoint."""
 
-    def __init__(self, *, endpoint: str | None = None, timeout: float = 15.0) -> None:
+    def __init__(self, *, endpoint: str | None = None) -> None:
         self._endpoint = (endpoint or AI_CHAT_URL).rstrip("/")
-        self._client = httpx.Client(timeout=timeout)
+        self._client = httpx.Client(timeout=OLLAMA_TIMEOUT)
 
     def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
         if not messages:
@@ -115,6 +116,8 @@ class SocialAIChatClient(LLMClient):
         try:
             response = self._client.post(self._endpoint, json=payload)
             response.raise_for_status()
+        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+            raise ChatbotServiceError("Local LLM request timed out") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
             raise ChatbotServiceError("Social AI request failed") from exc
 
