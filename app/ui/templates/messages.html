@@ -2,86 +2,84 @@
 
 {% block content %}
 <section class="card-surface grid h-[78vh] min-h-[560px] gap-8 overflow-hidden rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
-    <aside class="flex h-full min-h-0 flex-col overflow-hidden">
-        <header class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <p class="text-xs uppercase tracking-wide text-slate-500">Inbox</p>
-                <h1 class="text-lg font-semibold text-white">Messages &amp; secure spaces</h1>
-            </div>
-            <div class="flex gap-2">
-                <a href="/friends/search" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">Add friend</a>
-                <button
-                    id="group-create-trigger"
-                    type="button"
-                    class="rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/10"
-                >
-                    New group
-                </button>
-            </div>
-        </header>
-        <section class="mt-5 rounded-3xl border border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-600/30 via-indigo-600/20 to-slate-900/50 p-4 text-white shadow-lg shadow-fuchsia-900/40">
-            <div class="flex flex-col gap-3">
+    <aside class="flex h-full min-h-0 flex-col">
+        <div class="scrollbar-thin flex h-full min-h-0 flex-col gap-6 overflow-y-auto pr-1">
+            <header class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <p class="text-[11px] uppercase tracking-[0.3em] text-fuchsia-100/80">Social AI</p>
-                    <h2 class="text-lg font-semibold">Get instant AI replies</h2>
-                    <p class="text-sm text-fuchsia-50/80">Draft responses, recap threads, or spark ideas without leaving your inbox.</p>
+                    <p class="text-xs uppercase tracking-wide text-slate-500">Inbox</p>
+                    <h1 class="text-lg font-semibold text-white">Messages &amp; secure spaces</h1>
                 </div>
-                <div class="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-900">
-                    <span class="rounded-full border border-white/60 bg-white/90 px-3 py-0.5 text-xs text-slate-900">Default</span>
-                    <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Freaky</span>
-                    <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Deep understanding</span>
+                <div class="flex gap-2">
+                    <a href="/friends/search" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">Add friend</a>
+                    <button
+                        id="group-create-trigger"
+                        type="button"
+                        class="rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/10"
+                    >
+                        New group
+                    </button>
                 </div>
-                <button
-                    type="button"
-                    data-social-ai-open="true"
-                    class="inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
-                >
-                    Open Social AI
-                </button>
-            </div>
-        </section>
-        <div class="mt-6 flex-1 overflow-hidden">
-            <div class="scrollbar-thin flex h-full min-h-0 flex-col gap-6 overflow-y-auto pr-1">
-                <section>
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase tracking-wide text-slate-500">Direct threads</p>
-                            <h2 class="text-base font-semibold text-white">Friends</h2>
-                        </div>
-                        <span id="friend-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 online</span>
+            </header>
+            <section class="rounded-3xl border border-fuchsia-500/20 bg-gradient-to-r from-fuchsia-600/30 via-indigo-600/20 to-slate-900/50 p-4 text-white shadow-lg shadow-fuchsia-900/40">
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <p class="text-[11px] uppercase tracking-[0.3em] text-fuchsia-100/80">Social AI</p>
+                        <h2 class="text-lg font-semibold">Get instant AI replies</h2>
+                        <p class="text-sm text-fuchsia-50/80">Draft responses, recap threads, or spark ideas without leaving your inbox.</p>
                     </div>
-                    <div id="friend-list" class="mt-3 divide-y divide-slate-800/70 rounded-2xl border border-slate-900/60 bg-slate-950/50">
-                        <p class="px-3 py-4 text-sm text-slate-400">No friends yet. Send a request to start chatting.</p>
+                    <div class="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-900">
+                        <span class="rounded-full border border-white/60 bg-white/90 px-3 py-0.5 text-xs text-slate-900">Default</span>
+                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Freaky</span>
+                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Deep understanding</span>
                     </div>
-                </section>
-                <section>
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="text-xs uppercase tracking-wide text-slate-500">Secure spaces</p>
-                            <h2 class="text-base font-semibold text-white">Group chats</h2>
-                        </div>
-                        <span id="group-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 active</span>
+                    <button
+                        type="button"
+                        data-social-ai-open="true"
+                        class="inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
+                    >
+                        Open Social AI
+                    </button>
+                </div>
+            </section>
+            <section>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Direct threads</p>
+                        <h2 class="text-base font-semibold text-white">Friends</h2>
                     </div>
-                    <div id="group-list" class="mt-3 space-y-2 rounded-2xl border border-slate-900/60 bg-slate-950/50 p-2">
-                        <p class="px-2 py-3 text-sm text-slate-400">Create a group to collaborate with friends.</p>
+                    <span id="friend-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 online</span>
+                </div>
+                <div id="friend-list" class="mt-3 divide-y divide-slate-800/70 rounded-2xl border border-slate-900/60 bg-slate-950/50">
+                    <p class="px-3 py-4 text-sm text-slate-400">No friends yet. Send a request to start chatting.</p>
+                </div>
+            </section>
+            <section>
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Secure spaces</p>
+                        <h2 class="text-base font-semibold text-white">Group chats</h2>
                     </div>
-                </section>
-                <section>
-                    <div class="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-                        <span>Incoming requests</span>
-                        <span id="incoming-count" class="rounded-full bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-300">0</span>
-                    </div>
-                    <div id="incoming-requests" class="scrollbar-thin mt-3 max-h-40 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
-                        <p class="text-xs text-slate-500">No pending requests.</p>
-                    </div>
-                </section>
-                <section>
-                    <p class="text-xs uppercase tracking-wide text-slate-500">Sent requests</p>
-                    <div id="outgoing-requests" class="scrollbar-thin mt-3 max-h-32 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
-                        <p class="text-xs text-slate-500">No outgoing requests.</p>
-                    </div>
-                </section>
-            </div>
+                    <span id="group-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 active</span>
+                </div>
+                <div id="group-list" class="mt-3 space-y-2 rounded-2xl border border-slate-900/60 bg-slate-950/50 p-2">
+                    <p class="px-2 py-3 text-sm text-slate-400">Create a group to collaborate with friends.</p>
+                </div>
+            </section>
+            <section>
+                <div class="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
+                    <span>Incoming requests</span>
+                    <span id="incoming-count" class="rounded-full bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-300">0</span>
+                </div>
+                <div id="incoming-requests" class="scrollbar-thin mt-3 max-h-40 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
+                    <p class="text-xs text-slate-500">No pending requests.</p>
+                </div>
+            </section>
+            <section>
+                <p class="text-xs uppercase tracking-wide text-slate-500">Sent requests</p>
+                <div id="outgoing-requests" class="scrollbar-thin mt-3 max-h-32 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
+                    <p class="text-xs text-slate-500">No outgoing requests.</p>
+                </div>
+            </section>
         </div>
     </aside>
     <div class="card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60">

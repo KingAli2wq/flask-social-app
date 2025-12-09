@@ -41,6 +41,24 @@ class ChatbotPromptRequest(BaseModel):
         return self
 
 
+class ChatbotSessionCreateRequest(BaseModel):
+    persona: str | None = Field(default=None, max_length=64)
+    mode: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, max_length=160)
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "ChatbotSessionCreateRequest":
+        persona_source = (self.mode or self.persona or "").strip().lower()
+        if persona_source:
+            self.persona = persona_source
+            self.mode = persona_source
+        else:
+            self.persona = None
+            self.mode = None
+        self.title = (self.title or "").strip() or None
+        return self
+
+
 class ChatbotMessagePayload(BaseModel):
     id: UUID
     session_id: UUID
@@ -68,6 +86,7 @@ class ChatbotSessionSummary(BaseModel):
 
 __all__ = [
     "ChatbotPromptRequest",
+    "ChatbotSessionCreateRequest",
     "ChatbotMessagePayload",
     "ChatbotSessionResponse",
     "ChatbotSessionSummary",

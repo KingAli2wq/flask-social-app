@@ -465,6 +465,42 @@ def list_chatbot_sessions(db: Session, *, user: User) -> list[ChatbotSessionSumm
     return summaries
 
 
+def create_chatbot_session(
+    db: Session,
+    *,
+    user: User,
+    persona: str | None,
+    title: str | None,
+) -> ChatbotTranscript:
+    session = _ensure_session(db, user=user, session_id=None, persona=persona, title=title)
+    timestamp = _now()
+    setattr(session, "last_message_at", timestamp)
+    setattr(session, "updated_at", timestamp)
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise ChatbotServiceError("Failed to create chatbot session") from exc
+    return ChatbotTranscript(session=session, messages=[])
+
+
+def delete_chatbot_session(
+    db: Session,
+    *,
+    user: User,
+    session_id: UUID,
+) -> None:
+    session = db.get(AiChatSession, session_id)
+    if session is None or cast(UUID, session.user_id) != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+    try:
+        db.delete(session)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise ChatbotServiceError("Failed to delete chatbot session") from exc
+
+
 __all__ = [
     "ChatbotServiceError",
     "ChatbotMessageDTO",
@@ -473,5 +509,7 @@ __all__ = [
     "send_chat_prompt",
     "list_chatbot_sessions",
     "get_chatbot_transcript",
+    "create_chatbot_session",
+    "delete_chatbot_session",
     "set_llm_client",
 ]

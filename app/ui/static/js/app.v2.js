@@ -273,14 +273,18 @@
       initialized: false,
       open: false,
       mode: 'default',
-      sessionByMode: {},
-      messagesByMode: {},
+      sessions: [],
+      sessionsLoaded: false,
+      activeSessionId: null,
+      messagesBySession: {},
       loading: false,
       sending: false,
+      creatingSession: false,
       typing: false,
       typingNode: null,
       error: null,
       documentHandlerBound: false,
+      persistSessions: true,
       elements: {
         root: null,
         panel: null,
@@ -294,6 +298,8 @@
         modeButton: null,
         modeMenu: null,
         modeMenuRoot: null,
+        sessionList: null,
+        newChat: null,
       },
     },
   };
@@ -679,6 +685,9 @@
   }
 
   function isSocialAiStreamingEnabled() {
+    if (state.socialAi?.persistSessions) {
+      return false;
+    }
     return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
   }
 
@@ -778,6 +787,301 @@
       .filter(Boolean);
   }
 
+  function sortSocialAiMessages(messages = []) {
+    if (!Array.isArray(messages)) return [];
+    return [...messages].sort((a, b) => {
+      const aTime = new Date(a.created_at || 0).getTime();
+      const bTime = new Date(b.created_at || 0).getTime();
+      if (aTime !== bTime) {
+        return aTime - bTime;
+      }
+      const aId = (a.id || '').toString();
+      const bId = (b.id || '').toString();
+      return aId.localeCompare(bId);
+    });
+  }
+
+  function formatSocialAiTimestamp(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const diffMs = Date.now() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  function renderSocialAiSessions() {
+    const controller = state.socialAi;
+    const list = controller.elements.sessionList;
+    if (!list) return;
+    list.innerHTML = '';
+    const sessions = controller.sessions || [];
+    if (!sessions.length) {
+      const placeholder = document.createElement('p');
+      placeholder.className = 'rounded-2xl border border-dashed border-slate-800/70 bg-slate-900/50 px-4 py-3 text-xs text-slate-400';
+      placeholder.textContent = 'No chats yet. Start a new conversation to see it here.';
+      list.appendChild(placeholder);
+      return;
+    }
+    sessions.forEach(session => {
+      const sessionId = session.session_id || session.id;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.socialAiSession = sessionId;
+      const isActive = controller.activeSessionId === sessionId;
+      button.className = `group relative w-full rounded-2xl border px-4 py-3 text-left transition ${
+        isActive
+          ? 'border-fuchsia-500/60 bg-slate-900/80 shadow-lg shadow-fuchsia-900/30'
+          : 'border-slate-800/70 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-900/60'
+      }`;
+      const title = document.createElement('p');
+      title.className = 'text-sm font-semibold text-white';
+      title.textContent = session.title || 'Untitled chat';
+      const preview = document.createElement('p');
+      preview.className = 'mt-1 line-clamp-2 text-xs text-slate-400';
+      preview.textContent = session.last_message_preview || 'No messages yet.';
+      const metaRow = document.createElement('div');
+      metaRow.className = 'mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide';
+      const personaLabel = document.createElement('span');
+      const personaKey = normalizeSocialAiMode(session.persona);
+      personaLabel.className = 'text-fuchsia-200';
+      personaLabel.textContent = (SOCIAL_AI_MODES[personaKey] || SOCIAL_AI_MODES.default).label;
+      const timestamp = document.createElement('span');
+      timestamp.className = 'text-slate-500';
+      timestamp.textContent = formatSocialAiTimestamp(session.updated_at);
+      metaRow.appendChild(personaLabel);
+      metaRow.appendChild(timestamp);
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.dataset.socialAiSessionDelete = sessionId;
+      deleteButton.className = 'absolute right-3 top-3 rounded-full border border-slate-800/70 p-1 text-[11px] text-slate-400 opacity-0 transition group-hover:opacity-100 hover:border-rose-500/60 hover:text-rose-200';
+      deleteButton.setAttribute('aria-label', 'Delete chat');
+      deleteButton.textContent = '✕';
+      button.appendChild(title);
+      button.appendChild(preview);
+      button.appendChild(metaRow);
+      button.appendChild(deleteButton);
+      list.appendChild(button);
+    });
+  }
+
+  function updateSocialAiSessionSummary(transcript) {
+    if (!transcript || !transcript.session_id) return;
+    const controller = state.socialAi;
+    const orderedMessages = sortSocialAiMessages(transcript.messages || []);
+    const lastMessage = orderedMessages.length ? orderedMessages[orderedMessages.length - 1] : null;
+    const previewMessage = lastMessage ? lastMessage.content || '' : null;
+    const summary = {
+      session_id: transcript.session_id,
+      title: transcript.title,
+      persona: transcript.persona,
+      updated_at: transcript.updated_at,
+      last_message_preview: previewMessage ? previewMessage.slice(0, 140) : null,
+    };
+    const existingIndex = controller.sessions.findIndex(item => item.session_id === summary.session_id);
+    if (existingIndex >= 0) {
+      controller.sessions[existingIndex] = { ...controller.sessions[existingIndex], ...summary };
+    } else {
+      controller.sessions.unshift(summary);
+    }
+    controller.sessions.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    renderSocialAiSessions();
+  }
+
+  async function refreshSocialAiSessions(options = {}) {
+    const controller = state.socialAi;
+    const force = Boolean(options.force);
+    if (controller.loading && !force) {
+      return;
+    }
+    setSocialAiTyping(false);
+    setSocialAiLoading(true);
+    showSocialAiError('');
+    try {
+      const sessions = await apiFetch('/chatbot/sessions');
+      controller.sessions = Array.isArray(sessions) ? sessions : [];
+      controller.sessions.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+      controller.sessionsLoaded = true;
+      if (!controller.activeSessionId && controller.sessions.length) {
+        controller.activeSessionId = controller.sessions[0].session_id;
+      }
+      renderSocialAiSessions();
+      if (controller.activeSessionId) {
+        await loadSocialAiTranscript(controller.activeSessionId, { force: true });
+      } else {
+        controller.messagesBySession = {};
+        renderSocialAiMessages();
+      }
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to load Social AI.');
+    } finally {
+      setSocialAiLoading(false);
+    }
+  }
+
+  async function loadSocialAiTranscript(sessionId, options = {}) {
+    const controller = state.socialAi;
+    if (!sessionId) {
+      renderSocialAiMessages();
+      return;
+    }
+    const force = Boolean(options.force);
+    if (!force && Array.isArray(controller.messagesBySession[sessionId])) {
+      if (controller.activeSessionId === sessionId) {
+        renderSocialAiMessages();
+      }
+      return;
+    }
+    setSocialAiTyping(false);
+    setSocialAiLoading(true);
+    showSocialAiError('');
+    try {
+      const transcript = await apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}`);
+      controller.messagesBySession[sessionId] = sortSocialAiMessages(transcript.messages || []);
+      if (controller.activeSessionId === sessionId) {
+        controller.mode = normalizeSocialAiMode(transcript.persona);
+        updateSocialAiModeLabel();
+        renderSocialAiMessages();
+      }
+      updateSocialAiSessionSummary(transcript);
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to load Social AI.');
+    } finally {
+      setSocialAiLoading(false);
+    }
+  }
+
+  async function ensureActiveSocialAiSession() {
+    const controller = state.socialAi;
+    if (controller.activeSessionId) {
+      return controller.activeSessionId;
+    }
+    const payload = {
+      persona: controller.mode,
+    };
+    controller.creatingSession = true;
+    setSocialAiLoading(true);
+    showSocialAiError('');
+    try {
+      const transcript = await apiFetch('/chatbot/sessions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      controller.activeSessionId = transcript.session_id;
+      controller.mode = normalizeSocialAiMode(transcript.persona);
+      controller.messagesBySession[transcript.session_id] = sortSocialAiMessages(transcript.messages || []);
+      controller.sessionsLoaded = true;
+      updateSocialAiSessionSummary(transcript);
+      renderSocialAiMessages();
+      return transcript.session_id;
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to start a new chat.');
+      throw error;
+    } finally {
+      controller.creatingSession = false;
+      setSocialAiLoading(false);
+    }
+  }
+
+  async function handleSocialAiNewChat(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    const controller = state.socialAi;
+    if (controller.creatingSession) {
+      return;
+    }
+    const button = controller.elements.newChat;
+    if (button) {
+      button.disabled = true;
+    }
+    controller.creatingSession = true;
+    showSocialAiError('');
+    setSocialAiLoading(true);
+    try {
+      const transcript = await apiFetch('/chatbot/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ persona: controller.mode }),
+      });
+      controller.activeSessionId = transcript.session_id;
+      controller.mode = normalizeSocialAiMode(transcript.persona || controller.mode);
+      controller.messagesBySession[transcript.session_id] = sortSocialAiMessages(transcript.messages || []);
+      controller.sessionsLoaded = true;
+      updateSocialAiSessionSummary(transcript);
+      updateSocialAiModeLabel();
+      renderSocialAiSessions();
+      renderSocialAiMessages();
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to start a new chat.');
+    } finally {
+      controller.creatingSession = false;
+      if (button) {
+        button.disabled = false;
+      }
+      setSocialAiLoading(false);
+    }
+  }
+
+  function handleSocialAiSessionListClick(event) {
+    const deleteButton = event.target.closest('[data-social-ai-session-delete]');
+    if (deleteButton) {
+      event.stopPropagation();
+      const targetId = deleteButton.dataset.socialAiSessionDelete;
+      if (targetId) {
+        handleSocialAiSessionDelete(targetId);
+      }
+      return;
+    }
+    const item = event.target.closest('[data-social-ai-session]');
+    if (item && item.dataset.socialAiSession) {
+      selectSocialAiSession(item.dataset.socialAiSession);
+    }
+  }
+
+  async function selectSocialAiSession(sessionId) {
+    const controller = state.socialAi;
+    if (!sessionId || controller.activeSessionId === sessionId) {
+      return;
+    }
+    controller.activeSessionId = sessionId;
+    setSocialAiTyping(false);
+    renderSocialAiSessions();
+    await loadSocialAiTranscript(sessionId, { force: false });
+  }
+
+  async function handleSocialAiSessionDelete(sessionId) {
+    if (!sessionId) return;
+    const controller = state.socialAi;
+    const confirmed = window.confirm('Delete this chat? Its transcript will be removed permanently.');
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+      });
+      delete controller.messagesBySession[sessionId];
+      controller.sessions = controller.sessions.filter(item => item.session_id !== sessionId);
+      if (controller.activeSessionId === sessionId) {
+        controller.activeSessionId = controller.sessions.length ? controller.sessions[0].session_id : null;
+        if (controller.activeSessionId) {
+          await loadSocialAiTranscript(controller.activeSessionId, { force: true });
+        } else {
+          renderSocialAiMessages();
+        }
+      }
+      renderSocialAiSessions();
+    } catch (error) {
+      showSocialAiError(error.message || 'Unable to delete this chat.');
+    }
+  }
+
   async function streamLocalAiReply({ message, mode, history = [], confirmedAdult = false, onChunk }) {
     const headers = new Headers({
       'Content-Type': 'application/json',
@@ -843,6 +1147,8 @@
     controller.elements.modeButton = document.getElementById('social-ai-mode-button');
     controller.elements.modeMenu = document.getElementById('social-ai-mode-menu');
     controller.elements.modeMenuRoot = controller.elements.root.querySelector('[data-social-ai-mode-menu-root]');
+    controller.elements.sessionList = document.getElementById('social-ai-session-list');
+    controller.elements.newChat = document.getElementById('social-ai-new-chat');
 
     if (!controller.initialized) {
       controller.initialized = true;
@@ -879,6 +1185,13 @@
           setSocialAiMode(mode);
         });
       });
+      if (controller.elements.newChat) {
+        controller.elements.newChat.addEventListener('click', handleSocialAiNewChat);
+      }
+      if (controller.elements.sessionList && controller.elements.sessionList.dataset.sessionBound !== 'true') {
+        controller.elements.sessionList.dataset.sessionBound = 'true';
+        controller.elements.sessionList.addEventListener('click', handleSocialAiSessionListClick);
+      }
     }
 
     if (!controller.documentHandlerBound) {
@@ -936,14 +1249,13 @@
       const value = controller.elements.input.value;
       controller.elements.input.setSelectionRange(value.length, value.length);
     }
-    const cache = controller.messagesByMode[controller.mode];
-    if (Array.isArray(cache) && cache.length) {
-      renderSocialAiMessages();
-    } else if (Array.isArray(cache) && cache.length === 0) {
-      renderSocialAiMessages();
+    if (!controller.sessionsLoaded) {
+      refreshSocialAiSessions();
+    } else if (controller.activeSessionId) {
+      loadSocialAiTranscript(controller.activeSessionId, { force: false });
     } else {
-      controller.messagesByMode[controller.mode] = [];
-      hydrateSocialAiHistory(controller.mode);
+      renderSocialAiSessions();
+      renderSocialAiMessages();
     }
   }
 
@@ -982,21 +1294,10 @@
   function setSocialAiMode(mode) {
     const controller = state.socialAi;
     const normalized = normalizeSocialAiMode(mode);
-    if (controller.mode === normalized) {
-      toggleSocialAiModeMenu(false);
-      return;
-    }
     controller.mode = normalized;
     controller.error = null;
     updateSocialAiModeLabel();
     toggleSocialAiModeMenu(false);
-    const cached = controller.messagesByMode[normalized];
-    if (Array.isArray(cached)) {
-      renderSocialAiMessages();
-    } else {
-      controller.messagesByMode[normalized] = [];
-      hydrateSocialAiHistory(normalized, { forceRefresh: true });
-    }
   }
 
   function setSocialAiLoading(isLoading) {
@@ -1056,47 +1357,16 @@
     }
   }
 
-  async function hydrateSocialAiHistory(mode, options = {}) {
-    const controller = state.socialAi;
-    if (!controller.elements.thread) return;
-    const normalized = normalizeSocialAiMode(mode);
-    const forceRefresh = Boolean(options.forceRefresh);
-    setSocialAiTyping(false);
-    setSocialAiLoading(true);
-    showSocialAiError('');
-    try {
-      let sessionId = controller.sessionByMode[normalized] || null;
-      if (!sessionId || forceRefresh) {
-        const sessions = await apiFetch('/chatbot/sessions');
-        if (Array.isArray(sessions)) {
-          const match = sessions.find(item => normalizeSocialAiMode(item.persona) === normalized);
-          sessionId = match ? match.session_id : null;
-          controller.sessionByMode[normalized] = sessionId || null;
-        }
-      }
-      if (sessionId) {
-        const transcript = await apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}`);
-        controller.sessionByMode[normalized] = transcript.session_id || sessionId;
-        controller.messagesByMode[normalized] = Array.isArray(transcript.messages) ? transcript.messages : [];
-      } else {
-        controller.messagesByMode[normalized] = [];
-      }
-      renderSocialAiMessages();
-    } catch (error) {
-      showSocialAiError(error.message || 'Unable to load Social AI.');
-    } finally {
-      setSocialAiLoading(false);
-    }
-  }
-
   function renderSocialAiMessages() {
     const controller = state.socialAi;
     const thread = controller.elements.thread;
     if (!thread) return;
-    const messages = controller.messagesByMode[controller.mode] || [];
+    const sessionId = controller.activeSessionId;
+    const messages = sessionId ? controller.messagesBySession[sessionId] || [] : [];
+    const orderedMessages = sortSocialAiMessages(messages);
     thread.innerHTML = '';
     const emptyState = controller.elements.empty;
-    const hasMessages = messages.length > 0;
+    const hasMessages = orderedMessages.length > 0;
     if (emptyState) {
       if (!hasMessages && !controller.typing) {
         emptyState.classList.remove('hidden');
@@ -1108,7 +1378,7 @@
       updateSocialAiTypingIndicator();
       return;
     }
-    messages.forEach(message => {
+    orderedMessages.forEach(message => {
       const node = createSocialAiMessageNode({ role: message.role, content: message.content });
       thread.appendChild(node.wrapper);
     });
@@ -1143,17 +1413,23 @@
     if (controller.elements.input) {
       controller.elements.input.value = '';
     }
-    if (!Array.isArray(controller.messagesByMode[meta.key])) {
-      controller.messagesByMode[meta.key] = [];
+    await ensureActiveSocialAiSession();
+    const sessionId = controller.activeSessionId;
+    if (!sessionId) {
+      controller.sending = false;
+      throw new Error('Unable to determine the current chat session.');
+    }
+    if (!Array.isArray(controller.messagesBySession[sessionId])) {
+      controller.messagesBySession[sessionId] = [];
     }
     const useStreaming = isSocialAiStreamingEnabled();
     if (!useStreaming) {
       setSocialAiTyping(true);
-    }
-    if (!useStreaming) {
       const userMessage = createLocalSocialAiMessage('user', text);
-      controller.messagesByMode[meta.key].push(userMessage);
+      controller.messagesBySession[sessionId].push(userMessage);
       appendSocialAiMessage(userMessage);
+    } else {
+      setSocialAiTyping(true);
     }
     try {
       if (useStreaming) {
@@ -1177,9 +1453,10 @@
 
   async function sendSocialAiPromptViaApi(text, meta) {
     const controller = state.socialAi;
+    const sessionId = controller.activeSessionId;
     const payload = {
       message: text,
-      session_id: controller.sessionByMode[meta.key] || null,
+      session_id: sessionId,
       persona: meta.key,
       include_public_context: meta.meta.includeContext !== false,
     };
@@ -1187,15 +1464,26 @@
       method: 'POST',
       body: JSON.stringify(payload),
     });
-    controller.sessionByMode[meta.key] = response.session_id || controller.sessionByMode[meta.key] || null;
-    controller.messagesByMode[meta.key] = Array.isArray(response.messages) ? response.messages : [];
+    controller.activeSessionId = response.session_id || sessionId;
+    controller.mode = normalizeSocialAiMode(response.persona || meta.key);
+    updateSocialAiModeLabel();
+    controller.messagesBySession[controller.activeSessionId] = sortSocialAiMessages(response.messages || []);
+    updateSocialAiSessionSummary(response);
+    renderSocialAiSessions();
     renderSocialAiMessages();
   }
 
   async function sendSocialAiPromptStreaming(text, meta) {
     const controller = state.socialAi;
-    if (!Array.isArray(controller.messagesByMode[meta.key])) {
-      controller.messagesByMode[meta.key] = [];
+    if (!controller.activeSessionId) {
+      await ensureActiveSocialAiSession();
+    }
+    const sessionId = controller.activeSessionId;
+    if (!sessionId) {
+      throw new Error('No active chat session available.');
+    }
+    if (!Array.isArray(controller.messagesBySession[sessionId])) {
+      controller.messagesBySession[sessionId] = [];
     }
     const thread = controller.elements.thread;
     if (!thread) {
@@ -1203,7 +1491,7 @@
       await sendSocialAiPromptViaApi(text, meta);
       return;
     }
-    const messages = controller.messagesByMode[meta.key];
+    const messages = controller.messagesBySession[sessionId];
     const historyPayload = buildSocialAiHistoryPayload(messages);
     const userMessage = createLocalSocialAiMessage('user', text);
     messages.push(userMessage);
@@ -1257,6 +1545,15 @@
         assistantNode.wrapper.classList.remove('chat-message--streaming');
       }
       scrollSocialAiThreadToBottom();
+      const orderedMessages = sortSocialAiMessages(controller.messagesBySession[sessionId]);
+      controller.messagesBySession[sessionId] = orderedMessages;
+      updateSocialAiSessionSummary({
+        session_id: sessionId,
+        persona: meta.key,
+        title: controller.sessions.find(item => item.session_id === sessionId)?.title,
+        updated_at: new Date().toISOString(),
+        messages: orderedMessages,
+      });
     }
   }
 

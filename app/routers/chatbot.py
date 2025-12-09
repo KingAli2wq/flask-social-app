@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from ..database import get_session
@@ -11,11 +11,14 @@ from ..models import User
 from ..schemas.chatbot import (
     ChatbotMessagePayload,
     ChatbotPromptRequest,
+    ChatbotSessionCreateRequest,
     ChatbotSessionResponse,
     ChatbotSessionSummary,
 )
 from ..services import (
     ChatbotTranscript,
+    create_chatbot_session,
+    delete_chatbot_session,
     get_chatbot_transcript,
     get_current_user,
     list_chatbot_sessions,
@@ -112,6 +115,25 @@ def get_session_detail(
 ) -> ChatbotSessionResponse:
     transcript = get_chatbot_transcript(db, user=current_user, session_id=session_id)
     return _to_session_response(transcript)
+
+
+@router.post("/sessions", response_model=ChatbotSessionResponse, status_code=status.HTTP_201_CREATED)
+def create_session(
+    payload: ChatbotSessionCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> ChatbotSessionResponse:
+    transcript = create_chatbot_session(db, user=current_user, persona=payload.persona, title=payload.title)
+    return _to_session_response(transcript)
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> None:
+    delete_chatbot_session(db, user=current_user, session_id=session_id)
 
 
 __all__ = ["router"]
