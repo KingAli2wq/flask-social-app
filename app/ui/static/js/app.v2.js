@@ -277,6 +277,8 @@
       messagesByMode: {},
       loading: false,
       sending: false,
+      typing: false,
+      typingNode: null,
       error: null,
       documentHandlerBound: false,
       elements: {
@@ -953,6 +955,7 @@
     toggleSocialAiModeMenu(false);
     root.classList.add('hidden');
     unlockBodyScroll();
+    setSocialAiTyping(false);
   }
 
   function toggleSocialAiModeMenu(force) {
@@ -1018,11 +1021,47 @@
     }
   }
 
+  function setSocialAiTyping(isTyping) {
+    const controller = state.socialAi;
+    controller.typing = Boolean(isTyping);
+    updateSocialAiTypingIndicator();
+  }
+
+  function updateSocialAiTypingIndicator() {
+    const controller = state.socialAi;
+    const thread = controller.elements.thread;
+    if (!thread) return;
+    let indicator = controller.typingNode;
+    if (controller.typing) {
+      if (!indicator) {
+        indicator = document.createElement('div');
+        indicator.dataset.socialAiTyping = 'true';
+        indicator.className = 'rounded-3xl border border-slate-800/60 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 opacity-90';
+        indicator.innerHTML = `
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Social AI</p>
+          <p class="mt-1 text-sm text-slate-300">Typing…</p>
+        `;
+        controller.typingNode = indicator;
+      }
+      if (!indicator.isConnected) {
+        thread.appendChild(indicator);
+      }
+      indicator.classList.remove('hidden');
+      if (controller.elements.empty) {
+        controller.elements.empty.classList.add('hidden');
+      }
+      thread.scrollTop = thread.scrollHeight;
+    } else if (indicator) {
+      indicator.remove();
+    }
+  }
+
   async function hydrateSocialAiHistory(mode, options = {}) {
     const controller = state.socialAi;
     if (!controller.elements.thread) return;
     const normalized = normalizeSocialAiMode(mode);
     const forceRefresh = Boolean(options.forceRefresh);
+    setSocialAiTyping(false);
     setSocialAiLoading(true);
     showSocialAiError('');
     try {
@@ -1057,16 +1096,24 @@
     const messages = controller.messagesByMode[controller.mode] || [];
     thread.innerHTML = '';
     const emptyState = controller.elements.empty;
-    if (!messages.length) {
-      if (emptyState) emptyState.classList.remove('hidden');
+    const hasMessages = messages.length > 0;
+    if (emptyState) {
+      if (!hasMessages && !controller.typing) {
+        emptyState.classList.remove('hidden');
+      } else {
+        emptyState.classList.add('hidden');
+      }
+    }
+    if (!hasMessages) {
+      updateSocialAiTypingIndicator();
       return;
     }
-    if (emptyState) emptyState.classList.add('hidden');
     messages.forEach(message => {
       const node = createSocialAiMessageNode({ role: message.role, content: message.content });
       thread.appendChild(node.wrapper);
     });
     scrollSocialAiThreadToBottom();
+    updateSocialAiTypingIndicator();
   }
 
   function handleSocialAiSubmit(event) {
@@ -1101,6 +1148,9 @@
     }
     const useStreaming = isSocialAiStreamingEnabled();
     if (!useStreaming) {
+      setSocialAiTyping(true);
+    }
+    if (!useStreaming) {
       const userMessage = createLocalSocialAiMessage('user', text);
       controller.messagesByMode[meta.key].push(userMessage);
       appendSocialAiMessage(userMessage);
@@ -1115,6 +1165,9 @@
       showSocialAiError(error.message || 'Social AI is unavailable right now.');
     } finally {
       controller.sending = false;
+      if (!useStreaming) {
+        setSocialAiTyping(false);
+      }
       if (sendButton) {
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
