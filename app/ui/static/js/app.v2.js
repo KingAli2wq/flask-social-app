@@ -789,16 +789,17 @@
 
   function sortSocialAiMessages(messages = []) {
     if (!Array.isArray(messages)) return [];
-    return [...messages].sort((a, b) => {
-      const aTime = new Date(a.created_at || 0).getTime();
-      const bTime = new Date(b.created_at || 0).getTime();
-      if (aTime !== bTime) {
-        return aTime - bTime;
-      }
-      const aId = (a.id || '').toString();
-      const bId = (b.id || '').toString();
-      return aId.localeCompare(bId);
-    });
+    return messages
+      .map((message, index) => ({ message, index }))
+      .sort((left, right) => {
+        const leftTime = new Date(left.message.created_at || 0).getTime();
+        const rightTime = new Date(right.message.created_at || 0).getTime();
+        if (leftTime !== rightTime) {
+          return leftTime - rightTime;
+        }
+        return left.index - right.index;
+      })
+      .map(entry => entry.message);
   }
 
   function formatSocialAiTimestamp(value) {
