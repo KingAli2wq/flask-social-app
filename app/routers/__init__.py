@@ -5,6 +5,7 @@ from .chatbot import router as chatbot_router
 from .friends import router as friends_router
 from .follows import router as follows_router
 from .media import router as media_router
+from .mailgun_webhooks import router as mailgun_webhooks_router
 from .messages import router as messages_router
 from .notifications import router as notifications_router
 from .moderation import router as moderation_router
@@ -23,6 +24,7 @@ __all__ = [
     "friends_router",
     "follows_router",
     "media_router",
+    "mailgun_webhooks_router",
     "messages_router",
     "notifications_router",
     "moderation_router",

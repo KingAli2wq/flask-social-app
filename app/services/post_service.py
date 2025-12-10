@@ -395,6 +395,18 @@ def _post_engagement_snapshot(db: Session, post_id: UUID, viewer_id: UUID | None
     }
 
 
+def get_post_engagement_snapshot(
+    db: Session,
+    *,
+    post_id: UUID,
+    viewer_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Return engagement totals plus viewer flags for a post."""
+
+    _get_post_or_404(db, post_id)
+    return _post_engagement_snapshot(db, post_id, viewer_id)
+
+
 def set_post_like_state(
     db: Session,
     *,
@@ -592,4 +604,5 @@ __all__ = [
     "delete_post_record",
     "delete_old_posts",
     "update_post_record",
+    "get_post_engagement_snapshot",
 ]

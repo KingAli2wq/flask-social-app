@@ -22,6 +22,7 @@ from .routers import (
     chatbot_router,
     friends_router,
     follows_router,
+    mailgun_webhooks_router,
     moderation_router,
     media_router,
     messages_router,
@@ -88,6 +89,7 @@ app.include_router(chatbot_router)
 app.include_router(friends_router)
 app.include_router(follows_router)
 app.include_router(media_router)
+app.include_router(mailgun_webhooks_router)
 app.include_router(moderation_router)
 app.include_router(posts_router)
 app.include_router(messages_router)

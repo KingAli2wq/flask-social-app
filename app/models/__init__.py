@@ -11,6 +11,7 @@ from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
 from .story import Story
 from .user import User
+from .support import SupportTicket
 
 __all__ = [
     "group_chat_members",
@@ -32,4 +33,5 @@ __all__ = [
     "User",
     "AiChatSession",
     "AiChatMessage",
+    "SupportTicket",
 ]

@@ -315,6 +315,7 @@
       error: null,
       documentHandlerBound: false,
       persistSessions: true,
+      lastWarmupAt: 0,
       elements: {
         root: null,
         panel: null,
@@ -1036,9 +1037,6 @@
   }
 
   function isSocialAiStreamingEnabled() {
-    if (state.socialAi?.persistSessions) {
-      return false;
-    }
     return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
   }
 
@@ -1544,6 +1542,21 @@
     return accumulated;
   }
 
+  async function warmupSocialAiModel(options = {}) {
+    const controller = state.socialAi;
+    const now = Date.now();
+    const cooldownMs = typeof options.cooldown === 'number' ? options.cooldown : 15000;
+    if (!options.force && controller.lastWarmupAt && now - controller.lastWarmupAt < cooldownMs) {
+      return;
+    }
+    controller.lastWarmupAt = now;
+    try {
+      await fetch('/ai/warmup', { method: 'POST', keepalive: true });
+    } catch (error) {
+      console.warn('[social-ai] warmup failed', error);
+    }
+  }
+
   function initSocialAi() {
     const controller = state.socialAi;
     controller.elements.root = document.getElementById('social-ai-overlay');
@@ -1655,6 +1668,9 @@
     controller.mode = normalizeSocialAiMode(preferredMode || controller.mode);
     updateSocialAiModeOptionsVisibility();
     controller.open = true;
+    warmupSocialAiModel({ force: true }).catch(() => {
+      /* noop */
+    });
     updateSocialAiModeLabel();
     root.classList.remove('hidden');
     lockBodyScroll();
@@ -1832,6 +1848,9 @@
   async function sendSocialAiPrompt(text) {
     const controller = state.socialAi;
     const meta = getSocialAiModeMeta(controller.mode);
+    warmupSocialAiModel().catch(() => {
+      /* background warmup best-effort */
+    });
     const sendButton = controller.elements.send;
     controller.sending = true;
     if (sendButton) {
@@ -3379,6 +3398,12 @@
       case 'post_created':
         requestRealtimeFeedRefresh();
         break;
+      case 'post_engagement_updated':
+        applyRealtimeEngagementUpdate(payload);
+        break;
+      case 'post_comment_created':
+        applyRealtimeCommentEvent(payload);
+        break;
       case 'ready':
         console.log('[realtime] server acknowledged subscription');
         break;
@@ -4079,6 +4104,11 @@
 
   function appendCommentRecord(postId, comment) {
     const store = getCommentStore(postId);
+    if (!comment || !comment.id) return;
+    const key = String(comment.id);
+    if (findCommentById(store.items, key)) {
+      return;
+    }
     if (!store.loaded) {
       store.items.push(comment);
       return;
@@ -4171,6 +4201,48 @@
     updateLikeButtonsForPost(key, viewer_has_liked, like_count);
     updateDislikeButtonsForPost(key, viewer_has_disliked, dislike_count);
     updateCommentCountDisplays(key, comment_count);
+  }
+
+  function applyRealtimeEngagementUpdate(payload) {
+    if (!payload || !payload.post_id) return;
+    const postId = String(payload.post_id);
+    const normalizeCount = value => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const source =
+      state.postRegistry[postId] || state.feedItems.find(item => String(item.id) === postId) || null;
+    setPostEngagementSnapshot({
+      post_id: postId,
+      like_count: normalizeCount(payload.like_count),
+      dislike_count: normalizeCount(payload.dislike_count),
+      comment_count: normalizeCount(payload.comment_count),
+      viewer_has_liked: source?.viewer_has_liked ?? false,
+      viewer_has_disliked: source?.viewer_has_disliked ?? false,
+    });
+  }
+
+  function applyRealtimeCommentEvent(payload) {
+    if (!payload) return;
+    const comment = payload.comment;
+    const rawPostId = payload.post_id || comment?.post_id;
+    if (!comment || !rawPostId) return;
+    const postId = String(rawPostId);
+    const store = getCommentStore(postId);
+    const wasLoaded = store.loaded;
+    appendCommentRecord(postId, comment);
+    if (wasLoaded) {
+      document.querySelectorAll(`[data-role="comment-panel"][data-post-id="${postId}"]`).forEach(panel => {
+        const list = panel.querySelector('[data-role="comment-list"]');
+        renderCommentList(postId, store.items, list);
+      });
+    }
+    if (payload.counts) {
+      applyRealtimeEngagementUpdate({ post_id: postId, ...payload.counts });
+    } else if (typeof payload.comment_count === 'number') {
+      updateCommentCountDisplays(postId, payload.comment_count);
+    }
   }
 
   async function togglePostLike(post, button) {

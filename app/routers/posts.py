@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -24,6 +24,7 @@ from ..services import (
     create_post_record,
     delete_post_record,
     get_current_user,
+    get_post_engagement_snapshot,
     get_optional_user,
     list_post_comments,
     list_feed_records,
@@ -44,6 +45,48 @@ def _serialize_post_model(post) -> PostResponse:
     response = PostResponse.model_validate(post)
     response.media_url = reveal_media_value(response.media_url)
     return response
+
+
+async def _safe_feed_broadcast(message: dict[str, Any]) -> None:
+    if not message:
+        return
+    try:
+        await feed_updates_manager.broadcast(message)
+    except Exception:  # pragma: no cover - best effort logging
+        logger.exception("Failed to broadcast feed update")
+
+
+async def _broadcast_engagement_snapshot(snapshot: dict[str, Any]) -> None:
+    post_id = snapshot.get("post_id")
+    if not post_id:
+        return
+    await _safe_feed_broadcast(
+        {
+            "type": "post_engagement_updated",
+            "post_id": str(post_id),
+            "like_count": int(snapshot.get("like_count") or 0),
+            "dislike_count": int(snapshot.get("dislike_count") or 0),
+            "comment_count": int(snapshot.get("comment_count") or 0),
+        }
+    )
+
+
+async def _broadcast_comment_created(comment: dict[str, Any], snapshot: dict[str, Any] | None = None) -> None:
+    post_id = comment.get("post_id")
+    if not post_id:
+        return
+    message: dict[str, Any] = {
+        "type": "post_comment_created",
+        "post_id": str(post_id),
+        "comment": comment,
+    }
+    if snapshot:
+        message["counts"] = {
+            "like_count": int(snapshot.get("like_count") or 0),
+            "dislike_count": int(snapshot.get("dislike_count") or 0),
+            "comment_count": int(snapshot.get("comment_count") or 0),
+        }
+    await _safe_feed_broadcast(message)
 
 
 @router.post("/", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
@@ -88,17 +131,14 @@ async def create_post_endpoint(
         file=file,
     )
 
-    try:
-        await feed_updates_manager.broadcast(
-            {
-                "type": "post_created",
-                "post_id": str(post.id),
-                "user_id": str(current_user.id),
-                "created_at": post.created_at.isoformat() if getattr(post, "created_at", None) else None,
-            }
-        )
-    except Exception:  # pragma: no cover - best effort logging
-        logger.exception("Failed to broadcast feed update")
+    await _safe_feed_broadcast(
+        {
+            "type": "post_created",
+            "post_id": str(post.id),
+            "user_id": str(current_user.id),
+            "created_at": post.created_at.isoformat() if getattr(post, "created_at", None) else None,
+        }
+    )
 
     return _serialize_post_model(post)
 
@@ -162,6 +202,7 @@ async def like_post_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> PostEngagementResponse:
     payload = set_post_like_state(db, post_id=post_id, user_id=current_user.id, should_like=True)
+    await _broadcast_engagement_snapshot(payload)
     return PostEngagementResponse(**payload)
 
 
@@ -172,6 +213,7 @@ async def unlike_post_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> PostEngagementResponse:
     payload = set_post_like_state(db, post_id=post_id, user_id=current_user.id, should_like=False)
+    await _broadcast_engagement_snapshot(payload)
     return PostEngagementResponse(**payload)
 
 
@@ -182,6 +224,7 @@ async def dislike_post_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> PostEngagementResponse:
     payload = set_post_dislike_state(db, post_id=post_id, user_id=current_user.id, should_dislike=True)
+    await _broadcast_engagement_snapshot(payload)
     return PostEngagementResponse(**payload)
 
 
@@ -192,6 +235,7 @@ async def remove_dislike_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> PostEngagementResponse:
     payload = set_post_dislike_state(db, post_id=post_id, user_id=current_user.id, should_dislike=False)
+    await _broadcast_engagement_snapshot(payload)
     return PostEngagementResponse(**payload)
 
 
@@ -218,6 +262,9 @@ async def create_post_comment_endpoint(
         content=payload.content,
         parent_id=payload.parent_id,
     )
+    snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
+    await _broadcast_comment_created(comment, snapshot)
+    await _broadcast_engagement_snapshot(snapshot)
     return PostCommentResponse(**comment)
 
 

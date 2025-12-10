@@ -1,12 +1,13 @@
 """Domain helpers for the AI chatbot experience."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Final, List, Protocol, Sequence, cast
+from typing import Any, AsyncIterator, Final, Iterator, List, Protocol, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -24,6 +25,8 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
 AI_CHAT_STREAM_URL = f"{BACKEND_BASE_URL}/ai/chat/stream"
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+SOCIAL_AI_KEEP_ALIVE_SECONDS = int(os.getenv("SOCIAL_AI_KEEP_ALIVE_SECONDS", "20"))
+_HTTPX_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=10)
 _INTERNAL_OVERRIDE_HEADER = "x-social-ai-internal"
 _INTERNAL_OVERRIDE_TOKEN = os.getenv("SOCIAL_AI_INTERNAL_TOKEN") or None
 
@@ -166,9 +169,10 @@ class StreamingLLMClient(Protocol):
 class SocialAIChatClient(LLMClient):
     """HTTP client that proxies chatbot requests through the internal /ai/chat endpoint."""
 
-    def __init__(self, *, endpoint: str | None = None) -> None:
+    def __init__(self, *, endpoint: str | None = None, stream_endpoint: str | None = None) -> None:
         self._endpoint = (endpoint or AI_CHAT_URL).rstrip("/")
-        self._client = httpx.Client(timeout=OLLAMA_TIMEOUT)
+        self._stream_endpoint = (stream_endpoint or AI_CHAT_STREAM_URL).rstrip("/")
+        self._client = httpx.Client(timeout=OLLAMA_TIMEOUT, limits=_HTTPX_LIMITS)
         self._internal_token = _INTERNAL_OVERRIDE_TOKEN
         self._warned_missing_token = False
 
@@ -243,24 +247,113 @@ class SocialAIChatClient(LLMClient):
 
         return ChatCompletionResult(content=reply, prompt_tokens=0, completion_tokens=0, model="social-ai-local")
 
+    def complete_stream(
+        self,
+        *,
+        messages: Sequence[dict[str, str]],
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> Iterator[str]:
+        """Yield incremental assistant text chunks from the streaming endpoint."""
+
+        payload = _build_ai_chat_payload(messages, policy_override=allow_policy_override)
+        headers = self._build_headers(allow_policy_override)
+
+        try:
+            stream_ctx = self._client.stream("POST", self._stream_endpoint, json=payload, headers=headers)
+            response = stream_ctx.__enter__()
+        except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatClient stream timeout | endpoint=%s timeout=%s error=%s",
+                self._stream_endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Local LLM stream timed out") from exc
+        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatClient stream timeout | endpoint=%s timeout=%s error=%s",
+                self._stream_endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Local LLM stream timed out") from exc
+        except httpx.HTTPError as exc:  # pragma: no cover - transport failure path
+            logger.error(
+                "SocialAIChatClient stream setup failed | endpoint=%s timeout=%s error=%s",
+                self._stream_endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Social AI streaming request failed") from exc
+
+        status_code = response.status_code
+        if status_code == status.HTTP_400_BAD_REQUEST:
+            detail = _policy_violation_detail(response)
+            stream_ctx.__exit__(None, None, None)
+            raise ChatbotPolicyError(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
+        if status_code >= 400:
+            body_preview = (response.text or "")[:200]
+            stream_ctx.__exit__(None, None, None)
+            logger.error(
+                "SocialAIChatClient stream received bad status | endpoint=%s status=%s body=%s",
+                self._stream_endpoint,
+                status_code,
+                body_preview,
+            )
+            raise ChatbotServiceError("Social AI streaming request failed")
+
+        def _iterator() -> Iterator[str]:
+            try:
+                for chunk in response.iter_text():
+                    if not chunk:
+                        continue
+                    yield chunk
+            except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
+                logger.error(
+                    "SocialAIChatClient stream timeout while iterating | endpoint=%s error=%s",
+                    self._stream_endpoint,
+                    type(exc).__name__,
+                )
+                raise ChatbotServiceError("Local LLM stream timed out") from exc
+            except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+                logger.error(
+                    "SocialAIChatClient stream timeout while iterating | endpoint=%s error=%s",
+                    self._stream_endpoint,
+                    type(exc).__name__,
+                )
+                raise ChatbotServiceError("Local LLM stream timed out") from exc
+            except httpx.HTTPError as exc:  # pragma: no cover - transport failure path
+                logger.error(
+                    "SocialAIChatClient transport error during stream | endpoint=%s error=%s",
+                    self._stream_endpoint,
+                    type(exc).__name__,
+                )
+                raise ChatbotServiceError("Social AI streaming request failed") from exc
+            finally:
+                stream_ctx.__exit__(None, None, None)
+
+        return _iterator()
+
+    def warmup(self) -> None:
+        """Send a minimal prompt to keep the Ollama model pre-loaded."""
+
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": "You are Social AI warmup helper."},
+            {"role": "user", "content": "Please say OK."},
+        ]
+        payload = _build_ai_chat_payload(messages, policy_override=False, keep_alive=SOCIAL_AI_KEEP_ALIVE_SECONDS, num_predict=1)
+        try:
+            self._client.post(self._endpoint, json=payload, headers=None)
+        except httpx.HTTPError as exc:  # pragma: no cover - best-effort warmup
+            logger.debug("SocialAI warmup skipped due to HTTP error: %s", exc)
+
 
 class SocialAIChatStreamingClient(StreamingLLMClient):
-    """Async HTTP client that streams chatbot responses via /ai/chat/stream."""
+    """Async adapter that streams via the shared SocialAIChatClient instance."""
 
-    def __init__(self, *, endpoint: str | None = None) -> None:
-        self._endpoint = (endpoint or AI_CHAT_STREAM_URL).rstrip("/")
-        self._internal_token = _INTERNAL_OVERRIDE_TOKEN
-        self._warned_missing_token = False
-
-    def _build_headers(self, allow_policy_override: bool) -> dict[str, str] | None:
-        if allow_policy_override and self._internal_token:
-            return {_INTERNAL_OVERRIDE_HEADER: self._internal_token}
-        if allow_policy_override and not self._internal_token and not self._warned_missing_token:
-            logger.warning(
-                "SOCIAL_AI_INTERNAL_TOKEN is not configured; privileged personas cannot bypass AI policy checks (stream)."
-            )
-            self._warned_missing_token = True
-        return None
+    def __init__(self, *, base_client: SocialAIChatClient | None = None, endpoint: str | None = None) -> None:
+        self._base_client = base_client or SocialAIChatClient(endpoint=endpoint)
 
     async def stream(
         self,
@@ -269,51 +362,26 @@ class SocialAIChatStreamingClient(StreamingLLMClient):
         temperature: float = 0.2,
         allow_policy_override: bool = False,
     ) -> AsyncIterator[str]:
-        payload = _build_ai_chat_payload(messages, policy_override=allow_policy_override)
-        headers = self._build_headers(allow_policy_override)
+        iterator = self._base_client.complete_stream(
+            messages=messages,
+            temperature=temperature,
+            allow_policy_override=allow_policy_override,
+        )
+        sentinel = object()
+
+        async def _next_chunk() -> str | object:
+            return await asyncio.to_thread(next, iterator, sentinel)
+
         try:
-            async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-                async with client.stream("POST", self._endpoint, json=payload, headers=headers) as response:
-                    response.raise_for_status()
-                    async for chunk in response.aiter_text():
-                        if chunk:
-                            yield chunk
-        except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
-            logger.error(
-                "SocialAIChatStreamingClient timeout | endpoint=%s timeout=%s error=%s",
-                self._endpoint,
-                OLLAMA_TIMEOUT,
-                type(exc).__name__,
-            )
-            raise ChatbotServiceError("Local LLM stream timed out") from exc
-        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
-            logger.error(
-                "SocialAIChatStreamingClient timeout | endpoint=%s timeout=%s error=%s",
-                self._endpoint,
-                OLLAMA_TIMEOUT,
-                type(exc).__name__,
-            )
-            raise ChatbotServiceError("Local LLM stream timed out") from exc
-        except httpx.HTTPStatusError as exc:  # pragma: no cover - status path
-            status_code = exc.response.status_code if exc.response is not None else None
-            if status_code == status.HTTP_400_BAD_REQUEST:
-                detail = _policy_violation_detail(exc.response)
-                raise ChatbotPolicyError(detail=detail) from exc
-            logger.error(
-                "SocialAIChatStreamingClient HTTP status error | endpoint=%s status=%s timeout=%s",
-                self._endpoint,
-                status_code or "unknown",
-                OLLAMA_TIMEOUT,
-            )
-            raise ChatbotServiceError("Social AI streaming request failed") from exc
-        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
-            logger.error(
-                "SocialAIChatStreamingClient transport error | endpoint=%s timeout=%s error=%s",
-                self._endpoint,
-                OLLAMA_TIMEOUT,
-                type(exc).__name__,
-            )
-            raise ChatbotServiceError("Social AI streaming request failed") from exc
+            while True:
+                chunk = await _next_chunk()
+                if chunk is sentinel:
+                    break
+                yield cast(str, chunk)
+        finally:
+            close = getattr(iterator, "close", None)
+            if close is not None:
+                await asyncio.to_thread(close)
 
 
 def _policy_violation_detail(response: httpx.Response | None) -> dict[str, Any]:
@@ -338,6 +406,8 @@ def _build_ai_chat_payload(
     messages: Sequence[dict[str, str]],
     *,
     policy_override: bool = False,
+    keep_alive: int | None = None,
+    num_predict: int | None = None,
 ) -> dict[str, Any]:
     if not messages:
         raise ChatbotServiceError("No messages provided")
@@ -359,13 +429,17 @@ def _build_ai_chat_payload(
         if role in {"user", "assistant"} and content:
             history.append({"role": cast(str, role), "content": content})
 
-    return {
+    payload: dict[str, Any] = {
         "message": user_message,
         "mode": "default",
         "history": history,
         "confirmed_adult": policy_override,
         "policy_override": policy_override,
+        "keep_alive": keep_alive if keep_alive is not None else SOCIAL_AI_KEEP_ALIVE_SECONDS,
     }
+    if num_predict is not None:
+        payload["num_predict"] = num_predict
+    return payload
 
 
 @dataclass(slots=True)
@@ -421,6 +495,9 @@ def set_llm_client(client: LLMClient | None) -> None:
 
     global _llm_client
     _llm_client = client
+    # Reset the streaming wrapper so it will reuse the updated base client.
+    global _streaming_llm_client
+    _streaming_llm_client = None
 
 
 def set_streaming_llm_client(client: StreamingLLMClient | None) -> None:
@@ -440,7 +517,9 @@ def _get_llm_client() -> LLMClient:
 def _get_streaming_llm_client() -> StreamingLLMClient:
     global _streaming_llm_client
     if _streaming_llm_client is None:
-        _streaming_llm_client = SocialAIChatStreamingClient()
+        base_client = _get_llm_client()
+        delegate = base_client if isinstance(base_client, SocialAIChatClient) else None
+        _streaming_llm_client = SocialAIChatStreamingClient(base_client=delegate)
     return _streaming_llm_client
 
 
@@ -885,6 +964,21 @@ def delete_chatbot_session(
         raise ChatbotServiceError("Failed to delete chatbot session") from exc
 
 
+def warmup_social_ai_model() -> None:
+    """Pre-load the Social AI model so the first response feels instant."""
+
+    base = _get_llm_client()
+    if not isinstance(base, SocialAIChatClient):
+        logger.debug("Skipping Social AI warmup because a custom LLM client is active")
+        return
+    try:
+        base.warmup()
+    except ChatbotServiceError:
+        logger.debug("Social AI warmup failed due to service error", exc_info=True)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("Unexpected Social AI warmup failure", exc_info=True)
+
+
 __all__ = [
     "ChatbotServiceError",
     "ChatbotPolicyError",
@@ -899,4 +993,5 @@ __all__ = [
     "delete_chatbot_session",
     "set_llm_client",
     "set_streaming_llm_client",
+    "warmup_social_ai_model",
 ]
