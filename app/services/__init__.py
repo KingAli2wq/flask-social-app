@@ -28,6 +28,8 @@ from .chatbot_service import (
     list_chatbot_sessions,
     send_chat_prompt,
     set_llm_client,
+    set_streaming_llm_client,
+    stream_chat_prompt,
 )
 from .emotion_service import (
     EmotionPrediction,
@@ -194,6 +196,8 @@ __all__ = [
     "ChatbotSessionSummaryDTO",
     "ChatbotServiceError",
     "set_llm_client",
+    "set_streaming_llm_client",
+    "stream_chat_prompt",
     "EmotionPrediction",
     "EmotionServiceError",
     "detect_emotions",
