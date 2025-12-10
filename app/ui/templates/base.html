@@ -113,6 +113,54 @@
         {% block content %}{% endblock %}
     </main>
     <div
+        id="terms-overlay"
+        class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur"
+        data-terms-overlay="true"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="terms-modal-title"
+    >
+        <div class="w-full max-w-3xl overflow-hidden rounded-[32px] border border-indigo-500/40 bg-slate-950/95 shadow-2xl shadow-indigo-900/40" data-terms-panel>
+            <div class="border-b border-white/5 bg-gradient-to-r from-indigo-500/10 via-fuchsia-500/5 to-transparent px-8 py-6">
+                <p class="text-[11px] uppercase tracking-[0.4em] text-indigo-200/80">Policy Update</p>
+                <div class="mt-2 space-y-2 text-slate-200">
+                    <h2 id="terms-modal-title" class="text-2xl font-semibold text-white">Updated Terms &amp; Conditions</h2>
+                    <p data-terms-message class="text-sm text-slate-300">{{ terms_block_message }}</p>
+                </div>
+                <div class="mt-4 flex flex-wrap items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-indigo-200/80">
+                    <span data-terms-version class="rounded-full border border-indigo-400/60 px-3 py-1 text-[11px] text-indigo-100">Version {{ terms_version }}</span>
+                    <span class="rounded-full border border-slate-700/70 px-3 py-1 text-[11px] text-slate-300">Saskatchewan compliant</span>
+                </div>
+            </div>
+            <div class="max-h-[55vh] overflow-y-auto px-8 py-6 text-left text-sm text-slate-100 whitespace-pre-wrap" data-terms-body>
+                Loading the latest contract…
+            </div>
+            <div class="space-y-4 border-t border-white/5 bg-slate-950/90 px-8 py-6">
+                <p class="hidden text-sm font-semibold text-slate-300" data-terms-status></p>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        data-terms-decline
+                        class="rounded-2xl border border-slate-700/70 px-5 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-800/80"
+                    >
+                        Decline &amp; sign out
+                    </button>
+                    <button
+                        type="button"
+                        data-terms-accept
+                        class="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:from-indigo-400 hover:to-violet-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400"
+                    >
+                        Accept &amp; continue
+                    </button>
+                </div>
+                <p class="text-xs text-slate-400">
+                    Need your own copy?
+                    <a href="/terms" target="_blank" rel="noopener" class="font-semibold text-indigo-300 hover:text-indigo-200">Download the full document</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+    <div
         id="social-ai-overlay"
         class="fixed inset-0 z-50 hidden flex items-start justify-center overflow-y-auto bg-slate-950/80 px-4 py-6 sm:items-center sm:py-10 backdrop-blur"
         data-social-ai-overlay="true"
@@ -243,6 +291,13 @@
             </section>
         </div>
     </div>
+    <script>
+        window.__SOCIAL_CONFIG__ = Object.assign({}, window.__SOCIAL_CONFIG__ || {}, {
+            termsVersion: {{ terms_version | tojson }},
+            termsMessage: {{ terms_block_message | tojson }},
+            termsDocumentUrl: "/terms"
+        });
+    </script>
     <script src="/assets/js/app.v2.js" defer></script>
     <script>
         (() => {

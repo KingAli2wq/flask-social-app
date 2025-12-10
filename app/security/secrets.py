@@ -34,4 +34,7 @@ def require_secret(name: str) -> str:
     value = os.getenv(name)
     if is_placeholder(value):
         raise MissingSecretError(f"Environment variable {name} is required and must not use placeholder defaults")
+    # At this point ``value`` is guaranteed to be a non-empty string, but make the
+    # type checker aware of that contract explicitly.
+    assert value is not None
     return value.strip()

@@ -32,3 +32,7 @@ class UserPublicProfile(BaseModel):
     bio: str | None = None
     location: str | None = None
     website: str | None = None
+
+
+class AcceptTermsRequest(BaseModel):
+    version: str = Field(..., min_length=1, max_length=32)

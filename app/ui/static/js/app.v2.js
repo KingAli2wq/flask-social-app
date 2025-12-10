@@ -4,6 +4,7 @@
   const USER_ID_KEY = 'socialsphere:user_id';
   const USER_ROLE_KEY = 'socialsphere:role';
   const THEME_KEY = 'socialsphere:theme';
+  const TERMS_ACCEPTANCE_KEY = 'socialsphere:terms-version';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const MEDIA_REEL_CACHE_KEY = 'socialsphere:media-reel-cache';
   const MEDIA_REEL_SCROLL_LOCK_MS = 320;
@@ -54,6 +55,10 @@
     },
   };
   const PRIVILEGED_SOCIAL_AI_ROLES = new Set(['owner', 'admin']);
+  const APP_CONFIG = window.__SOCIAL_CONFIG__ || {};
+  const TERMS_VERSION = APP_CONFIG.termsVersion || '1.0.0';
+  const TERMS_MESSAGE = APP_CONFIG.termsMessage || 'Please review the updated Terms and Conditions.';
+  const TERMS_DOCUMENT_URL = APP_CONFIG.termsDocumentUrl || '/terms';
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -172,6 +177,19 @@
       reconnectHandle: null,
       retryDelay: 1000,
       pingHandle: null,
+    },
+    terms: {
+      version: TERMS_VERSION,
+      overlay: null,
+      body: null,
+      messageNode: null,
+      status: null,
+      acceptButton: null,
+      declineButton: null,
+      versionLabel: null,
+      visible: false,
+      documentLoaded: false,
+      accepting: false,
     },
     publicProfile: null,
     publicProfileStats: null,
@@ -363,7 +381,10 @@
   }
 
   function setAuth({ token, username, userId, role }) {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.removeItem(TERMS_ACCEPTANCE_KEY);
+    }
     if (username) localStorage.setItem(USERNAME_KEY, username);
     if (userId) localStorage.setItem(USER_ID_KEY, userId);
     if (role !== undefined) {
@@ -380,6 +401,7 @@
     localStorage.removeItem(USERNAME_KEY);
     localStorage.removeItem(USER_ID_KEY);
     localStorage.removeItem(USER_ROLE_KEY);
+    localStorage.removeItem(TERMS_ACCEPTANCE_KEY);
   }
 
   async function apiFetch(path, options = {}) {
@@ -407,6 +429,9 @@
       if (payload && typeof payload === 'object') {
         detail = Object.prototype.hasOwnProperty.call(payload, 'detail') ? payload.detail : payload;
       }
+      if (response.status === 451) {
+        handleTermsEnforcement(detail, payload);
+      }
       const message = deriveApiErrorMessage(payload, detail, response.statusText || 'Request failed');
       const error = new Error(message);
       error.status = response.status;
@@ -414,6 +439,9 @@
         error.detail = detail;
       }
       error.payload = payload;
+      if (response.status === 451) {
+        error.isTermsBlock = true;
+      }
       throw error;
     }
     return payload;
@@ -495,9 +523,16 @@
       window.location.href = '/login';
       throw new Error('Authentication required');
     }
+    if (state.terms.visible) {
+      throw new Error('Terms acceptance required');
+    }
   }
 
   function showToast(message, type = 'info') {
+    if (!message) return;
+    if (state.terms?.visible && type === 'error') {
+      return;
+    }
     const root = document.getElementById('toast-root');
     if (!root) return;
     const tone = palette[type] || palette.info;
@@ -544,6 +579,206 @@
     if (!text) return '';
     const trimmed = String(text);
     return trimmed.length <= limit ? trimmed : `${trimmed.slice(0, limit - 1)}…`;
+  }
+
+  function persistAcceptedTerms(version) {
+    try {
+      if (!version) {
+        localStorage.removeItem(TERMS_ACCEPTANCE_KEY);
+        return;
+      }
+      localStorage.setItem(TERMS_ACCEPTANCE_KEY, version);
+    } catch (error) {
+      console.warn('[terms] failed to persist acceptance', error);
+    }
+  }
+
+  function hasLocalTermsAcceptance() {
+    try {
+      return localStorage.getItem(TERMS_ACCEPTANCE_KEY) === TERMS_VERSION;
+    } catch {
+      return false;
+    }
+  }
+
+  function recordTermsAcceptance(version) {
+    if (version && version === TERMS_VERSION) {
+      persistAcceptedTerms(version);
+      if (state.terms.visible) {
+        closeTermsOverlay();
+      }
+    } else {
+      persistAcceptedTerms(null);
+    }
+  }
+
+  function cacheTermsElements() {
+    if (state.terms.overlay) return;
+    const overlay = document.getElementById('terms-overlay');
+    if (!overlay) return;
+
+    state.terms.overlay = overlay;
+    state.terms.body = overlay.querySelector('[data-terms-body]');
+    state.terms.messageNode = overlay.querySelector('[data-terms-message]');
+    state.terms.status = overlay.querySelector('[data-terms-status]');
+    state.terms.acceptButton = overlay.querySelector('[data-terms-accept]');
+    state.terms.declineButton = overlay.querySelector('[data-terms-decline]');
+    state.terms.versionLabel = overlay.querySelector('[data-terms-version]');
+
+    if (state.terms.messageNode) {
+      state.terms.messageNode.textContent = TERMS_MESSAGE;
+    }
+    if (state.terms.versionLabel) {
+      state.terms.versionLabel.textContent = `Version ${TERMS_VERSION}`;
+    }
+
+    bindTermsEvents();
+  }
+
+  function bindTermsEvents() {
+    const { acceptButton, declineButton } = state.terms;
+    if (acceptButton && acceptButton.dataset.bound !== 'true') {
+      acceptButton.dataset.bound = 'true';
+      acceptButton.addEventListener('click', handleTermsAccept);
+    }
+    if (declineButton && declineButton.dataset.bound !== 'true') {
+      declineButton.dataset.bound = 'true';
+      declineButton.addEventListener('click', handleTermsDecline);
+    }
+  }
+
+  async function loadTermsDocument() {
+    if (state.terms.documentLoaded) return;
+    const body = state.terms.body;
+    if (!body) return;
+    try {
+      body.textContent = 'Loading…';
+      const response = await fetch(TERMS_DOCUMENT_URL, { cache: 'no-cache' });
+      if (!response.ok) {
+        throw new Error('Unable to load document');
+      }
+      const text = await response.text();
+      body.textContent = text || 'Terms document is temporarily unavailable. Use the download link below.';
+      state.terms.documentLoaded = true;
+    } catch (error) {
+      console.warn('[terms] failed to load document', error);
+      body.textContent = 'Unable to load the Terms document. Please download it using the link below or try again later.';
+    }
+  }
+
+  function openTermsOverlay(detailMessage, versionHint) {
+    cacheTermsElements();
+    const overlay = state.terms.overlay;
+    if (!overlay) return;
+    state.terms.visible = true;
+    persistAcceptedTerms(null);
+    overlay.classList.remove('hidden');
+    overlay.classList.add('flex');
+    lockBodyScroll();
+
+    if (state.terms.messageNode) {
+      state.terms.messageNode.textContent = detailMessage || TERMS_MESSAGE;
+    }
+    if (state.terms.versionLabel) {
+      state.terms.versionLabel.textContent = `Version ${versionHint || TERMS_VERSION}`;
+    }
+    setTermsStatus('');
+    loadTermsDocument();
+  }
+
+  function closeTermsOverlay() {
+    const overlay = state.terms.overlay;
+    if (!overlay || !state.terms.visible) return;
+    overlay.classList.add('hidden');
+    overlay.classList.remove('flex');
+    state.terms.visible = false;
+    unlockBodyScroll();
+    setTermsStatus('');
+  }
+
+  function setTermsStatus(message, tone = 'info') {
+    const statusNode = state.terms.status;
+    if (!statusNode) return;
+    if (!message) {
+      statusNode.classList.add('hidden');
+      statusNode.textContent = '';
+      statusNode.classList.remove('text-rose-300', 'text-emerald-300', 'text-slate-300');
+      return;
+    }
+    statusNode.textContent = message;
+    statusNode.classList.remove('hidden', 'text-rose-300', 'text-emerald-300', 'text-slate-300');
+    if (tone === 'error') {
+      statusNode.classList.add('text-rose-300');
+    } else if (tone === 'success') {
+      statusNode.classList.add('text-emerald-300');
+    } else {
+      statusNode.classList.add('text-slate-300');
+    }
+  }
+
+  function setTermsButtonState(disabled) {
+    const button = state.terms.acceptButton;
+    if (!button) return;
+    button.disabled = disabled;
+    button.classList.toggle('opacity-60', disabled);
+    button.classList.toggle('pointer-events-none', disabled);
+  }
+
+  async function handleTermsAccept() {
+    if (state.terms.accepting) return;
+    state.terms.accepting = true;
+    setTermsButtonState(true);
+    setTermsStatus('Saving your acceptance…', 'info');
+    try {
+      await apiFetch('/auth/accept-terms', {
+        method: 'POST',
+        body: JSON.stringify({ version: TERMS_VERSION })
+      });
+      recordTermsAcceptance(TERMS_VERSION);
+      setTermsStatus('Thanks! You can continue using SocialSphere.', 'success');
+      setTimeout(() => {
+        closeTermsOverlay();
+        window.location.reload();
+      }, 800);
+    } catch (error) {
+      setTermsStatus(error?.message || 'Unable to save acceptance. Please try again.', 'error');
+    } finally {
+      state.terms.accepting = false;
+      setTermsButtonState(false);
+    }
+  }
+
+  function handleTermsDecline() {
+    showToast('You need to accept the updated Terms to keep using SocialSphere.', 'warning');
+    clearAuth();
+    persistAcceptedTerms(null);
+    window.location.href = '/login';
+  }
+
+  async function bootstrapTermsAcceptance() {
+    const { token } = getAuth();
+    if (!token) return;
+    if (hasLocalTermsAcceptance()) return;
+    try {
+      const profile = await apiFetch('/auth/me');
+      if (!profile) return;
+      recordTermsAcceptance(profile.accepted_terms_version || null);
+      if (profile.accepted_terms_version !== TERMS_VERSION) {
+        openTermsOverlay(TERMS_MESSAGE, profile.accepted_terms_version);
+      }
+    } catch (error) {
+      console.warn('[terms] bootstrap check failed', error);
+    }
+  }
+
+  function handleTermsEnforcement(detail, payload) {
+    const versionHint = payload?.current_terms_version || null;
+    const message = extractDetailMessage(detail) || TERMS_MESSAGE;
+    openTermsOverlay(message, versionHint);
+  }
+
+  function initTermsOverlay() {
+    cacheTermsElements();
   }
 
   function normalizeRole(role) {
@@ -2091,6 +2326,7 @@
       state.currentProfileAvatar = me.avatar_url || null;
       updateCurrentUserAvatarImages(me.avatar_url);
       setAuth({ username: me.username, userId: me.id, role: me.role || null });
+      recordTermsAcceptance(me.accepted_terms_version || null);
       return me;
     }
 
@@ -2100,6 +2336,7 @@
     state.currentProfileAvatar = profile.avatar_url || null;
     updateCurrentUserAvatarImages(profile.avatar_url);
     setAuth({ role: profile.role || null });
+    recordTermsAcceptance(profile.accepted_terms_version || null);
     return profile;
   }
 
@@ -3261,6 +3498,7 @@
         }
         const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
         cacheProfile(profile);
+        recordTermsAcceptance(profile.accepted_terms_version || null);
       } catch (error) {
         console.warn('[avatar-cache] Failed to load profile for:', userId, error);
       }
@@ -9630,7 +9868,9 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initTermsOverlay();
     initSocialAi();
     initInlineAiChat();
+    bootstrapTermsAcceptance();
   });
 })();

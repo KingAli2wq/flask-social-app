@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Optional, Tuple, cast
 from uuid import UUID
 
 from functools import lru_cache
@@ -114,7 +114,7 @@ def register_user(db: Session, payload: RegisterRequest) -> Tuple[User, str]:
         logger.exception("Failed to register user")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to register user") from exc
 
-    token = create_access_token(user.id)
+    token = create_access_token(cast(UUID, user.id))
     return user, token
 
 
@@ -124,7 +124,7 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
     user = db.scalar(select(User).where(User.username == username))
     if not user:
         return None
-    if not verify_password(password, user.hashed_password):
+    if not verify_password(password, cast(str, user.hashed_password)):
         return None
     return user
 
@@ -145,7 +145,7 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     try:
-        user.last_active_at = datetime.now(timezone.utc)
+        setattr(user, "last_active_at", datetime.now(timezone.utc))
         db.commit()
     except SQLAlchemyError:  # pragma: no cover - defensive logging
         db.rollback()

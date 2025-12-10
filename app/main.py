@@ -8,12 +8,14 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Iterable
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .database import create_session, init_db
+from .middleware import TermsAcceptanceMiddleware
 from .routers import (
     ai_router,
     auth_router,
@@ -43,6 +45,7 @@ APP_NAME = settings.app_name
 API_VERSION = settings.api_version
 DROPLET_HOST = settings.droplet_host
 DISABLE_CLEANUP = os.getenv("DISABLE_CLEANUP", "").lower() == "true" or os.getenv("PYTEST_CURRENT_TEST") is not None
+TERMS_FILE = Path(__file__).resolve().parents[1] / "TERMS_AND_CONDITIONS.md"
 
 app = FastAPI(title=APP_NAME, version=API_VERSION)
 
@@ -58,6 +61,24 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    TermsAcceptanceMiddleware,
+    exempt_paths=(
+        "/auth/login",
+        "/auth/register",
+        "/auth/accept-terms",
+        "/auth/me",
+        "/health",
+        "/api",
+        "/docs",
+        "/redoc",
+        "/openapi",
+        "/assets",
+        "/media",
+        "/videos",
+    ),
 )
 
 app.include_router(ui_router)
@@ -173,6 +194,15 @@ async def healthcheck() -> dict[str, str]:
     """Report the IPv4 address the backend is configured to use."""
 
     return {"droplet_ipv4": DROPLET_HOST}
+
+
+@app.get("/terms", tags=["system"])
+async def download_terms() -> FileResponse:
+    """Serve the canonical Terms and Conditions document."""
+
+    if not TERMS_FILE.exists():
+        raise HTTPException(status_code=404, detail="Terms document unavailable")
+    return FileResponse(str(TERMS_FILE), media_type="text/markdown")
 
 
 

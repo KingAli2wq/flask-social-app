@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
+from app.constants import CURRENT_TERMS_VERSION, TERMS_BLOCK_DETAIL
 from . import components
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -31,6 +32,8 @@ def render_template(request: Request, template_name: str, context: dict[str, Any
         "components": _BASE_COMPONENTS,
         "active_nav": None,
         "page_title": "",
+        "terms_version": CURRENT_TERMS_VERSION,
+        "terms_block_message": TERMS_BLOCK_DETAIL,
     }
     if context:
         base_context.update(context)

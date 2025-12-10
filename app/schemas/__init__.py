@@ -1,5 +1,5 @@
 """Convenience exports for schema layer."""
-from .auth import AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
+from .auth import AcceptTermsRequest, AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
 from .chatbot import (
     ChatbotMessagePayload,
     ChatbotPromptRequest,
@@ -69,6 +69,7 @@ from .moderation import (
 )
 
 __all__ = [
+    "AcceptTermsRequest",
     "AuthResponse",
     "LoginRequest",
     "RegisterRequest",

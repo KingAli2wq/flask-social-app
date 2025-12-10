@@ -34,6 +34,8 @@ class User(Base):
     email_dm_notifications = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
     allow_friend_requests = Column(Boolean, nullable=False, server_default=expression.true(), default=True)
     dm_followers_only = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
+    accepted_terms_version = Column(String(32), nullable=True)
+    terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     last_active_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
