@@ -29,6 +29,13 @@ from .chatbot_service import (
     send_chat_prompt,
     set_llm_client,
 )
+from .emotion_service import (
+    EmotionPrediction,
+    EmotionServiceError,
+    build_emotion_directive,
+    detect_emotions,
+    emotions_to_dict,
+)
 from .media_service import (
     create_media_comment,
     delete_media_asset,
@@ -187,4 +194,9 @@ __all__ = [
     "ChatbotSessionSummaryDTO",
     "ChatbotServiceError",
     "set_llm_client",
+    "EmotionPrediction",
+    "EmotionServiceError",
+    "detect_emotions",
+    "build_emotion_directive",
+    "emotions_to_dict",
 ]

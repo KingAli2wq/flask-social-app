@@ -41,7 +41,19 @@
       description: 'Structured analysis',
       includeContext: true,
     },
+    roleplay: {
+      label: 'Roleplay',
+      description: 'In-character scenes',
+      includeContext: false,
+    },
+    'admin-ops': {
+      label: 'Admin / Owner',
+      description: 'High-trust directive',
+      includeContext: true,
+      restricted: true,
+    },
   };
+  const PRIVILEGED_SOCIAL_AI_ROLES = new Set(['owner', 'admin']);
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -749,18 +761,43 @@
   // Social AI Companion
   // -----------------------------------------------------------------------
 
+  function hasAdminPromptAccess() {
+    const role = (getAuth().role || '').toLowerCase();
+    return PRIVILEGED_SOCIAL_AI_ROLES.has(role);
+  }
+
   function normalizeSocialAiMode(mode) {
     const raw = (mode || '').toString().toLowerCase().trim();
     if (!raw) return 'default';
     const slug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     if (!slug) return 'default';
-    if (slug === 'deep-understanding') return 'deep';
-    return SOCIAL_AI_MODES[slug] ? slug : 'default';
+    const aliasMap = {
+      'deep-understanding': 'deep',
+      'role-play': 'roleplay',
+    };
+    const resolved = aliasMap[slug] || slug;
+    const meta = SOCIAL_AI_MODES[resolved];
+    if (!meta) return 'default';
+    if (meta.restricted && !hasAdminPromptAccess()) {
+      return 'default';
+    }
+    return resolved;
   }
 
   function getSocialAiModeMeta(mode) {
     const key = normalizeSocialAiMode(mode);
     return { key, meta: SOCIAL_AI_MODES[key] || SOCIAL_AI_MODES.default };
+  }
+
+  function updateSocialAiModeOptionsVisibility() {
+    const privileged = hasAdminPromptAccess();
+    document.querySelectorAll('[data-role-required="admin"]').forEach(option => {
+      option.classList.toggle('hidden', !privileged);
+      option.setAttribute('aria-hidden', (!privileged).toString());
+      if (typeof option.disabled === 'boolean') {
+        option.disabled = !privileged;
+      }
+    });
   }
 
   function isSocialAiStreamingEnabled() {
@@ -1296,6 +1333,7 @@
       controller.documentHandlerBound = true;
     }
 
+    updateSocialAiModeOptionsVisibility();
     bindSocialAiTriggers();
   }
 
@@ -1335,6 +1373,7 @@
     const root = controller.elements.root;
     if (!root) return;
     controller.mode = normalizeSocialAiMode(preferredMode || controller.mode);
+    updateSocialAiModeOptionsVisibility();
     controller.open = true;
     updateSocialAiModeLabel();
     root.classList.remove('hidden');
@@ -1390,7 +1429,20 @@
 
   function setSocialAiMode(mode) {
     const controller = state.socialAi;
+    const requestedKey = (mode || '').toString().toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'default';
+    if (requestedKey === 'admin-ops' && controller.mode === 'admin-ops') {
+      controller.mode = 'default';
+      controller.error = null;
+      updateSocialAiModeLabel();
+      toggleSocialAiModeMenu(false);
+      return;
+    }
     const normalized = normalizeSocialAiMode(mode);
+    if (SOCIAL_AI_MODES[requestedKey]?.restricted && normalized !== requestedKey) {
+      showToast('Only owners or admins can enable the admin prompt.', 'warning');
+      toggleSocialAiModeMenu(false);
+      return;
+    }
     controller.mode = normalized;
     controller.error = null;
     updateSocialAiModeLabel();

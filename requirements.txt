@@ -37,6 +37,11 @@ cryptography>=42.0
 # AWS / Cloud
 boto3>=1.28
 
+# AI & NLP
+transformers>=4.36
+torch>=2.1
+accelerate>=0.24
+
 # Development & Testing
 pytest>=7.0
 pytest-asyncio>=0.21
