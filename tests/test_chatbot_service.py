@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 os.environ.setdefault("DISABLE_CLEANUP", "true")
 os.environ.setdefault("DATA_VAULT_MASTER_KEY", os.environ.get("DATA_VAULT_MASTER_KEY", "ZG9udC1zaGlwLXJhaWwtc2VjcmV0LWFpLWtleQ=="))
-from typing import Callable, Iterator, cast
+from typing import AsyncIterator, Callable, Iterator, cast
 from uuid import UUID
 
 import pytest
@@ -22,8 +22,13 @@ from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import AiChatMessage, AiChatSession, User  # noqa: E402
 from app.security.data_vault import decrypt_text  # noqa: E402
-from app.services import get_current_user, set_llm_client  # noqa: E402
-from app.services.chatbot_service import ChatCompletionResult, LLMClient  # noqa: E402
+from app.services import get_current_user, set_llm_client, set_streaming_llm_client  # noqa: E402
+from app.services.chatbot_service import (  # noqa: E402
+    ChatCompletionResult,
+    ChatbotPolicyError,
+    LLMClient,
+    StreamingLLMClient,
+)
 
 
 class StubLLM(LLMClient):
@@ -38,6 +43,18 @@ class StubLLM(LLMClient):
             completion_tokens=21,
             model="stub-model",
         )
+
+
+class RejectingLLM(LLMClient):
+    def complete(self, *, messages, temperature: float = 0.2) -> ChatCompletionResult:  # type: ignore[override]
+        raise ChatbotPolicyError(detail={"message": "Your request violates our content policy.", "violations": ["profanity"]})
+
+
+class RejectingStreamLLM(StreamingLLMClient):
+    async def stream(self, *, messages, temperature: float = 0.2) -> AsyncIterator[str]:  # type: ignore[override]
+        raise ChatbotPolicyError(detail={"message": "Your request violates our content policy.", "violations": ["toxicity"]})
+        if False:  # pragma: no cover - generator stub
+            yield ""
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -132,3 +149,40 @@ def test_chatbot_session_listing(authed_client, user_factory):
     assert len(payload) == 1
     assert payload[0]["persona"] == "companion"
     assert payload[0]["last_message_preview"].startswith("stub-response")
+
+
+def test_chatbot_policy_violation_is_returned_to_client(authed_client, user_factory, stub_llm):
+    user = user_factory("policy-block")
+    client = authed_client(user)
+
+    rejecting_client = RejectingLLM()
+    set_llm_client(rejecting_client)
+
+    response = client.post("/chatbot/test", json={"message": "Say hi"})
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["violations"] == ["profanity"]
+    assert "violates" in detail["message"].lower()
+
+    set_llm_client(stub_llm)
+
+
+def test_streaming_policy_violation_returns_detail(authed_client, user_factory):
+    user = user_factory("policy-stream")
+    client = authed_client(user)
+    rejecting_stream = RejectingStreamLLM()
+    set_streaming_llm_client(rejecting_stream)
+    try:
+        response = client.post(
+            "/chatbot/messages/stream",
+            json={
+                "message": "Tell me a joke",
+                "persona": "default",
+                "include_public_context": False,
+            },
+        )
+    finally:
+        set_streaming_llm_client(None)
+    assert response.status_code == 422
+    body = response.json()
+    assert body["detail"]["violations"] == ["toxicity"]

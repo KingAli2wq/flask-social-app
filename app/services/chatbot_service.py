@@ -184,11 +184,14 @@ class SocialAIChatClient(LLMClient):
             )
             raise ChatbotServiceError("Local LLM request timed out") from exc
         except httpx.HTTPStatusError as exc:  # pragma: no cover - status path
-            status = exc.response.status_code if exc.response is not None else "unknown"
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == status.HTTP_400_BAD_REQUEST:
+                detail = _policy_violation_detail(exc.response)
+                raise ChatbotPolicyError(detail=detail) from exc
             logger.error(
                 "SocialAIChatClient HTTP status error | endpoint=%s status=%s timeout=%s",
                 self._endpoint,
-                status,
+                status_code or "unknown",
                 OLLAMA_TIMEOUT,
             )
             raise ChatbotServiceError("Social AI request failed") from exc
@@ -250,11 +253,14 @@ class SocialAIChatStreamingClient(StreamingLLMClient):
             )
             raise ChatbotServiceError("Local LLM stream timed out") from exc
         except httpx.HTTPStatusError as exc:  # pragma: no cover - status path
-            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == status.HTTP_400_BAD_REQUEST:
+                detail = _policy_violation_detail(exc.response)
+                raise ChatbotPolicyError(detail=detail) from exc
             logger.error(
                 "SocialAIChatStreamingClient HTTP status error | endpoint=%s status=%s timeout=%s",
                 self._endpoint,
-                status_code,
+                status_code or "unknown",
                 OLLAMA_TIMEOUT,
             )
             raise ChatbotServiceError("Social AI streaming request failed") from exc
@@ -266,6 +272,24 @@ class SocialAIChatStreamingClient(StreamingLLMClient):
                 type(exc).__name__,
             )
             raise ChatbotServiceError("Social AI streaming request failed") from exc
+
+
+def _policy_violation_detail(response: httpx.Response | None) -> dict[str, Any]:
+    fallback = {"message": "Your request violates our content policy."}
+    if response is None:
+        return fallback
+    try:
+        payload = response.json()
+    except ValueError:
+        text = (response.text or "").strip()
+        return {"message": text or fallback["message"]}
+    if isinstance(payload, dict):
+        detail: dict[str, Any] = {k: v for k, v in payload.items() if isinstance(k, str)}
+        message = detail.get("message")
+        if not isinstance(message, str) or not message.strip():
+            detail["message"] = fallback["message"]
+        return detail
+    return fallback
 
 
 def _build_ai_chat_payload(messages: Sequence[dict[str, str]]) -> dict[str, Any]:
@@ -324,6 +348,21 @@ class ChatbotSessionSummaryDTO:
 
 class ChatbotServiceError(RuntimeError):
     """Raised when chatbot generation fails."""
+
+
+class ChatbotPolicyError(ChatbotServiceError):
+    """Raised when the upstream AI gateway rejects unsafe content."""
+
+    def __init__(
+        self,
+        *,
+        detail: dict[str, Any] | None = None,
+        status_code: int = status.HTTP_422_UNPROCESSABLE_ENTITY,
+    ) -> None:
+        payload = detail or {"message": "Your request violates our content policy."}
+        super().__init__(payload.get("message", "Chat prompt violated policy"))
+        self.detail = payload
+        self.status_code = status_code
 
 
 _llm_client: LLMClient | None = None
@@ -571,7 +610,14 @@ def send_chat_prompt(
         context_blob=context_blob,
         emotion_directive=emotion_directive,
     )
-    result = _get_llm_client().complete(messages=llm_messages)
+
+    try:
+        result = _get_llm_client().complete(messages=llm_messages)
+    except ChatbotPolicyError as exc:
+        db.rollback()
+        detail = exc.detail or {"message": "Your request violates our content policy."}
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+
     _persist_message(
         db,
         session_id=session_identifier,
@@ -656,6 +702,9 @@ async def stream_chat_prompt(
                     continue
                 assistant_chunks.append(chunk)
                 yield chunk
+        except ChatbotPolicyError as exc:
+            db.rollback()
+            raise
         except ChatbotServiceError as exc:
             stream_error = str(exc) or "Social AI streaming failed"
             logger.error("Streaming Social AI failed | session=%s error=%s", session_identifier, stream_error)
@@ -688,7 +737,27 @@ async def stream_chat_prompt(
             logger.exception("Failed to save streamed chatbot exchange")
             raise ChatbotServiceError("Failed to save streamed chatbot exchange") from exc
 
-    return cast(AsyncIterator[str], _stream())
+    stream_gen = _stream()
+
+    async def _empty_stream() -> AsyncIterator[str]:
+        if False:  # pragma: no cover - generator stub
+            yield ""
+        return
+
+    try:
+        first_chunk = await anext(stream_gen)
+    except StopAsyncIteration:
+        return cast(AsyncIterator[str], _empty_stream())
+    except ChatbotPolicyError as exc:
+        detail = exc.detail or {"message": "Your request violates our content policy."}
+        raise HTTPException(status_code=exc.status_code, detail=detail) from exc
+
+    async def _prefetched_stream() -> AsyncIterator[str]:
+        yield first_chunk
+        async for chunk in stream_gen:
+            yield chunk
+
+    return cast(AsyncIterator[str], _prefetched_stream())
 
 
 def get_chatbot_transcript(
@@ -771,6 +840,7 @@ def delete_chatbot_session(
 
 __all__ = [
     "ChatbotServiceError",
+    "ChatbotPolicyError",
     "ChatbotMessageDTO",
     "ChatbotTranscript",
     "ChatbotSessionSummaryDTO",

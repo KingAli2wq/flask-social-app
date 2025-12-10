@@ -807,6 +807,66 @@
     return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
   }
 
+  const TYPEWRITER_MIN_DELAY_MS = 14;
+  const TYPEWRITER_MAX_DELAY_MS = 32;
+  const TYPEWRITER_BATCH_SIZE = 3;
+
+  function createTypewriterEffect(target) {
+    if (!target || typeof window === 'undefined') return null;
+    const state = {
+      queue: [],
+      timer: null,
+      running: false,
+    };
+    const nextDelay = () =>
+      Math.floor(
+        TYPEWRITER_MIN_DELAY_MS + Math.random() * (TYPEWRITER_MAX_DELAY_MS - TYPEWRITER_MIN_DELAY_MS)
+      );
+    const pump = () => {
+      if (!state.queue.length) {
+        state.running = false;
+        state.timer = null;
+        return;
+      }
+      const chunk = state.queue.splice(0, TYPEWRITER_BATCH_SIZE).join('');
+      target.textContent += chunk;
+      state.timer = window.setTimeout(pump, nextDelay());
+    };
+    return {
+      append(text) {
+        if (!text) return;
+        const chars = Array.from(text);
+        if (!chars.length) return;
+        state.queue.push(...chars);
+        if (!state.running) {
+          state.running = true;
+          state.timer = window.setTimeout(pump, nextDelay());
+        }
+      },
+      flush(finalText) {
+        if (state.timer) {
+          window.clearTimeout(state.timer);
+        }
+        state.timer = null;
+        state.running = false;
+        if (typeof finalText === 'string') {
+          target.textContent = finalText;
+        } else if (state.queue.length) {
+          target.textContent += state.queue.join('');
+        }
+        state.queue = [];
+      },
+      dispose() {
+        if (state.timer) {
+          window.clearTimeout(state.timer);
+        }
+        state.queue = [];
+        state.timer = null;
+        state.running = false;
+      },
+    };
+  }
+
   function createSocialAiTypingIndicator() {
     const indicator = document.createElement('span');
     indicator.className = 'ml-2 inline-flex items-center gap-1 text-xs text-slate-400 opacity-80';
@@ -1636,11 +1696,23 @@
     };
     messages.push(assistantMessage);
     const assistantNode = appendSocialAiMessage(assistantMessage, { streaming: true }) || {};
+    const typewriter = createTypewriterEffect(assistantNode.textNode);
+    let receivedChunk = false;
 
     const handleChunk = chunk => {
       assistantMessage.content += chunk;
-      if (assistantNode.textNode) {
+      if (typewriter) {
+        typewriter.append(chunk);
+      } else if (assistantNode.textNode) {
         assistantNode.textNode.textContent = assistantMessage.content;
+      }
+      if (assistantNode.typingIndicator && assistantMessage.content.length) {
+        assistantNode.typingIndicator.remove();
+        assistantNode.typingIndicator = null;
+      }
+      if (!receivedChunk) {
+        receivedChunk = true;
+        setSocialAiTyping(false);
       }
       scrollSocialAiThreadToBottom();
     };
@@ -1656,9 +1728,6 @@
       });
       assistantMessage.content = finalText;
       assistantMessage.streaming = false;
-      if (assistantNode.textNode) {
-        assistantNode.textNode.textContent = finalText;
-      }
     } catch (error) {
       const fallback = error?.message || 'The AI request failed, please try again.';
       assistantMessage.content = fallback;
@@ -1674,9 +1743,16 @@
     } finally {
       if (assistantNode.typingIndicator && assistantNode.typingIndicator.parentNode) {
         assistantNode.typingIndicator.parentNode.removeChild(assistantNode.typingIndicator);
+        assistantNode.typingIndicator = null;
       }
       if (assistantNode.wrapper) {
         assistantNode.wrapper.classList.remove('chat-message--streaming');
+      }
+      if (typewriter) {
+        typewriter.flush(assistantMessage.content);
+        typewriter.dispose();
+      } else if (assistantNode.textNode) {
+        assistantNode.textNode.textContent = assistantMessage.content;
       }
       scrollSocialAiThreadToBottom();
       const orderedMessages = sortSocialAiMessages(controller.messagesBySession[sessionId]);
