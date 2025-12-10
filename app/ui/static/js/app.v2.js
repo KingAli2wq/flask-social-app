@@ -59,6 +59,9 @@
   const TERMS_VERSION = APP_CONFIG.termsVersion || '1.0.0';
   const TERMS_MESSAGE = APP_CONFIG.termsMessage || 'Please review the updated Terms and Conditions.';
   const TERMS_DOCUMENT_URL = APP_CONFIG.termsDocumentUrl || '/terms';
+  const SOCIAL_AI_DEBUG = Boolean(
+    APP_CONFIG.socialAiDebugLogging || (typeof window !== 'undefined' && window.__SOCIAL_AI_DEBUG__)
+  );
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -340,6 +343,18 @@
     bodyOverflow: '',
     htmlOverflow: '',
   };
+
+  function logSocialAiDebug(event, details) {
+    if (!SOCIAL_AI_DEBUG) {
+      return;
+    }
+    const timestamp = new Date().toISOString();
+    try {
+      console.debug(`[SocialAI][${event}]`, timestamp, details || null);
+    } catch (err) {
+      // Swallow console errors in locked-down browsers.
+    }
+  }
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -1747,7 +1762,11 @@
 
   function setSocialAiLoading(isLoading) {
     const controller = state.socialAi;
-    controller.loading = Boolean(isLoading);
+    const next = Boolean(isLoading);
+    if (controller.loading !== next) {
+      logSocialAiDebug('loading-state', { previous: controller.loading, next });
+    }
+    controller.loading = next;
     if (controller.elements.loading) {
       controller.elements.loading.classList.toggle('hidden', !controller.loading);
     }
@@ -1756,6 +1775,7 @@
   function showSocialAiError(message) {
     const controller = state.socialAi;
     controller.error = message || '';
+    logSocialAiDebug('error-state', { message: controller.error });
     const node = controller.elements.error;
     if (!node) return;
     if (controller.error) {

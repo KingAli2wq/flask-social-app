@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, AsyncIterator, Final, Iterator, List, Protocol, Sequence, cast
 from uuid import UUID
 
@@ -966,17 +967,22 @@ def delete_chatbot_session(
 
 def warmup_social_ai_model() -> None:
     """Pre-load the Social AI model so the first response feels instant."""
-
+    start = perf_counter()
     base = _get_llm_client()
     if not isinstance(base, SocialAIChatClient):
         logger.debug("Skipping Social AI warmup because a custom LLM client is active")
         return
+    logger.info("Social AI warmup start")
     try:
         base.warmup()
+        duration = (perf_counter() - start) * 1000
+        logger.info("Social AI warmup complete | duration_ms=%.1f", duration)
     except ChatbotServiceError:
-        logger.debug("Social AI warmup failed due to service error", exc_info=True)
+        duration = (perf_counter() - start) * 1000
+        logger.debug("Social AI warmup failed due to service error | duration_ms=%.1f", duration, exc_info=True)
     except Exception:  # pragma: no cover - defensive guard
-        logger.debug("Unexpected Social AI warmup failure", exc_info=True)
+        duration = (perf_counter() - start) * 1000
+        logger.debug("Unexpected Social AI warmup failure | duration_ms=%.1f", duration, exc_info=True)
 
 
 __all__ = [

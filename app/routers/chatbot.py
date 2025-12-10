@@ -1,6 +1,8 @@
 """HTTP endpoints for the AI chatbot sandbox."""
 from __future__ import annotations
 
+import logging
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -28,6 +30,7 @@ from ..services import (
 )
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
+logger = logging.getLogger(__name__)
 
 
 def _to_message_payload(transcript: ChatbotTranscript) -> list[ChatbotMessagePayload]:
@@ -89,7 +92,13 @@ async def create_chat_message_stream(
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
     """Stream Social AI output as UTF-8 chunks so the UI can show incremental typing."""
-
+    start = perf_counter()
+    meta = {
+        "user_id": str(current_user.id),
+        "session_id": str(payload.session_id or ""),
+        "persona": payload.persona,
+    }
+    logger.info("Social AI stream start | user=%s session=%s", meta["user_id"], meta["session_id"])
     stream = await stream_chat_prompt(
         db,
         user=current_user,
@@ -99,9 +108,44 @@ async def create_chat_message_stream(
         title=payload.title,
         include_public_context=payload.include_public_context,
     )
+
+    async def _instrumented_stream():
+        chunk_count = 0
+        first_chunk_logged = False
+        try:
+            async for chunk in stream:
+                if not first_chunk_logged:
+                    first_chunk_logged = True
+                    first_latency = (perf_counter() - start) * 1000
+                    logger.info(
+                        "Social AI stream first chunk | user=%s session=%s latency_ms=%.1f",
+                        meta["user_id"],
+                        meta["session_id"],
+                        first_latency,
+                    )
+                chunk_count += 1
+                yield chunk
+        except Exception:
+            logger.exception(
+                "Social AI stream failed | user=%s session=%s chunks=%s",
+                meta["user_id"],
+                meta["session_id"],
+                chunk_count,
+            )
+            raise
+        finally:
+            total_duration = (perf_counter() - start) * 1000
+            logger.info(
+                "Social AI stream finished | user=%s session=%s chunks=%s duration_ms=%.1f",
+                meta["user_id"],
+                meta["session_id"],
+                chunk_count,
+                total_duration,
+            )
+
     # Plain text chunks keep the client-side parser simple; the final chunk may include
     # a "[Stream error: …]" marker if generation fails mid-response.
-    return StreamingResponse(stream, media_type="text/plain")
+    return StreamingResponse(_instrumented_stream(), media_type="text/plain")
 
 
 @router.post("/test", response_model=ChatbotSessionResponse)
@@ -118,17 +162,35 @@ def list_sessions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> list[ChatbotSessionSummary]:
-    summaries = list_chatbot_sessions(db, user=current_user)
-    return [
-        ChatbotSessionSummary(
-            session_id=item.session_id,
-            title=item.title,
-            persona=item.persona,
-            updated_at=item.updated_at,
-            last_message_preview=item.last_message_preview,
+    start = perf_counter()
+    try:
+        summaries = list_chatbot_sessions(db, user=current_user)
+        response = [
+            ChatbotSessionSummary(
+                session_id=item.session_id,
+                title=item.title,
+                persona=item.persona,
+                updated_at=item.updated_at,
+                last_message_preview=item.last_message_preview,
+            )
+            for item in summaries
+        ]
+        duration = (perf_counter() - start) * 1000
+        logger.info(
+            "Social AI sessions list success | user=%s count=%s duration_ms=%.1f",
+            current_user.id,
+            len(response),
+            duration,
         )
-        for item in summaries
-    ]
+        return response
+    except Exception:
+        duration = (perf_counter() - start) * 1000
+        logger.exception(
+            "Social AI sessions list failed | user=%s duration_ms=%.1f",
+            current_user.id,
+            duration,
+        )
+        raise
 
 
 @router.get("/sessions/{session_id}", response_model=ChatbotSessionResponse)
@@ -137,8 +199,27 @@ def get_session_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
-    transcript = get_chatbot_transcript(db, user=current_user, session_id=session_id)
-    return _to_session_response(transcript)
+    start = perf_counter()
+    try:
+        transcript = get_chatbot_transcript(db, user=current_user, session_id=session_id)
+        response = _to_session_response(transcript)
+        duration = (perf_counter() - start) * 1000
+        logger.info(
+            "Social AI transcript success | user=%s session=%s duration_ms=%.1f",
+            current_user.id,
+            session_id,
+            duration,
+        )
+        return response
+    except Exception:
+        duration = (perf_counter() - start) * 1000
+        logger.exception(
+            "Social AI transcript failed | user=%s session=%s duration_ms=%.1f",
+            current_user.id,
+            session_id,
+            duration,
+        )
+        raise
 
 
 @router.post("/sessions", response_model=ChatbotSessionResponse, status_code=status.HTTP_201_CREATED)
