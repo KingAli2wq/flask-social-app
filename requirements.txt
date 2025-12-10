@@ -1,3 +1,6 @@
+# Use CPU-only PyTorch wheels to avoid bundling CUDA libraries on the server.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # GUI & Media
 customtkinter>=5.0
 Pillow>=9.0
@@ -39,7 +42,7 @@ boto3>=1.28
 
 # AI & NLP
 transformers>=4.36
-torch>=2.1
+torch==2.9.1+cpu
 accelerate>=0.24
 
 # Development & Testing
