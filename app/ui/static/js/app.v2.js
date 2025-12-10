@@ -807,15 +807,6 @@
     return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
   }
 
-  function getSocialAiAdultConfirmation() {
-    const overlayCheckbox = document.getElementById('social-ai-confirm-adult');
-    if (overlayCheckbox) {
-      return overlayCheckbox.checked;
-    }
-    const inlineCheckbox = document.getElementById('ai-confirm-adult');
-    return inlineCheckbox ? inlineCheckbox.checked : false;
-  }
-
   function createSocialAiTypingIndicator() {
     const indicator = document.createElement('span');
     indicator.className = 'ml-2 inline-flex items-center gap-1 text-xs text-slate-400 opacity-80';
@@ -890,19 +881,6 @@
     };
   }
 
-  function buildSocialAiHistoryPayload(messages = []) {
-    return messages
-      .map(message => {
-        const role = (message.role || '').toLowerCase() === 'user' ? 'user' : 'assistant';
-        const content = (message.content || '').trim();
-        if (!content) {
-          return null;
-        }
-        return { role, content };
-      })
-      .filter(Boolean);
-  }
-
   function sortSocialAiMessages(messages = []) {
     if (!Array.isArray(messages)) return [];
     return messages
@@ -912,6 +890,12 @@
         const rightTime = new Date(right.message.created_at || 0).getTime();
         if (leftTime !== rightTime) {
           return leftTime - rightTime;
+        }
+        const leftRole = (left.message.role || '').toLowerCase();
+        const rightRole = (right.message.role || '').toLowerCase();
+        if (leftRole !== rightRole) {
+          if (leftRole === 'user') return -1;
+          if (rightRole === 'user') return 1;
         }
         return left.index - right.index;
       })
@@ -1199,7 +1183,7 @@
     }
   }
 
-  async function streamLocalAiReply({ message, mode, history = [], confirmedAdult = false, onChunk }) {
+  async function streamChatbotReply({ sessionId, message, persona, includePublicContext = true, title = null, onChunk }) {
     const headers = new Headers({
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
@@ -1210,13 +1194,14 @@
     }
     const payload = {
       message,
-      mode,
-      history,
-      confirmed_adult: Boolean(confirmedAdult),
+      session_id: sessionId,
+      persona,
+      include_public_context: Boolean(includePublicContext),
+      title,
     };
     let response;
     try {
-      response = await fetch('/ai/chat/stream', {
+      response = await fetch('/chatbot/messages/stream', {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -1641,7 +1626,6 @@
       return;
     }
     const messages = controller.messagesBySession[sessionId];
-    const historyPayload = buildSocialAiHistoryPayload(messages);
     const userMessage = createLocalSocialAiMessage('user', text);
     messages.push(userMessage);
     appendSocialAiMessage(userMessage);
@@ -1662,11 +1646,12 @@
     };
 
     try {
-      const finalText = await streamLocalAiReply({
+      const finalText = await streamChatbotReply({
+        sessionId,
         message: text,
-        mode: meta.key,
-        history: historyPayload,
-        confirmedAdult: getSocialAiAdultConfirmation(),
+        persona: meta.key,
+        includePublicContext: meta.meta.includeContext !== false,
+        title: controller.sessions.find(item => item.session_id === sessionId)?.title || null,
         onChunk: handleChunk,
       });
       assistantMessage.content = finalText;
@@ -1696,6 +1681,8 @@
       scrollSocialAiThreadToBottom();
       const orderedMessages = sortSocialAiMessages(controller.messagesBySession[sessionId]);
       controller.messagesBySession[sessionId] = orderedMessages;
+      controller.mode = normalizeSocialAiMode(meta.key);
+      updateSocialAiModeLabel();
       updateSocialAiSessionSummary({
         session_id: sessionId,
         persona: meta.key,
@@ -1703,6 +1690,7 @@
         updated_at: new Date().toISOString(),
         messages: orderedMessages,
       });
+      setSocialAiTyping(false);
     }
   }
 

@@ -1,12 +1,26 @@
 """Lightweight, rule-based moderation helpers for Social AI prompts."""
 from __future__ import annotations
 
+import logging
 import re
 from enum import Enum
-from typing import List
+from typing import Any, List, Tuple
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
+
+try:  # pragma: no cover - optional dependency
+    from profanity_filter import ProfanityFilter
+except ImportError:  # pragma: no cover - optional dependency
+    ProfanityFilter = None  # type: ignore[misc, assignment]
+
+try:  # pragma: no cover - optional dependency
+    from hatesonar import Sonar
+except ImportError:  # pragma: no cover - optional dependency
+    Sonar = None  # type: ignore[misc, assignment]
+
+
+logger = logging.getLogger(__name__)
 
 
 class SafetyViolation(str, Enum):
@@ -16,6 +30,8 @@ class SafetyViolation(str, Enum):
     HATE = "hate"
     HARASSMENT = "harassment"
     VIOLENCE = "violence"
+    PROFANITY = "profanity"
+    TOXICITY = "toxicity"
 
 
 class SafetyResult(BaseModel):
@@ -115,6 +131,11 @@ _HARASSMENT_PATTERNS = [
     "jerk",
 ]
 
+
+_pf_instance: Any | None = None
+_sonar_instance: Any | None = None
+_HATESONAR_CONFIDENCE_THRESHOLD = 0.6
+
 _VIOLENCE_KEYWORDS = [
     "murder",
     "blood",
@@ -164,6 +185,72 @@ def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str
     return False
 
 
+def _get_profanity_filter() -> Any | None:
+    global _pf_instance
+    if _pf_instance is not None:
+        return _pf_instance
+    if ProfanityFilter is None:
+        return None
+    try:
+        _pf_instance = ProfanityFilter()
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("Failed to initialize ProfanityFilter")
+        _pf_instance = None
+    return _pf_instance
+
+
+def _get_hatesonar() -> Any | None:
+    global _sonar_instance
+    if _sonar_instance is not None:
+        return _sonar_instance
+    if Sonar is None:
+        return None
+    try:
+        _sonar_instance = Sonar()
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("Failed to initialize HateSonar classifier")
+        _sonar_instance = None
+    return _sonar_instance
+
+
+def _detect_with_profanity_filter(text: str) -> bool:
+    detector = _get_profanity_filter()
+    if detector is None or not text.strip():
+        return False
+    try:
+        return bool(detector.is_profane(text))
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("ProfanityFilter failed to evaluate input")
+        return False
+
+
+def _detect_with_hatesonar(text: str) -> Tuple[str, float] | None:
+    classifier = _get_hatesonar()
+    if classifier is None or not text.strip():
+        return None
+    try:
+        result = classifier.ping(text=text)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("HateSonar failed to evaluate input")
+        return None
+    top_class = result.get("top_class")
+    if not isinstance(top_class, str):
+        return None
+    confidence = 0.0
+    for entry in result.get("classes", []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("class_name") == top_class:
+            try:
+                confidence = float(entry.get("confidence", 0.0))
+            except (TypeError, ValueError):
+                confidence = 0.0
+            break
+    if confidence < _HATESONAR_CONFIDENCE_THRESHOLD:
+        return None
+    return top_class, confidence
+
+
 def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyResult:
     """Basic keyword-based moderation for all user-supplied text."""
 
@@ -175,6 +262,10 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
 
     violations: list[SafetyViolation] = []
     reasons: list[str] = []
+
+    if _detect_with_profanity_filter(text):
+        violations.append(SafetyViolation.PROFANITY)
+        reasons.append("Profanity detected by lexical filter")
 
     if _contains_keyword_variants(collapsed, squashed, _MINOR_KEYWORDS):
         violations.append(SafetyViolation.MINORS)
@@ -202,6 +293,16 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
     if _contains_keyword_variants(collapsed, squashed, _VIOLENCE_KEYWORDS):
         violations.append(SafetyViolation.VIOLENCE)
         reasons.append("Graphic violence references detected")
+
+    sonar_signal = _detect_with_hatesonar(text)
+    if sonar_signal:
+        label, _confidence = sonar_signal
+        if label == "hate_speech" and SafetyViolation.HATE not in violations:
+            violations.append(SafetyViolation.HATE)
+            reasons.append("HateSonar classified the text as hate speech")
+        elif label == "offensive_language" and SafetyViolation.TOXICITY not in violations:
+            violations.append(SafetyViolation.TOXICITY)
+            reasons.append("HateSonar detected offensive language")
 
     allowed = len(violations) == 0
 

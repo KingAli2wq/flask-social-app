@@ -6,7 +6,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Final, List, Protocol, Sequence, cast
+from typing import Any, AsyncIterator, Final, List, Protocol, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -22,6 +22,7 @@ from .safety import enforce_safe_text
 
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip("/")
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
+AI_CHAT_STREAM_URL = f"{BACKEND_BASE_URL}/ai/chat/stream"
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,27 @@ def _ensure_persona_access(user: User, persona_key: str) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Persona not available for your role")
 
 
+def _is_privileged_admin_mode(
+    db: Session,
+    *,
+    user: User,
+    session_id: UUID | None,
+    persona: str | None,
+) -> bool:
+    if _user_role(user) not in _PRIVILEGED_ROLES:
+        return False
+    if persona:
+        requested = _normalize_persona_key(persona)
+        return requested == _ADMIN_PERSONA_KEY
+    if session_id is None:
+        return False
+    session = db.get(AiChatSession, session_id)
+    if session is None or cast(UUID, session.user_id) != user.id:
+        return False
+    current_persona = _normalize_persona_key(cast(str | None, session.persona))
+    return current_persona == _ADMIN_PERSONA_KEY
+
+
 @dataclass(slots=True)
 class ChatCompletionResult:
     content: str
@@ -121,6 +143,17 @@ class LLMClient(Protocol):
         ...
 
 
+class StreamingLLMClient(Protocol):
+    def stream(
+        self,
+        *,
+        messages: Sequence[dict[str, str]],
+        temperature: float = 0.2,
+    ) -> AsyncIterator[str]:
+        """Yield incremental chunks from the underlying model."""
+        ...
+
+
 class SocialAIChatClient(LLMClient):
     """HTTP client that proxies chatbot requests through the internal /ai/chat endpoint."""
 
@@ -129,32 +162,7 @@ class SocialAIChatClient(LLMClient):
         self._client = httpx.Client(timeout=OLLAMA_TIMEOUT)
 
     def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
-        if not messages:
-            raise ChatbotServiceError("No messages provided")
-
-        latest_user = next((msg for msg in reversed(messages) if msg.get("role") == "user"), None)
-        if latest_user is None:
-            raise ChatbotServiceError("No user message found in messages")
-
-        user_message = cast(str, latest_user.get("content") or "").strip()
-        if not user_message:
-            raise ChatbotServiceError("User message was empty")
-
-        history: list[dict[str, str]] = []
-        for msg in messages:
-            if msg is latest_user:
-                continue
-            role = msg.get("role")
-            content = (msg.get("content") or "").strip()
-            if role in {"user", "assistant"} and content:
-                history.append({"role": cast(str, role), "content": content})
-
-        payload = {
-            "message": user_message,
-            "mode": "default",
-            "history": history,
-            "confirmed_adult": False,
-        }
+        payload = _build_ai_chat_payload(messages)
 
         try:
             response = self._client.post(self._endpoint, json=payload)
@@ -205,6 +213,90 @@ class SocialAIChatClient(LLMClient):
         return ChatCompletionResult(content=reply, prompt_tokens=0, completion_tokens=0, model="social-ai-local")
 
 
+class SocialAIChatStreamingClient(StreamingLLMClient):
+    """Async HTTP client that streams chatbot responses via /ai/chat/stream."""
+
+    def __init__(self, *, endpoint: str | None = None) -> None:
+        self._endpoint = (endpoint or AI_CHAT_STREAM_URL).rstrip("/")
+
+    async def stream(
+        self,
+        *,
+        messages: Sequence[dict[str, str]],
+        temperature: float = 0.2,
+    ) -> AsyncIterator[str]:
+        payload = _build_ai_chat_payload(messages)
+        try:
+            async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
+                async with client.stream("POST", self._endpoint, json=payload) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_text():
+                        if chunk:
+                            yield chunk
+        except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatStreamingClient timeout | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Local LLM stream timed out") from exc
+        except httpx.TimeoutException as exc:  # pragma: no cover - timeout path
+            logger.error(
+                "SocialAIChatStreamingClient timeout | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Local LLM stream timed out") from exc
+        except httpx.HTTPStatusError as exc:  # pragma: no cover - status path
+            status_code = exc.response.status_code if exc.response is not None else "unknown"
+            logger.error(
+                "SocialAIChatStreamingClient HTTP status error | endpoint=%s status=%s timeout=%s",
+                self._endpoint,
+                status_code,
+                OLLAMA_TIMEOUT,
+            )
+            raise ChatbotServiceError("Social AI streaming request failed") from exc
+        except httpx.HTTPError as exc:  # pragma: no cover - network failure path
+            logger.error(
+                "SocialAIChatStreamingClient transport error | endpoint=%s timeout=%s error=%s",
+                self._endpoint,
+                OLLAMA_TIMEOUT,
+                type(exc).__name__,
+            )
+            raise ChatbotServiceError("Social AI streaming request failed") from exc
+
+
+def _build_ai_chat_payload(messages: Sequence[dict[str, str]]) -> dict[str, Any]:
+    if not messages:
+        raise ChatbotServiceError("No messages provided")
+
+    latest_user = next((msg for msg in reversed(messages) if msg.get("role") == "user"), None)
+    if latest_user is None:
+        raise ChatbotServiceError("No user message found in messages")
+
+    user_message = cast(str, latest_user.get("content") or "").strip()
+    if not user_message:
+        raise ChatbotServiceError("User message was empty")
+
+    history: list[dict[str, str]] = []
+    for msg in messages:
+        if msg is latest_user:
+            continue
+        role = msg.get("role")
+        content = (msg.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            history.append({"role": cast(str, role), "content": content})
+
+    return {
+        "message": user_message,
+        "mode": "default",
+        "history": history,
+        "confirmed_adult": False,
+    }
+
+
 @dataclass(slots=True)
 class ChatbotMessageDTO:
     id: UUID
@@ -235,6 +327,7 @@ class ChatbotServiceError(RuntimeError):
 
 
 _llm_client: LLMClient | None = None
+_streaming_llm_client: StreamingLLMClient | None = None
 
 
 def set_llm_client(client: LLMClient | None) -> None:
@@ -244,11 +337,25 @@ def set_llm_client(client: LLMClient | None) -> None:
     _llm_client = client
 
 
+def set_streaming_llm_client(client: StreamingLLMClient | None) -> None:
+    """Override the streaming LLM client (used by tests)."""
+
+    global _streaming_llm_client
+    _streaming_llm_client = client
+
+
 def _get_llm_client() -> LLMClient:
     global _llm_client
     if _llm_client is None:
         _llm_client = SocialAIChatClient()
     return _llm_client
+
+
+def _get_streaming_llm_client() -> StreamingLLMClient:
+    global _streaming_llm_client
+    if _streaming_llm_client is None:
+        _streaming_llm_client = SocialAIChatStreamingClient()
+    return _streaming_llm_client
 
 
 def _now() -> datetime:
@@ -436,7 +543,14 @@ def send_chat_prompt(
     cleaned_message = (message or "").strip()
     if not cleaned_message:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Message cannot be empty")
-    enforce_safe_text(cleaned_message, field_name="message")
+    bypass_safety = _is_privileged_admin_mode(
+        db,
+        user=user,
+        session_id=session_id,
+        persona=persona,
+    )
+    if not bypass_safety:
+        enforce_safe_text(cleaned_message, field_name="message")
 
     emotion_directive: str | None = None
     try:
@@ -480,6 +594,101 @@ def send_chat_prompt(
 
     messages = _load_recent_messages(db, session_identifier, limit=_RESPONSE_HISTORY)
     return ChatbotTranscript(session=session, messages=_serialize_messages(messages))
+
+
+async def stream_chat_prompt(
+    db: Session,
+    *,
+    user: User,
+    message: str,
+    session_id: UUID | None,
+    persona: str | None,
+    title: str | None,
+    include_public_context: bool,
+) -> AsyncIterator[str]:
+    """Stream a chatbot response chunk-by-chunk.
+
+    The returned async iterator yields UTF-8 text fragments in the order received from the
+    upstream LLM. Consumers should treat the stream as chunked plain text and append each
+    piece to the pending assistant message. A trailing chunk beginning with "[Stream error:" indicates
+    the upstream generation failed mid-flight.
+    """
+
+    cleaned_message = (message or "").strip()
+    if not cleaned_message:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Message cannot be empty")
+    bypass_safety = _is_privileged_admin_mode(
+        db,
+        user=user,
+        session_id=session_id,
+        persona=persona,
+    )
+    if not bypass_safety:
+        enforce_safe_text(cleaned_message, field_name="message")
+
+    emotion_directive: str | None = None
+    try:
+        predictions = detect_emotions(cleaned_message)
+        emotion_directive = build_emotion_directive(predictions)
+    except EmotionServiceError:
+        logger.warning("Emotion detection failed during streaming; continuing without directive", exc_info=True)
+
+    session = _ensure_session(db, user=user, session_id=session_id, persona=persona, title=title)
+    session_identifier = cast(UUID, session.id)
+    _persist_message(db, session_id=session_identifier, role="user", content=cleaned_message)
+
+    history = _load_recent_messages(db, session_identifier, limit=_MAX_HISTORY)
+    context_blob = _build_context_blob(db, user=user, include_public_context=include_public_context)
+    llm_messages = _prepare_llm_messages(
+        session=session,
+        history=history,
+        context_blob=context_blob,
+        emotion_directive=emotion_directive,
+    )
+    llm_client = _get_streaming_llm_client()
+
+    async def _stream() -> AsyncIterator[str]:
+        assistant_chunks: list[str] = []
+        stream_error: str | None = None
+        try:
+            async for chunk in llm_client.stream(messages=llm_messages):
+                if not chunk:
+                    continue
+                assistant_chunks.append(chunk)
+                yield chunk
+        except ChatbotServiceError as exc:
+            stream_error = str(exc) or "Social AI streaming failed"
+            logger.error("Streaming Social AI failed | session=%s error=%s", session_identifier, stream_error)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            stream_error = "Unexpected Social AI error"
+            logger.exception("Unexpected streaming failure for session %s", session_identifier, exc_info=True)
+
+        if stream_error:
+            db.rollback()
+            yield f"\n[Stream error: {stream_error}]\n"
+            return
+
+        assistant_text = "".join(assistant_chunks)
+        _persist_message(
+            db,
+            session_id=session_identifier,
+            role="assistant",
+            content=assistant_text,
+            model="social-ai-local-stream",
+        )
+
+        timestamp = _now()
+        setattr(session, "last_message_at", timestamp)
+        setattr(session, "updated_at", timestamp)
+
+        try:
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            logger.exception("Failed to save streamed chatbot exchange")
+            raise ChatbotServiceError("Failed to save streamed chatbot exchange") from exc
+
+    return cast(AsyncIterator[str], _stream())
 
 
 def get_chatbot_transcript(
@@ -566,9 +775,11 @@ __all__ = [
     "ChatbotTranscript",
     "ChatbotSessionSummaryDTO",
     "send_chat_prompt",
+    "stream_chat_prompt",
     "list_chatbot_sessions",
     "get_chatbot_transcript",
     "create_chatbot_session",
     "delete_chatbot_session",
     "set_llm_client",
+    "set_streaming_llm_client",
 ]

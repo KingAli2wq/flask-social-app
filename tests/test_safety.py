@@ -1,6 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
+import app.services.safety as safety
 from app.services.safety import check_content_policy, enforce_safe_text, SafetyViolation
 
 
@@ -78,3 +79,27 @@ def test_enforce_safe_text_raises_for_blocked_content():
 def test_enforce_safe_text_passes_for_safe_content():
     # Should not raise
     enforce_safe_text("Thanks for the update!", field_name="message")
+
+
+def test_check_content_policy_uses_profanity_filter(monkeypatch):
+    monkeypatch.setattr(safety, "_detect_with_profanity_filter", lambda text: True)
+    monkeypatch.setattr(safety, "_detect_with_hatesonar", lambda text: None)
+    result = check_content_policy("Completely tame text")
+    assert result.allowed is False
+    assert SafetyViolation.PROFANITY in result.violations
+
+
+def test_check_content_policy_uses_hatesonar_hate_signal(monkeypatch):
+    monkeypatch.setattr(safety, "_detect_with_profanity_filter", lambda text: False)
+    monkeypatch.setattr(safety, "_detect_with_hatesonar", lambda text: ("hate_speech", 0.9))
+    result = check_content_policy("Hello world")
+    assert result.allowed is False
+    assert SafetyViolation.HATE in result.violations
+
+
+def test_check_content_policy_uses_hatesonar_offensive_signal(monkeypatch):
+    monkeypatch.setattr(safety, "_detect_with_profanity_filter", lambda text: False)
+    monkeypatch.setattr(safety, "_detect_with_hatesonar", lambda text: ("offensive_language", 0.85))
+    result = check_content_policy("Greetings program")
+    assert result.allowed is False
+    assert SafetyViolation.TOXICITY in result.violations

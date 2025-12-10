@@ -4,6 +4,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_session
@@ -23,6 +24,7 @@ from ..services import (
     get_current_user,
     list_chatbot_sessions,
     send_chat_prompt,
+    stream_chat_prompt,
 )
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
@@ -78,6 +80,28 @@ def create_chat_message(
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
     return _handle_prompt(payload, current_user=current_user, db=db)
+
+
+@router.post("/messages/stream")
+async def create_chat_message_stream(
+    payload: ChatbotPromptRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> StreamingResponse:
+    """Stream Social AI output as UTF-8 chunks so the UI can show incremental typing."""
+
+    stream = await stream_chat_prompt(
+        db,
+        user=current_user,
+        message=payload.message,
+        session_id=payload.session_id,
+        persona=payload.persona,
+        title=payload.title,
+        include_public_context=payload.include_public_context,
+    )
+    # Plain text chunks keep the client-side parser simple; the final chunk may include
+    # a "[Stream error: …]" marker if generation fails mid-response.
+    return StreamingResponse(stream, media_type="text/plain")
 
 
 @router.post("/test", response_model=ChatbotSessionResponse)
