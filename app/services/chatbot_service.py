@@ -24,6 +24,8 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
 AI_CHAT_STREAM_URL = f"{BACKEND_BASE_URL}/ai/chat/stream"
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+_INTERNAL_OVERRIDE_HEADER = "x-social-ai-internal"
+_INTERNAL_OVERRIDE_TOKEN = os.getenv("SOCIAL_AI_INTERNAL_TOKEN") or None
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +140,13 @@ class ChatCompletionResult:
 
 
 class LLMClient(Protocol):
-    def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
+    def complete(
+        self,
+        *,
+        messages: Sequence[dict[str, str]],
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> ChatCompletionResult:
         """Return a completion from the underlying model."""
         ...
 
@@ -149,6 +157,7 @@ class StreamingLLMClient(Protocol):
         *,
         messages: Sequence[dict[str, str]],
         temperature: float = 0.2,
+        allow_policy_override: bool = False,
     ) -> AsyncIterator[str]:
         """Yield incremental chunks from the underlying model."""
         ...
@@ -160,12 +169,31 @@ class SocialAIChatClient(LLMClient):
     def __init__(self, *, endpoint: str | None = None) -> None:
         self._endpoint = (endpoint or AI_CHAT_URL).rstrip("/")
         self._client = httpx.Client(timeout=OLLAMA_TIMEOUT)
+        self._internal_token = _INTERNAL_OVERRIDE_TOKEN
+        self._warned_missing_token = False
 
-    def complete(self, *, messages: Sequence[dict[str, str]], temperature: float = 0.2) -> ChatCompletionResult:
-        payload = _build_ai_chat_payload(messages)
+    def _build_headers(self, allow_policy_override: bool) -> dict[str, str] | None:
+        if allow_policy_override and self._internal_token:
+            return {_INTERNAL_OVERRIDE_HEADER: self._internal_token}
+        if allow_policy_override and not self._internal_token and not self._warned_missing_token:
+            logger.warning(
+                "SOCIAL_AI_INTERNAL_TOKEN is not configured; privileged personas cannot bypass AI policy checks."
+            )
+            self._warned_missing_token = True
+        return None
+
+    def complete(
+        self,
+        *,
+        messages: Sequence[dict[str, str]],
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> ChatCompletionResult:
+        payload = _build_ai_chat_payload(messages, policy_override=allow_policy_override)
+        headers = self._build_headers(allow_policy_override)
 
         try:
-            response = self._client.post(self._endpoint, json=payload)
+            response = self._client.post(self._endpoint, json=payload, headers=headers)
             response.raise_for_status()
         except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
             logger.error(
@@ -221,17 +249,31 @@ class SocialAIChatStreamingClient(StreamingLLMClient):
 
     def __init__(self, *, endpoint: str | None = None) -> None:
         self._endpoint = (endpoint or AI_CHAT_STREAM_URL).rstrip("/")
+        self._internal_token = _INTERNAL_OVERRIDE_TOKEN
+        self._warned_missing_token = False
+
+    def _build_headers(self, allow_policy_override: bool) -> dict[str, str] | None:
+        if allow_policy_override and self._internal_token:
+            return {_INTERNAL_OVERRIDE_HEADER: self._internal_token}
+        if allow_policy_override and not self._internal_token and not self._warned_missing_token:
+            logger.warning(
+                "SOCIAL_AI_INTERNAL_TOKEN is not configured; privileged personas cannot bypass AI policy checks (stream)."
+            )
+            self._warned_missing_token = True
+        return None
 
     async def stream(
         self,
         *,
         messages: Sequence[dict[str, str]],
         temperature: float = 0.2,
+        allow_policy_override: bool = False,
     ) -> AsyncIterator[str]:
-        payload = _build_ai_chat_payload(messages)
+        payload = _build_ai_chat_payload(messages, policy_override=allow_policy_override)
+        headers = self._build_headers(allow_policy_override)
         try:
             async with httpx.AsyncClient(timeout=OLLAMA_TIMEOUT) as client:
-                async with client.stream("POST", self._endpoint, json=payload) as response:
+                async with client.stream("POST", self._endpoint, json=payload, headers=headers) as response:
                     response.raise_for_status()
                     async for chunk in response.aiter_text():
                         if chunk:
@@ -292,7 +334,11 @@ def _policy_violation_detail(response: httpx.Response | None) -> dict[str, Any]:
     return fallback
 
 
-def _build_ai_chat_payload(messages: Sequence[dict[str, str]]) -> dict[str, Any]:
+def _build_ai_chat_payload(
+    messages: Sequence[dict[str, str]],
+    *,
+    policy_override: bool = False,
+) -> dict[str, Any]:
     if not messages:
         raise ChatbotServiceError("No messages provided")
 
@@ -317,7 +363,8 @@ def _build_ai_chat_payload(messages: Sequence[dict[str, str]]) -> dict[str, Any]
         "message": user_message,
         "mode": "default",
         "history": history,
-        "confirmed_adult": False,
+        "confirmed_adult": policy_override,
+        "policy_override": policy_override,
     }
 
 
@@ -612,7 +659,7 @@ def send_chat_prompt(
     )
 
     try:
-        result = _get_llm_client().complete(messages=llm_messages)
+        result = _get_llm_client().complete(messages=llm_messages, allow_policy_override=bypass_safety)
     except ChatbotPolicyError as exc:
         db.rollback()
         detail = exc.detail or {"message": "Your request violates our content policy."}
@@ -697,7 +744,7 @@ async def stream_chat_prompt(
         assistant_chunks: list[str] = []
         stream_error: str | None = None
         try:
-            async for chunk in llm_client.stream(messages=llm_messages):
+            async for chunk in llm_client.stream(messages=llm_messages, allow_policy_override=bypass_safety):
                 if not chunk:
                     continue
                 assistant_chunks.append(chunk)

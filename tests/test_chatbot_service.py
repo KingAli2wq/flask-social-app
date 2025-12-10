@@ -34,9 +34,17 @@ from app.services.chatbot_service import (  # noqa: E402
 class StubLLM(LLMClient):
     def __init__(self) -> None:
         self.calls = 0
+        self.last_policy_override = False
 
-    def complete(self, *, messages, temperature: float = 0.2) -> ChatCompletionResult:  # type: ignore[override]
+    def complete(
+        self,
+        *,
+        messages,
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> ChatCompletionResult:  # type: ignore[override]
         self.calls += 1
+        self.last_policy_override = allow_policy_override
         return ChatCompletionResult(
             content=f"stub-response-{self.calls}",
             prompt_tokens=42,
@@ -46,12 +54,24 @@ class StubLLM(LLMClient):
 
 
 class RejectingLLM(LLMClient):
-    def complete(self, *, messages, temperature: float = 0.2) -> ChatCompletionResult:  # type: ignore[override]
+    def complete(
+        self,
+        *,
+        messages,
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> ChatCompletionResult:  # type: ignore[override]
         raise ChatbotPolicyError(detail={"message": "Your request violates our content policy.", "violations": ["profanity"]})
 
 
 class RejectingStreamLLM(StreamingLLMClient):
-    async def stream(self, *, messages, temperature: float = 0.2) -> AsyncIterator[str]:  # type: ignore[override]
+    async def stream(
+        self,
+        *,
+        messages,
+        temperature: float = 0.2,
+        allow_policy_override: bool = False,
+    ) -> AsyncIterator[str]:  # type: ignore[override]
         raise ChatbotPolicyError(detail={"message": "Your request violates our content policy.", "violations": ["toxicity"]})
         if False:  # pragma: no cover - generator stub
             yield ""
@@ -83,10 +103,10 @@ def stub_llm() -> Iterator[StubLLM]:
 
 
 @pytest.fixture
-def user_factory() -> Callable[[str], User]:
-    def _factory(username: str) -> User:
+def user_factory() -> Callable[..., User]:
+    def _factory(username: str, role: str = "user") -> User:
         with SessionLocal() as session:
-            user = User(username=username, hashed_password="test-hash")
+            user = User(username=username, hashed_password="test-hash", role=role)
             session.add(user)
             session.commit()
             session.refresh(user)
@@ -165,6 +185,19 @@ def test_chatbot_policy_violation_is_returned_to_client(authed_client, user_fact
     assert "violates" in detail["message"].lower()
 
     set_llm_client(stub_llm)
+
+
+def test_admin_persona_sets_policy_override(authed_client, user_factory, stub_llm):
+    user = user_factory("admin-override", role="owner")
+    client = authed_client(user)
+
+    response = client.post(
+        "/chatbot/test",
+        json={"message": "Allow banned content", "persona": "admin"},
+    )
+
+    assert response.status_code == 200
+    assert stub_llm.last_policy_override is True
 
 
 def test_streaming_policy_violation_returns_detail(authed_client, user_factory):

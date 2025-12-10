@@ -1,13 +1,14 @@
 """Router for interacting with the local Social AI model via Ollama."""
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -18,6 +19,8 @@ OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
 LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "huihui_ai/qwen3-abliterated:0.6b-q4_K_M")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 ALLOW_ADULT_NSFW = os.getenv("ALLOW_ADULT_NSFW", "false").lower() == "true"
+SOCIAL_AI_INTERNAL_TOKEN = os.getenv("SOCIAL_AI_INTERNAL_TOKEN") or None
+INTERNAL_OVERRIDE_HEADER = "x-social-ai-internal"
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +40,24 @@ class ChatRequest(BaseModel):
     mode: Literal["default", "freaky", "deep"] = "default"
     history: list[dict[str, str]] | None = None
     confirmed_adult: bool = False
+    policy_override: bool = False
 
 
 
 class ChatResponse(BaseModel):
     reply: str
+
+
+def _has_internal_policy_override(request: Request) -> bool:
+    if not SOCIAL_AI_INTERNAL_TOKEN:
+        return False
+    header_value = request.headers.get(INTERNAL_OVERRIDE_HEADER)
+    if not header_value:
+        return False
+    try:
+        return hmac.compare_digest(header_value, SOCIAL_AI_INTERNAL_TOKEN)
+    except Exception:
+        return False
 
 
 def build_system_prompt(mode: str) -> str:
@@ -74,32 +90,38 @@ def _coerce_history(items: list[dict[str, str]] | None) -> list[dict[str, str]]:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_with_local_model(payload: ChatRequest) -> ChatResponse:
+async def chat_with_local_model(payload: ChatRequest, request: Request) -> ChatResponse:
     system_prompt = build_system_prompt(payload.mode)
     history_messages = _coerce_history(payload.history)
+    allow_override = payload.policy_override and _has_internal_policy_override(request)
+    if payload.policy_override and not allow_override:
+        logger.warning("Rejected Social AI policy override due to invalid token")
 
     full_text_to_moderate = payload.message
     if history_messages:
         recent_context = " ".join(entry["content"] for entry in history_messages[-5:])
         full_text_to_moderate = f"{recent_context} {full_text_to_moderate}".strip()
 
-    allow_adult = ALLOW_ADULT_NSFW and payload.confirmed_adult
-    safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
-    if not safety.allowed:
-        logger.warning(
-            "AI prompt blocked by app policy | mode=%s allow_adult=%s violations=%s reason=%s",
-            payload.mode,
-            allow_adult,
-            [v.value for v in safety.violations],
-            getattr(safety, "reason", None),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": "Your request violates our content policy.",
-                "violations": [v.value for v in safety.violations],
-            },
-        )
+    allow_adult = bool(ALLOW_ADULT_NSFW and payload.confirmed_adult)
+    if allow_override:
+        allow_adult = True
+    else:
+        safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
+        if not safety.allowed:
+            logger.warning(
+                "AI prompt blocked by app policy | mode=%s allow_adult=%s violations=%s reason=%s",
+                payload.mode,
+                allow_adult,
+                [v.value for v in safety.violations],
+                getattr(safety, "reason", None),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Your request violates our content policy.",
+                    "violations": [v.value for v in safety.violations],
+                },
+            )
 
     messages = [{"role": "system", "content": system_prompt}, *history_messages, {"role": "user", "content": payload.message}]
 
@@ -132,29 +154,35 @@ async def chat_with_local_model(payload: ChatRequest) -> ChatResponse:
 
 
 @router.post("/chat/stream")
-async def chat_with_local_model_stream(payload: ChatRequest) -> StreamingResponse:
+async def chat_with_local_model_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
     system_prompt = build_system_prompt(payload.mode)
     history_messages = _coerce_history(payload.history)
+    allow_override = payload.policy_override and _has_internal_policy_override(request)
+    if payload.policy_override and not allow_override:
+        logger.warning("Rejected Social AI policy override for stream due to invalid token")
 
     full_text_to_moderate = payload.message
     if history_messages:
         recent_context = " ".join(entry["content"] for entry in history_messages[-5:])
         full_text_to_moderate = f"{recent_context} {full_text_to_moderate}".strip()
 
-    allow_adult = ALLOW_ADULT_NSFW and payload.confirmed_adult
-    safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
-    if not safety.allowed:
-        logger.warning(
-            "Blocked AI prompt due to safety violations (stream): %s",
-            ", ".join(v.value for v in safety.violations),
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "message": "Your request violates our content policy.",
-                "violations": [v.value for v in safety.violations],
-            },
-        )
+    allow_adult = bool(ALLOW_ADULT_NSFW and payload.confirmed_adult)
+    if allow_override:
+        allow_adult = True
+    else:
+        safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
+        if not safety.allowed:
+            logger.warning(
+                "Blocked AI prompt due to safety violations (stream): %s",
+                ", ".join(v.value for v in safety.violations),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "message": "Your request violates our content policy.",
+                    "violations": [v.value for v in safety.violations],
+                },
+            )
 
     messages = [
         {"role": "system", "content": system_prompt},
