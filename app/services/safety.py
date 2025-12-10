@@ -10,9 +10,9 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel
 
 try:  # pragma: no cover - optional dependency
-    from profanity_filter import ProfanityFilter
+    from better_profanity import profanity as better_profanity
 except ImportError:  # pragma: no cover - optional dependency
-    ProfanityFilter = None  # type: ignore[misc, assignment]
+    better_profanity = None  # type: ignore[misc, assignment]
 
 try:  # pragma: no cover - optional dependency
     from hatesonar import Sonar
@@ -132,9 +132,9 @@ _HARASSMENT_PATTERNS = [
 ]
 
 
-_pf_instance: Any | None = None
 _sonar_instance: Any | None = None
 _HATESONAR_CONFIDENCE_THRESHOLD = 0.6
+_PROFANITY_FILTER_INIT: bool = False
 
 _VIOLENCE_KEYWORDS = [
     "murder",
@@ -185,20 +185,6 @@ def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str
     return False
 
 
-def _get_profanity_filter() -> Any | None:
-    global _pf_instance
-    if _pf_instance is not None:
-        return _pf_instance
-    if ProfanityFilter is None:
-        return None
-    try:
-        _pf_instance = ProfanityFilter()
-    except Exception:  # pragma: no cover - defensive guard
-        logger.exception("Failed to initialize ProfanityFilter")
-        _pf_instance = None
-    return _pf_instance
-
-
 def _get_hatesonar() -> Any | None:
     global _sonar_instance
     if _sonar_instance is not None:
@@ -214,13 +200,20 @@ def _get_hatesonar() -> Any | None:
 
 
 def _detect_with_profanity_filter(text: str) -> bool:
-    detector = _get_profanity_filter()
-    if detector is None or not text.strip():
+    global _PROFANITY_FILTER_INIT
+    if better_profanity is None or not text.strip():
         return False
+    if not _PROFANITY_FILTER_INIT:
+        try:
+            better_profanity.load_censor_words()
+        except Exception:  # pragma: no cover - defensive guard
+            logger.exception("better_profanity failed to load word list")
+            return False
+        _PROFANITY_FILTER_INIT = True
     try:
-        return bool(detector.is_profane(text))
+        return bool(better_profanity.contains_profanity(text))
     except Exception:  # pragma: no cover - defensive guard
-        logger.exception("ProfanityFilter failed to evaluate input")
+        logger.exception("better_profanity failed to evaluate input")
         return False
 
 

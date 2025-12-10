@@ -44,8 +44,7 @@ boto3>=1.28
 transformers>=4.36
 torch==2.9.1+cpu
 accelerate>=0.24
-profanity-filter>=1.3.0
-ordered-set-stubs>=0.1.3,<0.2.0
+better-profanity>=0.7
 hatesonar>=0.0.7
 scikit-learn>=1.4
 pandas>=2.1
