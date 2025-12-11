@@ -704,6 +704,11 @@ def _prepare_llm_messages(
     return messages
 
 
+def _chunk_text(text: str, size: int = 128) -> Iterator[str]:
+    for idx in range(0, len(text), size):
+        yield text[idx : idx + size]
+
+
 def _persist_message(
     db: Session,
     *,
@@ -852,6 +857,7 @@ async def stream_chat_prompt(
     async def _stream() -> AsyncIterator[str]:
         assistant_chunks: list[str] = []
         stream_error: str | None = None
+        fallback_text: str | None = None
         try:
             async for chunk in llm_client.stream(messages=llm_messages, allow_policy_override=bypass_safety):
                 if not chunk:
@@ -862,8 +868,19 @@ async def stream_chat_prompt(
             db.rollback()
             raise
         except ChatbotServiceError as exc:
-            stream_error = str(exc) or "Social AI streaming failed"
-            logger.error("Streaming Social AI failed | session=%s error=%s", session_identifier, stream_error)
+            logger.warning("Streaming Social AI failed, attempting fallback | session=%s error=%s", session_identifier, exc)
+            try:
+                result = _get_llm_client().complete(messages=llm_messages, allow_policy_override=bypass_safety)
+                fallback_text = result.content
+                for chunk in _chunk_text(fallback_text):
+                    assistant_chunks.append(chunk)
+                    yield chunk
+            except ChatbotPolicyError as policy_exc:
+                db.rollback()
+                raise HTTPException(status_code=policy_exc.status_code, detail=policy_exc.detail) from policy_exc
+            except Exception as fallback_exc:  # pragma: no cover - defensive fallback failure
+                stream_error = str(fallback_exc) or "Social AI streaming failed"
+                logger.exception("Fallback completion failed | session=%s", session_identifier, exc_info=True)
         except Exception as exc:  # pragma: no cover - defensive guard
             stream_error = "Unexpected Social AI error"
             logger.exception("Unexpected streaming failure for session %s", session_identifier, exc_info=True)
@@ -873,7 +890,7 @@ async def stream_chat_prompt(
             yield f"\n[Stream error: {stream_error}]\n"
             return
 
-        assistant_text = "".join(assistant_chunks)
+        assistant_text = fallback_text if fallback_text is not None else "".join(assistant_chunks)
         _persist_message(
             db,
             session_id=session_identifier,

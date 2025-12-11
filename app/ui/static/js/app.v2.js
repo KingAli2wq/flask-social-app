@@ -1080,7 +1080,7 @@
   }
 
   function isSocialAiStreamingEnabled() {
-    // Default to streaming so users see token-by-token output without a placeholder.
+    // Re-enable streaming; server now falls back to non-stream internally when streaming fails.
     return true;
   }
 
@@ -2049,6 +2049,10 @@
       });
       assistantMessage.content = finalText;
       assistantMessage.streaming = false;
+      // If the stream returned an error marker instead of content, fall back to non-streaming.
+      if (typeof finalText === 'string' && finalText.includes('[Stream error:')) {
+        throw new Error(finalText);
+      }
     } catch (error) {
       // Fallback: attempt non-streaming completion so the user still gets a reply.
       try {
