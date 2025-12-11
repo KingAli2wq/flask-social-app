@@ -8,7 +8,7 @@
 These Terms and Conditions (the "Terms") constitute a legally binding agreement between you ("you" or the "User") and SocialSphere Technologies Inc. ("SocialSphere," "we," "us," or "our") regarding your access to and use of the SocialSphere mobile and web applications, APIs, and related services (collectively, the "Services"). By creating an account, accessing, or using any part of the Services, you agree to be bound by these Terms and all incorporated policies. If you do not agree, you must immediately discontinue use of the Services.
 
 ## 2. Eligibility and Jurisdiction
-1. You must be at least 13 years of age to use the Services. If you are under the age of majority in your jurisdiction, your legal guardian must review and accept these Terms on your behalf.  
+1. You must be at least 16 years of age to use the Services. Users under 16 are not permitted to access the Services, even with parental or guardian consent. If you are 16 or 17 and under the age of majority in your jurisdiction, your legal guardian must review and accept these Terms on your behalf.  
 2. The Services are controlled and operated from Saskatchewan, Canada. We make no representation that the Services are appropriate or available in other jurisdictions. You are responsible for complying with all applicable local laws.
 
 ## 3. Accounts and Security

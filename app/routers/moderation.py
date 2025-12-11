@@ -21,9 +21,12 @@ from ..schemas import (
     ModerationUserList,
     ModerationUserSummary,
     ModerationUserUpdateRequest,
+    PostCommentResponse,
+    PostCommentUpdate,
 )
 from ..services import (
     delete_media_asset,
+    delete_post_comment,
     delete_moderation_user,
     delete_post_record,
     get_moderation_media_asset,
@@ -36,6 +39,7 @@ from ..services import (
     require_owner,
     require_roles,
     update_moderation_user,
+    update_post_comment,
     update_post_record,
     update_user_role,
 )
@@ -154,6 +158,37 @@ async def moderation_delete_post_endpoint(
         requester_id=cast(UUID, current_user.id),
         requester_role=getattr(current_user, "role", None),
         delete_media=True,
+    )
+
+
+@router.patch("/comments/{comment_id}", response_model=PostCommentResponse)
+async def moderation_update_comment_endpoint(
+    comment_id: UUID,
+    payload: PostCommentUpdate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> PostCommentResponse:
+    comment = update_post_comment(
+        db,
+        comment_id=comment_id,
+        requester_id=cast(UUID, current_user.id),
+        requester_role=getattr(current_user, "role", None),
+        content=payload.content,
+    )
+    return PostCommentResponse(**comment)
+
+
+@router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def moderation_delete_comment_endpoint(
+    comment_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> None:
+    delete_post_comment(
+        db,
+        comment_id=comment_id,
+        requester_id=cast(UUID, current_user.id),
+        requester_role=getattr(current_user, "role", None),
     )
 
 

@@ -511,6 +511,22 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
     return roots
 
 
+def _serialize_comment(comment: PostComment, user: User) -> dict[str, Any]:
+    parent_value = cast(UUID | None, comment.parent_id)
+    return {
+        "id": comment.id,
+        "post_id": comment.post_id,
+        "user_id": user.id,
+        "username": user.username,
+        "avatar_url": _normalize_avatar_url(cast(str | None, user.avatar_url)),
+        "role": getattr(user, "role", None),
+        "content": comment.content,
+        "parent_id": parent_value,
+        "created_at": comment.created_at,
+        "replies": [],
+    }
+
+
 def create_post_comment(
     db: Session,
     *,
@@ -541,19 +557,76 @@ def create_post_comment(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add comment") from exc
 
     db.refresh(comment)
-    parent_value = cast(UUID | None, comment.parent_id)
-    return {
-        "id": comment.id,
-        "post_id": comment.post_id,
-        "user_id": author.id,
-        "username": author.username,
-        "avatar_url": _normalize_avatar_url(cast(str | None, author.avatar_url)),
-        "role": getattr(author, "role", None),
-        "content": comment.content,
-        "parent_id": parent_value,
-        "created_at": comment.created_at,
-        "replies": [],
-    }
+    return _serialize_comment(comment, author)
+
+
+def _get_comment_or_404(db: Session, comment_id: UUID) -> PostComment:
+    comment = db.get(PostComment, comment_id)
+    if comment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+    return comment
+
+
+def update_post_comment(
+    db: Session,
+    *,
+    comment_id: UUID,
+    requester_id: UUID,
+    requester_role: str | None,
+    content: str,
+) -> dict[str, Any]:
+    comment = _get_comment_or_404(db, comment_id)
+    user = db.get(User, comment.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment author not found")
+
+    normalized_role = (requester_role or "").lower()
+    can_edit_any = normalized_role in {"owner", "admin"}
+    if comment.user_id != requester_id and not can_edit_any:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to edit this comment")
+
+    text = (content or "").strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
+    enforce_safe_text(text, field_name="comment")
+
+    if text == comment.content:
+        return _serialize_comment(comment, user)
+
+    setattr(comment, "content", text)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update comment") from exc
+
+    db.refresh(comment)
+    return _serialize_comment(comment, user)
+
+
+def delete_post_comment(
+    db: Session,
+    *,
+    comment_id: UUID,
+    requester_id: UUID,
+    requester_role: str | None,
+) -> UUID:
+    comment = _get_comment_or_404(db, comment_id)
+    normalized_role = (requester_role or "").lower()
+    can_delete_any = normalized_role in {"owner", "admin"}
+    if comment.user_id != requester_id and not can_delete_any:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this comment")
+
+    post_id = cast(UUID, comment.post_id)
+    try:
+        db.delete(comment)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete comment") from exc
+
+    return post_id
 
 
 def delete_post_record(
@@ -609,6 +682,8 @@ __all__ = [
     "set_post_dislike_state",
     "list_post_comments",
     "create_post_comment",
+    "update_post_comment",
+    "delete_post_comment",
     "delete_post_record",
     "delete_old_posts",
     "update_post_record",

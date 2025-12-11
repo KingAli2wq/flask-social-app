@@ -35,6 +35,7 @@ from .notifications import NotificationListResponse, NotificationResponse, Notif
 from .posts import (
     PostCommentCreate,
     PostCommentListResponse,
+    PostCommentUpdate,
     PostCommentResponse,
     PostCreate,
     PostEngagementResponse,
@@ -129,6 +130,7 @@ __all__ = [
     "PostCommentCreate",
     "PostCommentResponse",
     "PostCommentListResponse",
+    "PostCommentUpdate",
     "PostCreate",
     "PostEngagementResponse",
     "PostFeedResponse",

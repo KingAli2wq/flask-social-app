@@ -93,11 +93,13 @@ from .post_service import (
     create_post_record,
     delete_old_posts,
     delete_post_record,
+    delete_post_comment,
     get_post_engagement_snapshot,
     list_feed_records,
     list_post_comments,
     set_post_dislike_state,
     set_post_like_state,
+    update_post_comment,
     update_post_record,
 )
 from .profile_service import get_profile, update_profile
@@ -182,6 +184,8 @@ __all__ = [
     "get_post_engagement_snapshot",
     "set_post_dislike_state",
     "set_post_like_state",
+    "update_post_comment",
+    "delete_post_comment",
     "update_post_record",
     "create_story",
     "list_active_stories",

@@ -62,6 +62,10 @@ class PostCommentCreate(BaseModel):
     parent_id: UUID | None = None
 
 
+class PostCommentUpdate(BaseModel):
+    content: str = Field(..., min_length=1, max_length=500)
+
+
 class PostCommentResponse(BaseModel):
     id: UUID
     post_id: UUID
@@ -88,6 +92,7 @@ __all__ = [
     "PostFeedResponse",
     "PostEngagementResponse",
     "PostCommentCreate",
+    "PostCommentUpdate",
     "PostCommentResponse",
     "PostCommentListResponse",
 ]

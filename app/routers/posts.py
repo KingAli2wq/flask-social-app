@@ -14,6 +14,7 @@ from ..database import create_session, get_session
 from ..models import Post, PostComment, User
 from ..schemas import (
     PostCommentCreate,
+    PostCommentUpdate,
     PostCommentListResponse,
     PostCommentResponse,
     PostEngagementResponse,
@@ -27,6 +28,8 @@ from ..services import (
     get_current_user,
     get_post_engagement_snapshot,
     get_optional_user,
+    delete_post_comment,
+    update_post_comment,
     respond_to_ai_mention_in_comment,
     respond_to_ai_mention_in_post,
     list_post_comments,
@@ -89,6 +92,41 @@ async def _broadcast_comment_created(comment: dict[str, Any], snapshot: dict[str
             "dislike_count": int(snapshot.get("dislike_count") or 0),
             "comment_count": int(snapshot.get("comment_count") or 0),
         }
+    await _safe_feed_broadcast(message)
+
+
+async def _broadcast_comment_updated(comment: dict[str, Any], snapshot: dict[str, Any] | None = None) -> None:
+    post_id = comment.get("post_id")
+    if not post_id:
+        return
+    message: dict[str, Any] = {
+        "type": "post_comment_updated",
+        "post_id": str(post_id),
+        "comment": comment,
+    }
+    if snapshot:
+        message["counts"] = {
+            "like_count": int(snapshot.get("like_count") or 0),
+            "dislike_count": int(snapshot.get("dislike_count") or 0),
+            "comment_count": int(snapshot.get("comment_count") or 0),
+        }
+    await _safe_feed_broadcast(message)
+
+
+async def _broadcast_comment_deleted(comment_id: UUID, snapshot: dict[str, Any] | None = None) -> None:
+    message: dict[str, Any] = {
+        "type": "post_comment_deleted",
+        "comment_id": str(comment_id),
+    }
+    if snapshot:
+        message["counts"] = {
+            "like_count": int(snapshot.get("like_count") or 0),
+            "dislike_count": int(snapshot.get("dislike_count") or 0),
+            "comment_count": int(snapshot.get("comment_count") or 0),
+        }
+        post_id = snapshot.get("post_id")
+        if post_id:
+            message["post_id"] = str(post_id)
     await _safe_feed_broadcast(message)
 
 
@@ -272,6 +310,49 @@ async def create_post_comment_endpoint(
     await _broadcast_engagement_snapshot(snapshot)
     _spawn_ai_reply_for_comment(post_id=post_id, comment_id=comment.get("id"), actor_id=current_user.id)
     return PostCommentResponse(**comment)
+
+
+@router.patch("/{post_id}/comments/{comment_id}", response_model=PostCommentResponse)
+async def update_post_comment_endpoint(
+    post_id: UUID,
+    comment_id: UUID,
+    payload: PostCommentUpdate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> PostCommentResponse:
+    comment = update_post_comment(
+        db,
+        comment_id=comment_id,
+        requester_id=current_user.id,
+        requester_role=getattr(current_user, "role", None),
+        content=payload.content,
+    )
+    if comment.get("post_id") != post_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment does not belong to post")
+    snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
+    await _broadcast_comment_updated(comment, snapshot)
+    await _broadcast_engagement_snapshot(snapshot)
+    return PostCommentResponse(**comment)
+
+
+@router.delete("/{post_id}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_post_comment_endpoint(
+    post_id: UUID,
+    comment_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    deleted_post_id = delete_post_comment(
+        db,
+        comment_id=comment_id,
+        requester_id=current_user.id,
+        requester_role=getattr(current_user, "role", None),
+    )
+    if deleted_post_id != post_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment does not belong to post")
+    snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
+    await _broadcast_comment_deleted(comment_id, snapshot)
+    await _broadcast_engagement_snapshot(snapshot)
 
 
 def _spawn_ai_reply_for_post(*, post_id: UUID, actor_id: UUID) -> None:
