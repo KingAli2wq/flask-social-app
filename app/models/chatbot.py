@@ -19,6 +19,7 @@ class AiChatSession(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(160), nullable=True)
     persona = Column(String(64), nullable=False, server_default="companion")
+    status = Column(String(32), nullable=False, server_default="active", default="active")
     system_prompt = Column(Text, nullable=True)
     context_metadata = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

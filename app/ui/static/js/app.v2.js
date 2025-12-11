@@ -54,6 +54,21 @@
       restricted: true,
     },
   };
+  // Session statuses mirror the backend; "preparing" is a transient hint and must never block the UI.
+  const SOCIAL_AI_SESSION_STATUS_META = {
+    active: {
+      label: 'Active',
+      badgeClass: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200',
+    },
+    preparing: {
+      label: 'Preparing…',
+      badgeClass: 'border-amber-400/50 bg-amber-500/10 text-amber-200 animate-pulse',
+    },
+    ended: {
+      label: 'Ended',
+      badgeClass: 'border-slate-600/70 bg-slate-800/60 text-slate-300',
+    },
+  };
   const PRIVILEGED_SOCIAL_AI_ROLES = new Set(['owner', 'admin']);
   const APP_CONFIG = window.__SOCIAL_CONFIG__ || {};
   const TERMS_VERSION = APP_CONFIG.termsVersion || '1.0.0';
@@ -1040,6 +1055,19 @@
     return { key, meta: SOCIAL_AI_MODES[key] || SOCIAL_AI_MODES.default };
   }
 
+  function normalizeSocialAiSessionStatus(status) {
+    const token = (status || '').toString().toLowerCase().trim();
+    if (token && Object.prototype.hasOwnProperty.call(SOCIAL_AI_SESSION_STATUS_META, token)) {
+      return token;
+    }
+    return 'active';
+  }
+
+  function getSocialAiSessionStatusMeta(status) {
+    const normalized = normalizeSocialAiSessionStatus(status);
+    return { key: normalized, meta: SOCIAL_AI_SESSION_STATUS_META[normalized] || SOCIAL_AI_SESSION_STATUS_META.active };
+  }
+
   function updateSocialAiModeOptionsVisibility() {
     const privileged = hasAdminPromptAccess();
     document.querySelectorAll('[data-role-required="admin"]').forEach(option => {
@@ -1249,6 +1277,7 @@
           ? 'border-fuchsia-500/60 bg-slate-900/80 shadow-lg shadow-fuchsia-900/30'
           : 'border-slate-800/70 bg-slate-950/60 hover:border-slate-700 hover:bg-slate-900/60'
       }`;
+      const { key: statusKey, meta: statusMeta } = getSocialAiSessionStatusMeta(session.status);
       const title = document.createElement('p');
       title.className = 'text-sm font-semibold text-white';
       title.textContent = session.title || 'Untitled chat';
@@ -1261,10 +1290,20 @@
       const personaKey = normalizeSocialAiMode(session.persona);
       personaLabel.className = 'text-fuchsia-200';
       personaLabel.textContent = (SOCIAL_AI_MODES[personaKey] || SOCIAL_AI_MODES.default).label;
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusMeta.badgeClass}`;
+      statusBadge.textContent = statusMeta.label;
+      if (statusKey === 'preparing') {
+        statusBadge.setAttribute('title', 'Model warmup may still be running, but you can keep chatting.');
+      }
+      const metaLeft = document.createElement('div');
+      metaLeft.className = 'flex items-center gap-2';
+      metaLeft.appendChild(personaLabel);
+      metaLeft.appendChild(statusBadge);
       const timestamp = document.createElement('span');
       timestamp.className = 'text-slate-500';
       timestamp.textContent = formatSocialAiTimestamp(session.updated_at);
-      metaRow.appendChild(personaLabel);
+      metaRow.appendChild(metaLeft);
       metaRow.appendChild(timestamp);
       const deleteButton = document.createElement('button');
       deleteButton.type = 'button';
@@ -1280,6 +1319,16 @@
     });
   }
 
+  function normalizeSocialAiSessionRecord(record) {
+    if (!record || typeof record !== 'object') {
+      return null;
+    }
+    return {
+      ...record,
+      status: normalizeSocialAiSessionStatus(record.status),
+    };
+  }
+
   function updateSocialAiSessionSummary(transcript) {
     if (!transcript || !transcript.session_id) return;
     const controller = state.socialAi;
@@ -1291,6 +1340,7 @@
       title: transcript.title,
       persona: transcript.persona,
       updated_at: transcript.updated_at,
+      status: normalizeSocialAiSessionStatus(transcript.status),
       last_message_preview: previewMessage ? previewMessage.slice(0, 140) : null,
     };
     const existingIndex = controller.sessions.findIndex(item => item.session_id === summary.session_id);
@@ -1314,7 +1364,10 @@
     showSocialAiError('');
     try {
       const sessions = await apiFetch('/chatbot/sessions');
-      controller.sessions = Array.isArray(sessions) ? sessions : [];
+      const normalizedSessions = (Array.isArray(sessions) ? sessions : [])
+        .map(normalizeSocialAiSessionRecord)
+        .filter(Boolean);
+      controller.sessions = normalizedSessions;
       controller.sessions.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
       controller.sessionsLoaded = true;
       if (!controller.activeSessionId && controller.sessions.length) {
@@ -1352,6 +1405,7 @@
     showSocialAiError('');
     try {
       const transcript = await apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}`);
+      transcript.status = normalizeSocialAiSessionStatus(transcript.status);
       controller.messagesBySession[sessionId] = sortSocialAiMessages(transcript.messages || []);
       if (controller.activeSessionId === sessionId) {
         controller.mode = normalizeSocialAiMode(transcript.persona);
@@ -1382,6 +1436,7 @@
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      transcript.status = normalizeSocialAiSessionStatus(transcript.status);
       controller.activeSessionId = transcript.session_id;
       controller.mode = normalizeSocialAiMode(transcript.persona);
       controller.messagesBySession[transcript.session_id] = sortSocialAiMessages(transcript.messages || []);
@@ -1418,6 +1473,7 @@
         method: 'POST',
         body: JSON.stringify({ persona: controller.mode }),
       });
+      transcript.status = normalizeSocialAiSessionStatus(transcript.status);
       controller.activeSessionId = transcript.session_id;
       controller.mode = normalizeSocialAiMode(transcript.persona || controller.mode);
       controller.messagesBySession[transcript.session_id] = sortSocialAiMessages(transcript.messages || []);

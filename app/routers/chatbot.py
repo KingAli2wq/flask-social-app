@@ -5,7 +5,7 @@ import logging
 from time import perf_counter
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from ..services import (
     list_chatbot_sessions,
     send_chat_prompt,
     stream_chat_prompt,
+    warmup_social_ai_model,
 )
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
@@ -54,6 +55,7 @@ def _to_session_response(transcript: ChatbotTranscript) -> ChatbotSessionRespons
         persona=session.persona,
         title=session.title,
         updated_at=session.updated_at,
+        status=session.status,
         messages=_to_message_payload(transcript),
     )
 
@@ -170,6 +172,7 @@ def list_sessions(
                 session_id=item.session_id,
                 title=item.title,
                 persona=item.persona,
+                status=item.status,
                 updated_at=item.updated_at,
                 last_message_preview=item.last_message_preview,
             )
@@ -225,10 +228,12 @@ def get_session_detail(
 @router.post("/sessions", response_model=ChatbotSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
     payload: ChatbotSessionCreateRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
     transcript = create_chatbot_session(db, user=current_user, persona=payload.persona, title=payload.title)
+    background_tasks.add_task(warmup_social_ai_model)
     return _to_session_response(transcript)
 
 

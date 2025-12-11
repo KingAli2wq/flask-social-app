@@ -73,6 +73,7 @@ class ChatbotSessionResponse(BaseModel):
     persona: str
     title: str | None = None
     updated_at: datetime
+    status: str = Field(default="active")
     messages: List[ChatbotMessagePayload]
 
 
@@ -81,6 +82,7 @@ class ChatbotSessionSummary(BaseModel):
     title: str | None = None
     persona: str
     updated_at: datetime
+    status: str = Field(default="active")
     last_message_preview: str | None = None
 
 

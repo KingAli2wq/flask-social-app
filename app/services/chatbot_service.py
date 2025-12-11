@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from time import perf_counter
 from typing import Any, AsyncIterator, Final, Iterator, List, Protocol, Sequence, cast
 from uuid import UUID
@@ -80,6 +80,15 @@ _PERSONA_PROMPTS: Final[dict[str, str]] = {
     ),
 }
 
+# Session statuses are intentionally simple; "preparing" is a transient hint that must not linger.
+_SESSION_STATUS_ACTIVE: Final[str] = "active"
+_SESSION_STATUS_PREPARING: Final[str] = "preparing"
+_SESSION_STATUS_ENDED: Final[str] = "ended"
+_SESSION_STATUS_CHOICES: Final[frozenset[str]] = frozenset(
+    {_SESSION_STATUS_ACTIVE, _SESSION_STATUS_PREPARING, _SESSION_STATUS_ENDED}
+)
+_PREPARING_HEAL_TIMEOUT = timedelta(minutes=5)
+
 
 def _normalize_persona_key(value: str | None) -> str:
     if not value:
@@ -97,6 +106,31 @@ def _resolve_persona(persona: str | None) -> tuple[str, str]:
     key = _normalize_persona_key(persona)
     prompt = _PERSONA_PROMPTS.get(key, _PERSONA_PROMPTS[_DEFAULT_PERSONA])
     return key, prompt
+
+
+def _normalize_session_status(value: str | None) -> str:
+    token = (value or "").strip().lower()
+    if token in _SESSION_STATUS_CHOICES:
+        return token
+    return _SESSION_STATUS_ACTIVE
+
+
+def _heal_preparing_status(session: AiChatSession) -> tuple[str, bool]:
+    """Clamp lingering "preparing" rows back to "active" after a short timeout."""
+
+    raw_status = cast(str | None, getattr(session, "status", None))
+    status = _normalize_session_status(raw_status)
+    mutated = False
+    if status != raw_status:
+        setattr(session, "status", status)
+        mutated = True
+    if status == _SESSION_STATUS_PREPARING:
+        updated_at = cast(datetime | None, getattr(session, "updated_at", None))
+        if updated_at is None or (_now() - updated_at) >= _PREPARING_HEAL_TIMEOUT:
+            status = _SESSION_STATUS_ACTIVE
+            setattr(session, "status", status)
+            mutated = True
+    return status, mutated
 
 
 def _user_role(user: User) -> str:
@@ -464,6 +498,7 @@ class ChatbotSessionSummaryDTO:
     session_id: UUID
     title: str | None
     persona: str
+    status: str
     updated_at: datetime
     last_message_preview: str | None
 
@@ -559,6 +594,9 @@ def _ensure_session(
         session = db.get(AiChatSession, session_id)
         if session is None or cast(UUID, session.user_id) != user.id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+        healed_status, mutated = _heal_preparing_status(session)
+        if mutated:
+            setattr(session, "status", healed_status)
         if persona:
             target_persona, target_prompt = requested_persona, requested_prompt
         else:
@@ -575,6 +613,7 @@ def _ensure_session(
     session = AiChatSession(
         user_id=user.id,
         persona=requested_persona,
+        status=_SESSION_STATUS_ACTIVE,
         title=cleaned_title,
         system_prompt=requested_prompt,
     )
@@ -896,6 +935,13 @@ def get_chatbot_transcript(
     session = db.get(AiChatSession, session_id)
     if session is None or cast(UUID, session.user_id) != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+    _, mutated = _heal_preparing_status(session)
+    if mutated:
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            logger.warning("Unable to persist healed chatbot session status", exc_info=True)
     messages = _load_recent_messages(db, cast(UUID, session.id), limit=_RESPONSE_HISTORY)
     return ChatbotTranscript(session=session, messages=_serialize_messages(messages))
 
@@ -908,7 +954,10 @@ def list_chatbot_sessions(db: Session, *, user: User) -> list[ChatbotSessionSumm
     )
     sessions = list(db.scalars(stmt))
     summaries: list[ChatbotSessionSummaryDTO] = []
+    mutated = False
     for session in sessions:
+        status_value, healed = _heal_preparing_status(session)
+        mutated = mutated or healed
         preview_stmt = (
             select(AiChatMessage)
             .where(AiChatMessage.session_id == session.id)
@@ -922,10 +971,17 @@ def list_chatbot_sessions(db: Session, *, user: User) -> list[ChatbotSessionSumm
                 session_id=cast(UUID, session.id),
                 title=cast(str | None, session.title),
                 persona=cast(str, session.persona),
+                status=status_value,
                 updated_at=cast(datetime, session.updated_at),
                 last_message_preview=(preview_text[:160] if preview_text else None),
             )
         )
+    if mutated:
+        try:
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            logger.warning("Unable to persist healed chatbot session statuses", exc_info=True)
     return summaries
 
 
@@ -979,10 +1035,10 @@ def warmup_social_ai_model() -> None:
         logger.info("Social AI warmup complete | duration_ms=%.1f", duration)
     except ChatbotServiceError:
         duration = (perf_counter() - start) * 1000
-        logger.debug("Social AI warmup failed due to service error | duration_ms=%.1f", duration, exc_info=True)
+        logger.warning("Social AI warmup failed due to service error | duration_ms=%.1f", duration, exc_info=True)
     except Exception:  # pragma: no cover - defensive guard
         duration = (perf_counter() - start) * 1000
-        logger.debug("Unexpected Social AI warmup failure | duration_ms=%.1f", duration, exc_info=True)
+        logger.warning("Unexpected Social AI warmup failure | duration_ms=%.1f", duration, exc_info=True)
 
 
 __all__ = [

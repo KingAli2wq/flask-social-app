@@ -51,8 +51,8 @@ def _print_session_summaries(summaries: Iterable) -> None:
     for summary in summaries:
         preview = summary.last_message_preview or "(no messages)"
         print(
-            f"{summary.session_id} | persona={summary.persona} | updated={summary.updated_at:%Y-%m-%d %H:%M:%S} | "
-            f"preview={preview}"
+            f"{summary.session_id} | persona={summary.persona} | status={getattr(summary, 'status', 'active')} | "
+            f"updated={summary.updated_at:%Y-%m-%d %H:%M:%S} | preview={preview}"
         )
 
 
