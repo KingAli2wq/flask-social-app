@@ -319,6 +319,7 @@
     },
     socialAi: {
       initialized: false,
+      initScheduled: false,
       open: false,
       mode: 'default',
       sessions: [],
@@ -1628,8 +1629,30 @@
     }
   }
 
+  function scheduleSocialAiInit() {
+    const controller = state.socialAi;
+    if (controller.initScheduled) {
+      return;
+    }
+    controller.initScheduled = true;
+    const run = () => {
+      try {
+        initSocialAi();
+      } catch (error) {
+        console.warn('[social-ai] init failed', error);
+      }
+    };
+    const idle = typeof window !== 'undefined' ? window.requestIdleCallback : null;
+    if (typeof idle === 'function') {
+      idle(run, { timeout: 1200 });
+    } else {
+      setTimeout(run, 0);
+    }
+  }
+
   function initSocialAi() {
     const controller = state.socialAi;
+    controller.initScheduled = true;
     controller.elements.root = document.getElementById('social-ai-overlay');
     if (!controller.elements.root) {
       return;
@@ -10017,7 +10040,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
     initTermsOverlay();
-    initSocialAi();
+    scheduleSocialAiInit();
     initInlineAiChat();
     bootstrapTermsAcceptance();
   });

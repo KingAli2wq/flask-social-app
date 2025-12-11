@@ -34,6 +34,15 @@ router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 logger = logging.getLogger(__name__)
 
 
+def _schedule_social_ai_warmup(background_tasks: BackgroundTasks) -> None:
+    """Best-effort helper so warmup failures never break session creation."""
+
+    try:
+        background_tasks.add_task(warmup_social_ai_model)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.warning("Unable to enqueue Social AI warmup task", exc_info=True)
+
+
 def _to_message_payload(transcript: ChatbotTranscript) -> list[ChatbotMessagePayload]:
     return [
         ChatbotMessagePayload(
@@ -232,9 +241,28 @@ def create_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
-    transcript = create_chatbot_session(db, user=current_user, persona=payload.persona, title=payload.title)
-    background_tasks.add_task(warmup_social_ai_model)
-    return _to_session_response(transcript)
+    start = perf_counter()
+    try:
+        transcript = create_chatbot_session(db, user=current_user, persona=payload.persona, title=payload.title)
+    except Exception:
+        duration = (perf_counter() - start) * 1000
+        logger.exception(
+            "Social AI session create failed | user=%s duration_ms=%.1f",
+            current_user.id,
+            duration,
+        )
+        raise
+
+    response = _to_session_response(transcript)
+    duration = (perf_counter() - start) * 1000
+    logger.info(
+        "Social AI session create success | user=%s session=%s duration_ms=%.1f",
+        current_user.id,
+        response.session_id,
+        duration,
+    )
+    _schedule_social_ai_warmup(background_tasks)
+    return response
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

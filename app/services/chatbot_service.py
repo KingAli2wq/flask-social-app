@@ -1029,6 +1029,7 @@ def warmup_social_ai_model() -> None:
     This ensures the application still boots even if the AI model is offline.
     """
 
+    start = perf_counter()
     try:
         client = _get_llm_client()
     except Exception as exc:  # pragma: no cover - defensive guard
@@ -1045,6 +1046,9 @@ def warmup_social_ai_model() -> None:
             )
     except Exception as exc:  # pragma: no cover - best-effort warmup
         logger.warning("Social AI warmup: request failed (ignored)", exc_info=exc)
+    else:
+        duration = (perf_counter() - start) * 1000
+        logger.info("Social AI warmup: completed | duration_ms=%.1f", duration)
 
 
 __all__ = [
