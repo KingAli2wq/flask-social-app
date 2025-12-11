@@ -2050,17 +2050,45 @@
       assistantMessage.content = finalText;
       assistantMessage.streaming = false;
     } catch (error) {
-      const fallback = error?.message || 'The AI request failed, please try again.';
-      assistantMessage.content = fallback;
-      assistantMessage.streaming = false;
-      if (assistantNode.textNode) {
-        assistantNode.textNode.textContent = fallback;
-        assistantNode.textNode.classList.add('text-rose-200');
+      // Fallback: attempt non-streaming completion so the user still gets a reply.
+      try {
+        const payload = {
+          message: text,
+          session_id: sessionId,
+          persona: meta.key,
+          include_public_context: meta.meta.includeContext !== false,
+        };
+        const response = await apiFetch('/chatbot/messages', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        const assistantMessages = Array.isArray(response?.messages)
+          ? response.messages.filter(msg => (msg.role || '').toLowerCase() === 'assistant')
+          : [];
+        const latestAssistant = assistantMessages.length ? assistantMessages[assistantMessages.length - 1] : null;
+        if (latestAssistant && typeof latestAssistant.content === 'string') {
+          assistantMessage.content = latestAssistant.content;
+          assistantMessage.streaming = false;
+          if (assistantNode.textNode) {
+            assistantNode.textNode.textContent = assistantMessage.content;
+            assistantNode.textNode.classList.remove('text-rose-200');
+          }
+          controller.messagesBySession[sessionId] = sortSocialAiMessages(response.messages || []);
+        } else {
+          throw error;
+        }
+      } catch (fallbackError) {
+        const fallback = getErrorMessage(fallbackError || error, 'The AI request failed, please try again.');
+        assistantMessage.content = fallback;
+        assistantMessage.streaming = false;
+        if (assistantNode.textNode) {
+          assistantNode.textNode.textContent = fallback;
+          assistantNode.textNode.classList.add('text-rose-200');
+        }
+        if (assistantNode.wrapper) {
+          assistantNode.wrapper.classList.add('chat-message--error', 'border-rose-500/60');
+        }
       }
-      if (assistantNode.wrapper) {
-        assistantNode.wrapper.classList.add('chat-message--error', 'border-rose-500/60');
-      }
-      throw error;
     } finally {
       if (assistantNode.typingIndicator && assistantNode.typingIndicator.parentNode) {
         assistantNode.typingIndicator.parentNode.removeChild(assistantNode.typingIndicator);
