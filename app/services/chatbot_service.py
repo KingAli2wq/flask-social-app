@@ -26,6 +26,7 @@ BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:8080").rstrip
 AI_CHAT_URL = f"{BACKEND_BASE_URL}/ai/chat"
 AI_CHAT_STREAM_URL = f"{BACKEND_BASE_URL}/ai/chat/stream"
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "120"))
+OLLAMA_STREAM_TIMEOUT = float(os.getenv("OLLAMA_STREAM_TIMEOUT", os.getenv("OLLAMA_TIMEOUT", "300")))
 SOCIAL_AI_KEEP_ALIVE_SECONDS = int(os.getenv("SOCIAL_AI_KEEP_ALIVE_SECONDS", "20"))
 _HTTPX_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=10)
 _INTERNAL_OVERRIDE_HEADER = "x-social-ai-internal"
@@ -207,7 +208,8 @@ class SocialAIChatClient(LLMClient):
     def __init__(self, *, endpoint: str | None = None, stream_endpoint: str | None = None) -> None:
         self._endpoint = (endpoint or AI_CHAT_URL).rstrip("/")
         self._stream_endpoint = (stream_endpoint or AI_CHAT_STREAM_URL).rstrip("/")
-        self._client = httpx.Client(timeout=OLLAMA_TIMEOUT, limits=_HTTPX_LIMITS)
+        timeout = httpx.Timeout(connect=OLLAMA_TIMEOUT, read=OLLAMA_STREAM_TIMEOUT, write=OLLAMA_TIMEOUT, pool=OLLAMA_TIMEOUT)
+        self._client = httpx.Client(timeout=timeout, limits=_HTTPX_LIMITS)
         self._internal_token = _INTERNAL_OVERRIDE_TOKEN
         self._warned_missing_token = False
 
@@ -299,9 +301,9 @@ class SocialAIChatClient(LLMClient):
             response = stream_ctx.__enter__()
         except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
             logger.error(
-                "SocialAIChatClient stream timeout | endpoint=%s timeout=%s error=%s",
+                "SocialAIChatClient stream timeout | endpoint=%s read_timeout=%s error=%s",
                 self._stream_endpoint,
-                OLLAMA_TIMEOUT,
+                OLLAMA_STREAM_TIMEOUT,
                 type(exc).__name__,
             )
             raise ChatbotServiceError("Local LLM stream timed out") from exc
@@ -346,8 +348,9 @@ class SocialAIChatClient(LLMClient):
                     yield chunk
             except httpx.ReadTimeout as exc:  # pragma: no cover - timeout path
                 logger.error(
-                    "SocialAIChatClient stream timeout while iterating | endpoint=%s error=%s",
+                    "SocialAIChatClient stream timeout while iterating | endpoint=%s read_timeout=%s error=%s",
                     self._stream_endpoint,
+                    OLLAMA_STREAM_TIMEOUT,
                     type(exc).__name__,
                 )
                 raise ChatbotServiceError("Local LLM stream timed out") from exc
