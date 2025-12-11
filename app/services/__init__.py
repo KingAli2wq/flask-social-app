@@ -1,4 +1,5 @@
 """Convenience exports for service layer."""
+from .ai_content_service import create_ai_post, generate_ai_caption, set_ai_content_llm_client
 from .auth_service import (
     authenticate_user,
     create_access_token,
@@ -116,6 +117,9 @@ __all__ = [
     "get_optional_user",
     "require_roles",
     "require_owner",
+    "create_ai_post",
+    "generate_ai_caption",
+    "set_ai_content_llm_client",
     "create_group_chat",
     "add_group_members",
     "get_group_chat",

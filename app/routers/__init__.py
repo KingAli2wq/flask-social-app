@@ -1,5 +1,6 @@
 """Aggregate router exports."""
 from .ai import router as ai_router
+from .ai_posts import router as ai_posts_router
 from .auth import router as auth_router
 from .chatbot import router as chatbot_router
 from .friends import router as friends_router
@@ -19,6 +20,7 @@ from .uploads import router as uploads_router
 
 __all__ = [
     "ai_router",
+    "ai_posts_router",
     "auth_router",
     "chatbot_router",
     "friends_router",

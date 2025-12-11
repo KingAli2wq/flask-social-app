@@ -1,5 +1,6 @@
 """Convenience exports for schema layer."""
 from .auth import AcceptTermsRequest, AuthResponse, LoginRequest, RegisterRequest, UserPublicProfile
+from .ai_posts import AIGeneratePostRequest
 from .chatbot import (
     ChatbotMessagePayload,
     ChatbotPromptRequest,
@@ -74,6 +75,7 @@ __all__ = [
     "LoginRequest",
     "RegisterRequest",
     "UserPublicProfile",
+    "AIGeneratePostRequest",
     "ChatbotPromptRequest",
     "ChatbotMessagePayload",
     "ChatbotSessionResponse",
