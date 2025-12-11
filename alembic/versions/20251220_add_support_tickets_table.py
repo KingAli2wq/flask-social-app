@@ -9,6 +9,7 @@ from __future__ import annotations
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision = "20251220_add_support_tickets_table"
@@ -18,24 +19,38 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "support_tickets",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("from_address", sa.String(length=512), nullable=False),
-        sa.Column("to_address", sa.String(length=512), nullable=False),
-        sa.Column("subject", sa.String(length=512), nullable=False),
-        sa.Column("body", sa.Text(), nullable=False),
-        sa.Column("body_html", sa.Text(), nullable=True),
-        sa.Column(
-            "status",
-            sa.String(length=32),
-            nullable=False,
-            server_default="open",
-        ),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-    )
+    # Prevent duplicate table creation
+    bind = op.get_bind()
+    inspector = inspect(bind)
+
+    if "support_tickets" not in inspector.get_table_names():
+        op.create_table(
+            "support_tickets",
+            sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column("from_address", sa.String(length=512), nullable=False),
+            sa.Column("to_address", sa.String(length=512), nullable=False),
+            sa.Column("subject", sa.String(length=512), nullable=False),
+            sa.Column("body", sa.Text(), nullable=False),
+            sa.Column("body_html", sa.Text(), nullable=True),
+            sa.Column(
+                "status",
+                sa.String(length=32),
+                nullable=False,
+                server_default="open",
+            ),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.text("NOW()"),
+                nullable=False,
+            ),
+            sa.PrimaryKeyConstraint("id"),
+        )
+    else:
+        # Table already exists — no action needed
+        pass
 
 
 def downgrade() -> None:
     op.drop_table("support_tickets")
+
