@@ -5,7 +5,7 @@ import logging
 from time import perf_counter
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -27,20 +27,10 @@ from ..services import (
     list_chatbot_sessions,
     send_chat_prompt,
     stream_chat_prompt,
-    warmup_social_ai_model,
 )
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 logger = logging.getLogger(__name__)
-
-
-def _schedule_social_ai_warmup(background_tasks: BackgroundTasks) -> None:
-    """Best-effort helper so warmup failures never break session creation."""
-
-    try:
-        background_tasks.add_task(warmup_social_ai_model)
-    except Exception:  # pragma: no cover - defensive guard
-        logger.warning("Unable to enqueue Social AI warmup task", exc_info=True)
 
 
 def _to_message_payload(transcript: ChatbotTranscript) -> list[ChatbotMessagePayload]:
@@ -237,7 +227,6 @@ def get_session_detail(
 @router.post("/sessions", response_model=ChatbotSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(
     payload: ChatbotSessionCreateRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
@@ -261,7 +250,6 @@ def create_session(
         response.session_id,
         duration,
     )
-    _schedule_social_ai_warmup(background_tasks)
     return response
 
 

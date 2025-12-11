@@ -13,7 +13,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.services.safety import SafetyViolation, check_content_policy
-from app.services.chatbot_service import warmup_social_ai_model
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://143.198.39.198:11434").rstrip("/")
 OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
@@ -263,19 +262,10 @@ async def chat_with_local_model_stream(payload: ChatRequest, request: Request) -
     return StreamingResponse(event_generator(), media_type="text/plain")
 
 
-@router.post("/warmup")
-async def ai_warmup() -> dict[str, str]:
-    """Preload the Ollama model so subsequent chats avoid a cold start."""
-
-    warmup_social_ai_model()
-    return {"status": "ok"}
-
-
 __all__ = [
     "router",
     "chat_with_local_model",
     "chat_with_local_model_stream",
-    "ai_warmup",
     "ChatRequest",
     "ChatResponse",
     "build_system_prompt",

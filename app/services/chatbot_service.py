@@ -370,19 +370,6 @@ class SocialAIChatClient(LLMClient):
 
         return _iterator()
 
-    def warmup(self) -> None:
-        """Send a minimal prompt to keep the Ollama model pre-loaded."""
-
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": "You are Social AI warmup helper."},
-            {"role": "user", "content": "Please say OK."},
-        ]
-        payload = _build_ai_chat_payload(messages, policy_override=False, keep_alive=SOCIAL_AI_KEEP_ALIVE_SECONDS, num_predict=1)
-        try:
-            self._client.post(self._endpoint, json=payload, headers=None)
-        except httpx.HTTPError as exc:  # pragma: no cover - best-effort warmup
-            logger.debug("SocialAI warmup skipped due to HTTP error: %s", exc)
-
 
 class SocialAIChatStreamingClient(StreamingLLMClient):
     """Async adapter that streams via the shared SocialAIChatClient instance."""
@@ -1021,36 +1008,6 @@ def delete_chatbot_session(
         raise ChatbotServiceError("Failed to delete chatbot session") from exc
 
 
-def warmup_social_ai_model() -> None:
-    """
-    Best-effort LLM warmup helper used by the chatbot router.
-
-    It should NOT raise exceptions; failures should be logged and ignored.
-    This ensures the application still boots even if the AI model is offline.
-    """
-
-    start = perf_counter()
-    try:
-        client = _get_llm_client()
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logger.warning("Social AI warmup: failed to construct client", exc_info=exc)
-        return
-
-    try:
-        warmup_callable = getattr(client, "warmup", None)
-        if callable(warmup_callable):
-            warmup_callable()
-        else:
-            client.complete(
-                messages=[{"role": "user", "content": "ping"}],
-            )
-    except Exception as exc:  # pragma: no cover - best-effort warmup
-        logger.warning("Social AI warmup: request failed (ignored)", exc_info=exc)
-    else:
-        duration = (perf_counter() - start) * 1000
-        logger.info("Social AI warmup: completed | duration_ms=%.1f", duration)
-
-
 __all__ = [
     "ChatbotServiceError",
     "ChatbotPolicyError",
@@ -1065,5 +1022,4 @@ __all__ = [
     "delete_chatbot_session",
     "set_llm_client",
     "set_streaming_llm_client",
-    "warmup_social_ai_model",
 ]

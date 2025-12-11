@@ -334,7 +334,6 @@
       error: null,
       documentHandlerBound: false,
       persistSessions: true,
-      lastWarmupAt: 0,
       elements: {
         root: null,
         panel: null,
@@ -1295,7 +1294,7 @@
       statusBadge.className = `rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusMeta.badgeClass}`;
       statusBadge.textContent = statusMeta.label;
       if (statusKey === 'preparing') {
-        statusBadge.setAttribute('title', 'Model warmup may still be running, but you can keep chatting.');
+        statusBadge.setAttribute('title', 'Session is still syncing, but you can keep chatting.');
       }
       const metaLeft = document.createElement('div');
       metaLeft.className = 'flex items-center gap-2';
@@ -1614,21 +1613,6 @@
     return accumulated;
   }
 
-  async function warmupSocialAiModel(options = {}) {
-    const controller = state.socialAi;
-    const now = Date.now();
-    const cooldownMs = typeof options.cooldown === 'number' ? options.cooldown : 15000;
-    if (!options.force && controller.lastWarmupAt && now - controller.lastWarmupAt < cooldownMs) {
-      return;
-    }
-    controller.lastWarmupAt = now;
-    try {
-      await fetch('/ai/warmup', { method: 'POST', keepalive: true });
-    } catch (error) {
-      console.warn('[social-ai] warmup failed', error);
-    }
-  }
-
   function scheduleSocialAiInit() {
     const controller = state.socialAi;
     if (controller.initScheduled) {
@@ -1762,9 +1746,6 @@
     controller.mode = normalizeSocialAiMode(preferredMode || controller.mode);
     updateSocialAiModeOptionsVisibility();
     controller.open = true;
-    warmupSocialAiModel({ force: true }).catch(() => {
-      /* noop */
-    });
     updateSocialAiModeLabel();
     root.classList.remove('hidden');
     lockBodyScroll();
@@ -1947,9 +1928,6 @@
   async function sendSocialAiPrompt(text) {
     const controller = state.socialAi;
     const meta = getSocialAiModeMeta(controller.mode);
-    warmupSocialAiModel().catch(() => {
-      /* background warmup best-effort */
-    });
     const sendButton = controller.elements.send;
     controller.sending = true;
     if (sendButton) {
