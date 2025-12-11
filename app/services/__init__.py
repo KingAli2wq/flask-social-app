@@ -30,6 +30,7 @@ from .chatbot_service import (
     set_llm_client,
     set_streaming_llm_client,
     stream_chat_prompt,
+    warmup_social_ai_model,
 )
 from .emotion_service import (
     EmotionPrediction,
@@ -200,6 +201,7 @@ __all__ = [
     "set_llm_client",
     "set_streaming_llm_client",
     "stream_chat_prompt",
+    "warmup_social_ai_model",
     "EmotionPrediction",
     "EmotionServiceError",
     "detect_emotions",

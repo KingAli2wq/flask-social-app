@@ -1022,23 +1022,29 @@ def delete_chatbot_session(
 
 
 def warmup_social_ai_model() -> None:
-    """Pre-load the Social AI model so the first response feels instant."""
-    start = perf_counter()
-    base = _get_llm_client()
-    if not isinstance(base, SocialAIChatClient):
-        logger.debug("Skipping Social AI warmup because a custom LLM client is active")
-        return
-    logger.info("Social AI warmup start")
+    """
+    Best-effort LLM warmup helper used by the chatbot router.
+
+    It should NOT raise exceptions; failures should be logged and ignored.
+    This ensures the application still boots even if the AI model is offline.
+    """
+
     try:
-        base.warmup()
-        duration = (perf_counter() - start) * 1000
-        logger.info("Social AI warmup complete | duration_ms=%.1f", duration)
-    except ChatbotServiceError:
-        duration = (perf_counter() - start) * 1000
-        logger.warning("Social AI warmup failed due to service error | duration_ms=%.1f", duration, exc_info=True)
-    except Exception:  # pragma: no cover - defensive guard
-        duration = (perf_counter() - start) * 1000
-        logger.warning("Unexpected Social AI warmup failure | duration_ms=%.1f", duration, exc_info=True)
+        client = _get_llm_client()
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("Social AI warmup: failed to construct client", exc_info=exc)
+        return
+
+    try:
+        warmup_callable = getattr(client, "warmup", None)
+        if callable(warmup_callable):
+            warmup_callable()
+        else:
+            client.complete(
+                messages=[{"role": "user", "content": "ping"}],
+            )
+    except Exception as exc:  # pragma: no cover - best-effort warmup
+        logger.warning("Social AI warmup: request failed (ignored)", exc_info=exc)
 
 
 __all__ = [
