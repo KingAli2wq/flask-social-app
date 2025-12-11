@@ -1080,7 +1080,8 @@
   }
 
   function isSocialAiStreamingEnabled() {
-    return Boolean(typeof window !== 'undefined' && window.ENABLE_LOCAL_LLM_STREAM);
+    // Default to streaming so users see token-by-token output without a placeholder.
+    return true;
   }
 
   const TYPEWRITER_MIN_DELAY_MS = 14;
@@ -1949,12 +1950,9 @@
     }
     const useStreaming = isSocialAiStreamingEnabled();
     if (!useStreaming) {
-      setSocialAiTyping(true);
       const userMessage = createLocalSocialAiMessage('user', text);
       controller.messagesBySession[sessionId].push(userMessage);
       appendSocialAiMessage(userMessage);
-    } else {
-      setSocialAiTyping(true);
     }
     try {
       if (useStreaming) {
@@ -1966,9 +1964,6 @@
       showSocialAiError(getErrorMessage(error, 'Social AI is unavailable right now.'));
     } finally {
       controller.sending = false;
-      if (!useStreaming) {
-        setSocialAiTyping(false);
-      }
       if (sendButton) {
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
@@ -2028,7 +2023,6 @@
     messages.push(assistantMessage);
     const assistantNode = appendSocialAiMessage(assistantMessage, { streaming: true }) || {};
     const typewriter = createTypewriterEffect(assistantNode.textNode);
-    let receivedChunk = false;
 
     const handleChunk = chunk => {
       assistantMessage.content += chunk;
@@ -2040,10 +2034,6 @@
       if (assistantNode.typingIndicator && assistantMessage.content.length) {
         assistantNode.typingIndicator.remove();
         assistantNode.typingIndicator = null;
-      }
-      if (!receivedChunk) {
-        receivedChunk = true;
-        setSocialAiTyping(false);
       }
       scrollSocialAiThreadToBottom();
     };
@@ -2097,7 +2087,6 @@
         updated_at: new Date().toISOString(),
         messages: orderedMessages,
       });
-      setSocialAiTyping(false);
     }
   }
 
