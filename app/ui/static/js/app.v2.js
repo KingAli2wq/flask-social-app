@@ -1080,8 +1080,8 @@
   }
 
   function isSocialAiStreamingEnabled() {
-    // Re-enable streaming; server now falls back to non-stream internally when streaming fails.
-    return true;
+    // Streaming disabled: rely on non-streaming endpoint and show a typing indicator instead.
+    return false;
   }
 
   const TYPEWRITER_MIN_DELAY_MS = 14;
@@ -1948,22 +1948,17 @@
     if (!Array.isArray(controller.messagesBySession[sessionId])) {
       controller.messagesBySession[sessionId] = [];
     }
-    const useStreaming = isSocialAiStreamingEnabled();
-    if (!useStreaming) {
-      const userMessage = createLocalSocialAiMessage('user', text);
-      controller.messagesBySession[sessionId].push(userMessage);
-      appendSocialAiMessage(userMessage);
-    }
+    const userMessage = createLocalSocialAiMessage('user', text);
+    controller.messagesBySession[sessionId].push(userMessage);
+    appendSocialAiMessage(userMessage);
+    setSocialAiTyping(true);
     try {
-      if (useStreaming) {
-        await sendSocialAiPromptStreaming(text, meta);
-      } else {
-        await sendSocialAiPromptViaApi(text, meta);
-      }
+      await sendSocialAiPromptViaApi(text, meta);
     } catch (error) {
       showSocialAiError(getErrorMessage(error, 'Social AI is unavailable right now.'));
     } finally {
       controller.sending = false;
+      setSocialAiTyping(false);
       if (sendButton) {
         sendButton.disabled = false;
         sendButton.textContent = 'Send';
@@ -1991,135 +1986,6 @@
     updateSocialAiSessionSummary(response);
     renderSocialAiSessions();
     renderSocialAiMessages();
-  }
-
-  async function sendSocialAiPromptStreaming(text, meta) {
-    const controller = state.socialAi;
-    if (!controller.activeSessionId) {
-      await ensureActiveSocialAiSession();
-    }
-    const sessionId = controller.activeSessionId;
-    if (!sessionId) {
-      throw new Error('No active chat session available.');
-    }
-    if (!Array.isArray(controller.messagesBySession[sessionId])) {
-      controller.messagesBySession[sessionId] = [];
-    }
-    const thread = controller.elements.thread;
-    if (!thread) {
-      // Fallback to the legacy pathway if the DOM is not ready.
-      await sendSocialAiPromptViaApi(text, meta);
-      return;
-    }
-    const messages = controller.messagesBySession[sessionId];
-    const userMessage = createLocalSocialAiMessage('user', text);
-    messages.push(userMessage);
-    appendSocialAiMessage(userMessage);
-
-    const assistantMessage = {
-      ...createLocalSocialAiMessage('assistant', ''),
-      streaming: true,
-    };
-    messages.push(assistantMessage);
-    const assistantNode = appendSocialAiMessage(assistantMessage, { streaming: true }) || {};
-    const typewriter = createTypewriterEffect(assistantNode.textNode);
-
-    const handleChunk = chunk => {
-      assistantMessage.content += chunk;
-      if (typewriter) {
-        typewriter.append(chunk);
-      } else if (assistantNode.textNode) {
-        assistantNode.textNode.textContent = assistantMessage.content;
-      }
-      if (assistantNode.typingIndicator && assistantMessage.content.length) {
-        assistantNode.typingIndicator.remove();
-        assistantNode.typingIndicator = null;
-      }
-      scrollSocialAiThreadToBottom();
-    };
-
-    try {
-      const finalText = await streamChatbotReply({
-        sessionId,
-        message: text,
-        persona: meta.key,
-        includePublicContext: meta.meta.includeContext !== false,
-        title: controller.sessions.find(item => item.session_id === sessionId)?.title || null,
-        onChunk: handleChunk,
-      });
-      assistantMessage.content = finalText;
-      assistantMessage.streaming = false;
-      // If the stream returned an error marker instead of content, fall back to non-streaming.
-      if (typeof finalText === 'string' && finalText.includes('[Stream error:')) {
-        throw new Error(finalText);
-      }
-    } catch (error) {
-      // Fallback: attempt non-streaming completion so the user still gets a reply.
-      try {
-        const payload = {
-          message: text,
-          session_id: sessionId,
-          persona: meta.key,
-          include_public_context: meta.meta.includeContext !== false,
-        };
-        const response = await apiFetch('/chatbot/messages', {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        const assistantMessages = Array.isArray(response?.messages)
-          ? response.messages.filter(msg => (msg.role || '').toLowerCase() === 'assistant')
-          : [];
-        const latestAssistant = assistantMessages.length ? assistantMessages[assistantMessages.length - 1] : null;
-        if (latestAssistant && typeof latestAssistant.content === 'string') {
-          assistantMessage.content = latestAssistant.content;
-          assistantMessage.streaming = false;
-          if (assistantNode.textNode) {
-            assistantNode.textNode.textContent = assistantMessage.content;
-            assistantNode.textNode.classList.remove('text-rose-200');
-          }
-          controller.messagesBySession[sessionId] = sortSocialAiMessages(response.messages || []);
-        } else {
-          throw error;
-        }
-      } catch (fallbackError) {
-        const fallback = getErrorMessage(fallbackError || error, 'The AI request failed, please try again.');
-        assistantMessage.content = fallback;
-        assistantMessage.streaming = false;
-        if (assistantNode.textNode) {
-          assistantNode.textNode.textContent = fallback;
-          assistantNode.textNode.classList.add('text-rose-200');
-        }
-        if (assistantNode.wrapper) {
-          assistantNode.wrapper.classList.add('chat-message--error', 'border-rose-500/60');
-        }
-      }
-    } finally {
-      if (assistantNode.typingIndicator && assistantNode.typingIndicator.parentNode) {
-        assistantNode.typingIndicator.parentNode.removeChild(assistantNode.typingIndicator);
-        assistantNode.typingIndicator = null;
-      }
-      if (assistantNode.wrapper) {
-        assistantNode.wrapper.classList.remove('chat-message--streaming');
-      }
-      if (typewriter) {
-        typewriter.flush(assistantMessage.content);
-        typewriter.dispose();
-      } else if (assistantNode.textNode) {
-        assistantNode.textNode.textContent = assistantMessage.content;
-      }
-      scrollSocialAiThreadToBottom();
-      const orderedMessages = sortSocialAiMessages(controller.messagesBySession[sessionId]);
-      controller.messagesBySession[sessionId] = orderedMessages;
-      controller.mode = normalizeSocialAiMode(meta.key);
-      updateSocialAiModeLabel();
-      updateSocialAiSessionSummary({
-        session_id: sessionId,
-        persona: meta.key,
-        title: controller.sessions.find(item => item.session_id === sessionId)?.title,
-        updated_at: new Date().toISOString(),
-        messages: orderedMessages,
-      });
-    }
   }
 
   // -----------------------------------------------------------------------
