@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..models import User
+from ..models import Post, User
 from ..schemas import (
     PostCommentCreate,
     PostCommentListResponse,
@@ -26,6 +26,8 @@ from ..services import (
     get_current_user,
     get_post_engagement_snapshot,
     get_optional_user,
+    respond_to_ai_mention_in_comment,
+    respond_to_ai_mention_in_post,
     list_post_comments,
     list_feed_records,
     set_post_dislike_state,
@@ -139,6 +141,8 @@ async def create_post_endpoint(
             "created_at": post.created_at.isoformat() if getattr(post, "created_at", None) else None,
         }
     )
+
+    await _maybe_ai_reply_for_post(db, post=post, actor=current_user)
 
     return _serialize_post_model(post)
 
@@ -265,7 +269,29 @@ async def create_post_comment_endpoint(
     snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
     await _broadcast_comment_created(comment, snapshot)
     await _broadcast_engagement_snapshot(snapshot)
+
+    post = db.get(Post, post_id)
+    if post is not None:
+        ai_comment = await respond_to_ai_mention_in_comment(
+            db,
+            post=post,
+            comment=comment,
+            actor=current_user,
+        )
+        if ai_comment:
+            ai_snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
+            await _broadcast_comment_created(ai_comment, ai_snapshot)
+            await _broadcast_engagement_snapshot(ai_snapshot)
     return PostCommentResponse(**comment)
+
+
+async def _maybe_ai_reply_for_post(db: Session, *, post: Post, actor: User) -> None:
+    ai_comment = await respond_to_ai_mention_in_post(db, post=post, actor=actor)
+    if not ai_comment:
+        return
+    snapshot = get_post_engagement_snapshot(db, post_id=post.id, viewer_id=actor.id)
+    await _broadcast_comment_created(ai_comment, snapshot)
+    await _broadcast_engagement_snapshot(snapshot)
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)

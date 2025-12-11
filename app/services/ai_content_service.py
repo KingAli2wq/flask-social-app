@@ -50,7 +50,7 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _find_or_create_bot_user(db: Session) -> User:
+def ensure_ai_bot_user(db: Session) -> User:
     existing = db.scalars(select(User).where(User.username == _BOT_USERNAME)).first()
     if existing:
         return existing
@@ -168,7 +168,7 @@ async def create_ai_post(
     lookback_hours: int = _DEFAULT_LOOKBACK_HOURS,
     temperature: float | None = None,
 ) -> Post:
-    bot_user = _find_or_create_bot_user(db)
+    bot_user = ensure_ai_bot_user(db)
     caption = generate_ai_caption(
         db,
         max_context_posts=max_context_posts,
@@ -182,5 +182,6 @@ async def create_ai_post(
 __all__ = [
     "create_ai_post",
     "generate_ai_caption",
+    "ensure_ai_bot_user",
     "set_ai_content_llm_client",
 ]
