@@ -1,6 +1,7 @@
 """Respond to @Social AI mentions in posts and comments."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -22,6 +23,7 @@ _BOT_USERNAME = os.getenv("SOCIAL_AI_BOT_USERNAME", "SocialSphereAI")
 _MAX_REPLY_LENGTH = 240
 _MAX_CONTEXT_COMMENTS = 5
 _DEFAULT_TEMPERATURE = 0.4
+_MENTION_TIMEOUT = float(os.getenv("SOCIAL_AI_MENTION_TIMEOUT", "20"))
 
 _llm_client: LLMClient | None = None
 
@@ -104,14 +106,23 @@ def _sanitize_reply(text: str) -> str:
     return reply
 
 
-def _generate_reply(db: Session, *, post: Post, actor_username: str, user_text: str) -> str | None:
+async def _generate_reply(db: Session, *, post: Post, actor_username: str, user_text: str) -> str | None:
     context = _recent_comment_context(db, cast(UUID, post.id), limit=_MAX_CONTEXT_COMMENTS)
     messages = _build_messages(post, actor_username, user_text, context)
     client = _get_llm_client()
     try:
-        result = client.complete(messages=messages, temperature=_DEFAULT_TEMPERATURE)
+        result = await asyncio.wait_for(
+            asyncio.to_thread(client.complete, messages=messages, temperature=_DEFAULT_TEMPERATURE),
+            timeout=_MENTION_TIMEOUT,
+        )
     except ChatbotServiceError as exc:
         logger.error("AI mention reply failed | timeout=%s", OLLAMA_TIMEOUT)
+        return None
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.error("AI mention reply timed out after %s seconds", _MENTION_TIMEOUT)
+        return None
+    except Exception:
+        logger.exception("AI mention reply failed unexpectedly")
         return None
 
     try:
@@ -131,7 +142,7 @@ async def respond_to_ai_mention_in_post(db: Session, *, post: Post, actor: User)
     if not _should_respond(actor, getattr(post, "caption", None)):
         return None
 
-    reply = _generate_reply(db, post=post, actor_username=getattr(actor, "username", "user"), user_text=_normalize(post.caption))
+    reply = await _generate_reply(db, post=post, actor_username=getattr(actor, "username", "user"), user_text=_normalize(post.caption))
     if not reply:
         return None
 
@@ -153,7 +164,7 @@ async def respond_to_ai_mention_in_comment(
     if not _should_respond(actor, comment.get("content")):
         return None
 
-    reply = _generate_reply(
+    reply = await _generate_reply(
         db,
         post=post,
         actor_username=getattr(actor, "username", "user"),

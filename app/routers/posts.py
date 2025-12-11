@@ -1,6 +1,7 @@
 """Post related API routes backed by PostgreSQL and DigitalOcean Spaces."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Optional
 from uuid import UUID
@@ -9,8 +10,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..database import get_session
-from ..models import Post, User
+from ..database import create_session, get_session
+from ..models import Post, PostComment, User
 from ..schemas import (
     PostCommentCreate,
     PostCommentListResponse,
@@ -142,7 +143,7 @@ async def create_post_endpoint(
         }
     )
 
-    await _maybe_ai_reply_for_post(db, post=post, actor=current_user)
+    _spawn_ai_reply_for_post(post_id=post.id, actor_id=current_user.id)
 
     return _serialize_post_model(post)
 
@@ -269,29 +270,67 @@ async def create_post_comment_endpoint(
     snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
     await _broadcast_comment_created(comment, snapshot)
     await _broadcast_engagement_snapshot(snapshot)
-
-    post = db.get(Post, post_id)
-    if post is not None:
-        ai_comment = await respond_to_ai_mention_in_comment(
-            db,
-            post=post,
-            comment=comment,
-            actor=current_user,
-        )
-        if ai_comment:
-            ai_snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
-            await _broadcast_comment_created(ai_comment, ai_snapshot)
-            await _broadcast_engagement_snapshot(ai_snapshot)
+    _spawn_ai_reply_for_comment(post_id=post_id, comment_id=comment.get("id"), actor_id=current_user.id)
     return PostCommentResponse(**comment)
 
 
-async def _maybe_ai_reply_for_post(db: Session, *, post: Post, actor: User) -> None:
-    ai_comment = await respond_to_ai_mention_in_post(db, post=post, actor=actor)
-    if not ai_comment:
+def _spawn_ai_reply_for_post(*, post_id: UUID, actor_id: UUID) -> None:
+    asyncio.create_task(_ai_reply_for_post_task(post_id=post_id, actor_id=actor_id))
+
+
+def _spawn_ai_reply_for_comment(*, post_id: UUID, comment_id: UUID | None, actor_id: UUID) -> None:
+    if comment_id is None:
         return
-    snapshot = get_post_engagement_snapshot(db, post_id=post.id, viewer_id=actor.id)
-    await _broadcast_comment_created(ai_comment, snapshot)
-    await _broadcast_engagement_snapshot(snapshot)
+    asyncio.create_task(_ai_reply_for_comment_task(post_id=post_id, comment_id=comment_id, actor_id=actor_id))
+
+
+async def _ai_reply_for_post_task(*, post_id: UUID, actor_id: UUID) -> None:
+    session = create_session()
+    try:
+        post = session.get(Post, post_id)
+        actor = session.get(User, actor_id)
+        if post is None or actor is None:
+            return
+        ai_comment = await respond_to_ai_mention_in_post(session, post=post, actor=actor)
+        if not ai_comment:
+            return
+        snapshot = get_post_engagement_snapshot(session, post_id=post_id, viewer_id=actor_id)
+        await _broadcast_comment_created(ai_comment, snapshot)
+        await _broadcast_engagement_snapshot(snapshot)
+    except Exception:
+        logger.exception("AI post mention task failed")
+    finally:
+        session.close()
+
+
+async def _ai_reply_for_comment_task(*, post_id: UUID, comment_id: UUID, actor_id: UUID) -> None:
+    session = create_session()
+    try:
+        post = session.get(Post, post_id)
+        actor = session.get(User, actor_id)
+        if post is None or actor is None:
+            return
+        comment_row = session.get(PostComment, comment_id)
+        if comment_row is None:
+            return
+        comment_payload = {
+            "id": comment_row.id,
+            "post_id": comment_row.post_id,
+            "user_id": comment_row.user_id,
+            "content": comment_row.content,
+            "parent_id": comment_row.parent_id,
+            "created_at": comment_row.created_at,
+        }
+        ai_comment = await respond_to_ai_mention_in_comment(session, post=post, comment=comment_payload, actor=actor)
+        if not ai_comment:
+            return
+        snapshot = get_post_engagement_snapshot(session, post_id=post_id, viewer_id=actor_id)
+        await _broadcast_comment_created(ai_comment, snapshot)
+        await _broadcast_engagement_snapshot(snapshot)
+    except Exception:
+        logger.exception("AI comment mention task failed")
+    finally:
+        session.close()
 
 
 @router.delete("/{post_id}", status_code=status.HTTP_204_NO_CONTENT)

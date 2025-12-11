@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Callable, Iterator
 from uuid import UUID
 
@@ -83,10 +84,20 @@ def test_ai_replies_to_comment_mention(authed_client, stub_llm: StubLLM):
     client = authed_client(author)
     response = client.post(f"/posts/{post.id}/comments", json={"content": "Hi @SocialSphereAI, how are you?"})
     assert response.status_code == 201
+    # Wait for background AI task to complete
+    for _ in range(10):
+        time.sleep(0.2)
+        if stub_llm.calls > 0:
+            break
     assert stub_llm.calls == 1
 
     with SessionLocal() as session:
-        comments = session.query(PostComment).filter(PostComment.post_id == post.id).order_by(PostComment.created_at.asc()).all()
+        comments = (
+            session.query(PostComment)
+            .filter(PostComment.post_id == post.id)
+            .order_by(PostComment.created_at.asc())
+            .all()
+        )
         assert len(comments) == 2  # user + AI
         user_comment, ai_comment = comments
         bot_user = session.get(User, ai_comment.user_id)
@@ -109,6 +120,10 @@ def test_ai_replies_to_post_mention(authed_client, stub_llm: StubLLM):
     assert response.status_code == 201
     body = response.json()
     post_id = UUID(body["id"])
+    for _ in range(10):
+        time.sleep(0.2)
+        if stub_llm.calls > 0:
+            break
     assert stub_llm.calls == 1
 
     with SessionLocal() as session:
