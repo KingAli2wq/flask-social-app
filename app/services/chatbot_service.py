@@ -40,8 +40,8 @@ _DEFAULT_SYSTEM_PROMPT = (
     "messages as part of the same dialogue unless the user clearly starts a new topic. Give clear, direct answers, keep "
     "jokes genuinely funny yet kind, and always follow platform safety, legal, and community policies."
 )
-_MAX_HISTORY = 15
-_RESPONSE_HISTORY = 40
+_MAX_HISTORY = 50
+_RESPONSE_HISTORY = 80
 _DEFAULT_PERSONA: Final[str] = "default"
 _ROLEPLAY_PERSONA_KEY: Final[str] = "roleplay"
 _ADMIN_PERSONA_KEY: Final[str] = "admin-ops"

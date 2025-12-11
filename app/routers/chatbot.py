@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from time import perf_counter
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..models import User
+from ..models import AiChatSession, User
 from ..schemas.chatbot import (
     ChatbotMessagePayload,
     ChatbotPromptRequest,
@@ -193,6 +194,27 @@ def list_sessions(
             duration,
         )
         raise
+
+
+@router.post(
+    "/sessions/{session_id}/keepalive",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def keepalive_session(
+    session_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> None:
+    session = db.get(AiChatSession, session_id)
+    if session is None or session.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
+    setattr(session, "updated_at", datetime.now(timezone.utc))
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.warning("Social AI keepalive failed | session=%s", session_id, exc_info=exc)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Keepalive failed") from exc
 
 
 @router.get("/sessions/{session_id}", response_model=ChatbotSessionResponse)

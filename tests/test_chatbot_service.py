@@ -187,6 +187,31 @@ def test_chatbot_policy_violation_is_returned_to_client(authed_client, user_fact
     set_llm_client(stub_llm)
 
 
+def test_chatbot_keepalive_updates_timestamp(authed_client, user_factory):
+    user = user_factory("keepalive-user")
+    client = authed_client(user)
+
+    # Create a session
+    created = client.post("/chatbot/sessions", json={"persona": "default"})
+    assert created.status_code == 201
+    session_id = created.json()["session_id"]
+
+    # Capture original updated_at
+    session_detail = client.get(f"/chatbot/sessions/{session_id}")
+    assert session_detail.status_code == 200
+    first_updated = session_detail.json()["updated_at"]
+
+    # Call keepalive
+    keepalive = client.post(f"/chatbot/sessions/{session_id}/keepalive")
+    assert keepalive.status_code == 204
+
+    # Fetch again and ensure updated_at moved forward
+    refreshed = client.get(f"/chatbot/sessions/{session_id}")
+    assert refreshed.status_code == 200
+    second_updated = refreshed.json()["updated_at"]
+    assert second_updated >= first_updated
+
+
 def test_admin_persona_sets_policy_override(authed_client, user_factory, stub_llm):
     user = user_factory("admin-override", role="owner")
     client = authed_client(user)

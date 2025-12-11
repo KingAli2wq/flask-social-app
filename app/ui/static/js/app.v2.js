@@ -334,6 +334,8 @@
       error: null,
       documentHandlerBound: false,
       persistSessions: true,
+      keepAliveHandle: null,
+      keepAliveIntervalMs: 30000,
       elements: {
         root: null,
         panel: null,
@@ -1770,6 +1772,22 @@
     lockBodyScroll();
     toggleSocialAiModeMenu(false);
     showSocialAiError('');
+    if (!controller.activeSessionId) {
+      ensureActiveSocialAiSession().catch(() => {
+        /* handled upstream */
+      });
+    }
+    if (!controller.keepAliveHandle) {
+      controller.keepAliveHandle = window.setInterval(() => {
+        const sessionId = controller.activeSessionId;
+        if (!sessionId) return;
+        apiFetch(`/chatbot/sessions/${encodeURIComponent(sessionId)}/keepalive`, {
+          method: 'POST',
+        }).catch(() => {
+          /* best-effort keepalive */
+        });
+      }, controller.keepAliveIntervalMs);
+    }
     if (controller.elements.input) {
       controller.elements.input.focus();
       const value = controller.elements.input.value;
@@ -1789,6 +1807,10 @@
     const controller = state.socialAi;
     const root = controller.elements.root;
     if (!root || root.classList.contains('hidden')) return;
+    if (controller.keepAliveHandle) {
+      window.clearInterval(controller.keepAliveHandle);
+      controller.keepAliveHandle = null;
+    }
     controller.open = false;
     toggleSocialAiModeMenu(false);
     root.classList.add('hidden');
