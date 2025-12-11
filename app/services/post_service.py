@@ -21,6 +21,14 @@ from .safety import enforce_safe_text
 logger = logging.getLogger(__name__)
 
 
+def _normalize_avatar_url(raw: str | None) -> str | None:
+    url = reveal_media_value(cast(str | None, raw))
+    if not url:
+        return None
+    trimmed = url.strip()
+    return trimmed or None
+
+
 def _normalize_media_asset_id(candidate: UUID | str | None) -> UUID | None:
     if isinstance(candidate, UUID):
         return candidate
@@ -325,7 +333,7 @@ def list_feed_records(
             idx += 1
 
         username = cast(str | None, username_value)
-        avatar_url = cast(str | None, avatar_value)
+        avatar_url = _normalize_avatar_url(cast(str | None, avatar_value))
         post_media_url_value = reveal_media_value(cast(str | None, post.media_url))
         asset_media_url_plain = reveal_media_value(cast(str | None, media_asset_url_value))
         # Media validation is handled asynchronously by the cleanup task to keep feed requests fast.
@@ -487,7 +495,7 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
             "post_id": comment.post_id,
             "user_id": comment.user_id,
             "username": cast(str | None, username),
-            "avatar_url": cast(str | None, avatar_url),
+            "avatar_url": _normalize_avatar_url(cast(str | None, avatar_url)),
             "role": cast(str | None, role),
             "content": comment.content,
             "parent_id": parent_id_value,
@@ -539,7 +547,7 @@ def create_post_comment(
         "post_id": comment.post_id,
         "user_id": author.id,
         "username": author.username,
-        "avatar_url": author.avatar_url,
+        "avatar_url": _normalize_avatar_url(cast(str | None, author.avatar_url)),
         "role": getattr(author, "role", None),
         "content": comment.content,
         "parent_id": parent_value,
