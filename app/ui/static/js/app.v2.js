@@ -489,6 +489,15 @@
       if (direct) {
         return direct;
       }
+      // Avoid "[object Object]"—attempt a safe JSON representation.
+      try {
+        const serialized = JSON.stringify(payload);
+        if (serialized && serialized !== '{}') {
+          return serialized;
+        }
+      } catch {
+        /* noop */
+      }
     } else if (typeof payload === 'string') {
       const text = payload.trim();
       if (text) {
@@ -543,6 +552,15 @@
     }
     if (typeof error.message === 'string' && error.message.trim()) {
       return error.message.trim();
+    }
+    // Last-resort stringify to avoid "[object Object]" showing up.
+    try {
+      const serialized = JSON.stringify(error);
+      if (serialized && serialized !== '{}') {
+        return serialized;
+      }
+    } catch {
+      /* noop */
     }
     return fallback;
   }
