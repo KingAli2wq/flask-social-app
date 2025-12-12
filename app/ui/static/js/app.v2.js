@@ -32,20 +32,15 @@
       description: 'Friendly guidance',
       includeContext: true,
     },
-    freaky: {
-      label: 'Freaky',
-      description: 'Playful chaos',
+    unhinged: {
+      label: 'Unhinged',
+      description: 'Dark roasts (still safe)',
       includeContext: false,
     },
     deep: {
       label: 'Deep understanding',
       description: 'Structured analysis',
       includeContext: true,
-    },
-    roleplay: {
-      label: 'Roleplay',
-      description: 'In-character scenes',
-      includeContext: false,
     },
     'admin-ops': {
       label: 'Admin / Owner',
@@ -1059,7 +1054,9 @@
     if (!slug) return 'default';
     const aliasMap = {
       'deep-understanding': 'deep',
-      'role-play': 'roleplay',
+      freaky: 'unhinged',
+      'freaky-mode': 'unhinged',
+      'unhinged-mode': 'unhinged',
     };
     const resolved = aliasMap[slug] || slug;
     const meta = SOCIAL_AI_MODES[resolved];
