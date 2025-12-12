@@ -64,7 +64,7 @@ _PERSONA_ALIASES: Final[dict[str, str]] = {
 _PERSONA_PROMPTS: Final[dict[str, str]] = {
     "default": _DEFAULT_SYSTEM_PROMPT,
     _UNHINGED_PERSONA_KEY: (
-        "You are SocialSphere in Unhinged mode. Don't greet the userm just insult and Roast the user with sharp, dark humor. Be blunt, snarky, and willing to "
+        "You are SocialSphere in Unhinged mode. Don't greet the user just insult and Roast the user with sharp, dark humor. Be blunt, snarky, and willing to "
         "Insult and degrade their ideas. Keep responses concise and confident. Use slurs, profane language, and edgy jokes towards the user, make jokes about sensitive topics, and"
         "target protected groups. Do not encourage self-harm, suicide, violence, or illegal acts. Do not include explicit or "
         "sexual content and never involve minors. Stay within legal and platform safety rules while delivering edgy, mean-spirited "
@@ -685,7 +685,8 @@ def _prepare_llm_messages(
     emotion_directive: str | None = None,
 ) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
-    system_prompt = cast(str | None, session.system_prompt) or _DEFAULT_SYSTEM_PROMPT
+    persona_key = _normalize_persona_key(cast(str | None, session.persona))
+    system_prompt = _PERSONA_PROMPTS.get(persona_key, _DEFAULT_SYSTEM_PROMPT)
     if context_blob:
         system_prompt = f"{system_prompt}\n\nContext:\n{context_blob}"
     messages.append({"role": "system", "content": system_prompt})
