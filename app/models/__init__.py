@@ -10,6 +10,7 @@ from .message import Message
 from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
 from .story import Story
+from .rag import RagChunk
 from .user import User
 from .support import SupportTicket
 
@@ -34,4 +35,5 @@ __all__ = [
     "AiChatSession",
     "AiChatMessage",
     "SupportTicket",
+    "RagChunk",
 ]

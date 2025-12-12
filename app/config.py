@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     mailgun_api_key: str | None = Field(default=None, alias="MAILGUN_API_KEY")
     mailgun_domain: str | None = Field(default=None, alias="MAILGUN_DOMAIN")
 
+    # RAG / Embeddings
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    ollama_embed_model: str = Field(default="embeddinggemma:latest", alias="OLLAMA_EMBED_MODEL")
+    ollama_timeout: float = Field(default=60.0, alias="OLLAMA_TIMEOUT")
+    rag_enabled: bool = Field(default=False, alias="RAG_ENABLED")
+    rag_top_k: int = Field(default=5, alias="RAG_TOP_K")
+    rag_min_similarity: float = Field(default=0.0, alias="RAG_MIN_SIMILARITY")
+    rag_chunk_size_chars: int = Field(default=1000, alias="RAG_CHUNK_SIZE_CHARS")
+    rag_chunk_overlap_chars: int = Field(default=150, alias="RAG_CHUNK_OVERLAP_CHARS")
+    rag_embedding_dim: int = Field(default=3072, alias="RAG_EMBEDDING_DIM")
+
     model_config = SettingsConfigDict(
         env_file=str(ENV_PATH),
         env_file_encoding="utf-8",

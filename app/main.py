@@ -28,6 +28,7 @@ from .routers import (
     media_router,
     messages_router,
     notifications_router,
+    rag_router,
     posts_router,
     profiles_router,
     realtime_router,
@@ -36,7 +37,7 @@ from .routers import (
     stories_router,
     uploads_router,
 )
-from .services import CleanupError, run_cleanup
+from .services import CleanupError, run_cleanup, start_embedding_worker, shutdown_embedding_worker
 from .ui import router as ui_router
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ app.include_router(moderation_router)
 app.include_router(posts_router)
 app.include_router(messages_router)
 app.include_router(notifications_router)
+app.include_router(rag_router)
 app.include_router(profiles_router)
 app.include_router(realtime_router)
 app.include_router(settings_router)
@@ -159,6 +161,13 @@ async def _startup() -> None:
     # Surface the resolved droplet IPv4 so operators can verify connectivity.
     logger.info("Connected to droplet (IPv4): %s", DROPLET_HOST)
 
+    if getattr(settings, "rag_enabled", False):
+        try:
+            await start_embedding_worker()
+            logger.info("RAG embedding worker started")
+        except Exception:  # pragma: no cover - best effort
+            logger.exception("Failed to start RAG embedding worker")
+
     if DISABLE_CLEANUP:
         logger.info("Background cleanup disabled (testing mode)")
         return
@@ -176,6 +185,12 @@ async def _startup() -> None:
 @app.on_event("shutdown")
 async def _shutdown() -> None:
     """Stop background tasks cleanly during application shutdown."""
+
+    if getattr(settings, "rag_enabled", False):
+        try:
+            await shutdown_embedding_worker()
+        except Exception:  # pragma: no cover - best effort
+            logger.exception("Failed to stop RAG embedding worker")
 
     if DISABLE_CLEANUP:
         return

@@ -10,6 +10,7 @@ from .mailgun_webhooks import router as mailgun_webhooks_router
 from .messages import router as messages_router
 from .notifications import router as notifications_router
 from .moderation import router as moderation_router
+from .rag import router as rag_router
 from .posts import router as posts_router
 from .profiles import router as profiles_router
 from .realtime import router as realtime_router
@@ -30,6 +31,7 @@ __all__ = [
     "messages_router",
     "notifications_router",
     "moderation_router",
+    "rag_router",
     "posts_router",
     "profiles_router",
     "realtime_router",
