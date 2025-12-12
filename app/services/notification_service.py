@@ -25,9 +25,12 @@ class NotificationType(StrEnum):
     GENERIC = "generic"
     MESSAGE_RECEIVED = "message.received"
     NEW_FOLLOWER = "follow.new"
+    FRIEND_REQUEST = "friend.request"
     FRIEND_ADDED = "friend.added"
     POST_FROM_FOLLOWED = "post.followed_author"
     POST_COMMENT = "post.comment"
+    POST_COMMENT_REPLY = "post.comment.reply"
+    POST_LIKE = "post.like"
 
 
 DEFAULT_NOTIFICATION_TYPE = NotificationType.GENERIC

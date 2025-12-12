@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import cast
 from uuid import UUID
 
@@ -11,6 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import FriendRequest, Friendship, User
+from .notification_service import NotificationType, add_notification
+
+logger = logging.getLogger(__name__)
 
 
 def _ordered_pair(a: UUID, b: UUID) -> tuple[UUID, UUID]:
@@ -65,6 +69,19 @@ def send_friend_request(db: Session, *, sender: User, recipient_username: str) -
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send request") from exc
 
     db.refresh(request)
+
+    sender_name = sender.username or "A user"
+    try:
+        add_notification(
+            db,
+            recipient_id=recipient_id,
+            sender_id=sender_id,
+            content=f"@{sender_name} sent you a friend request.",
+            type_=NotificationType.FRIEND_REQUEST,
+            payload={"user_id": str(sender_id), "username": sender.username},
+        )
+    except Exception:
+        logger.warning("Failed to enqueue friend request notification for %s", recipient_id)
     return request
 
 
@@ -117,6 +134,18 @@ def respond_to_request(db: Session, *, request_id: UUID, recipient: User, accept
         friendship = _existing_friendship(db, sender_id, stored_recipient_id)
         if friendship is None:
             friendship = _create_friendship(db, sender_id, stored_recipient_id)
+        actor_name = recipient.username or "A user"
+        try:
+            add_notification(
+                db,
+                recipient_id=sender_id,
+                sender_id=recipient_id,
+                content=f"@{actor_name} accepted your friend request.",
+                type_=NotificationType.FRIEND_ADDED,
+                payload={"user_id": str(recipient_id), "username": recipient.username},
+            )
+        except Exception:
+            logger.warning("Failed to enqueue friend acceptance notification for %s", sender_id)
         return friendship
     return None
 

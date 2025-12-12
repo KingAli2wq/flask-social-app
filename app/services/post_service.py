@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
+from .notification_service import NotificationType, add_notification
 from .media_crypto import protect_media_value, reveal_media_value
 from .media_service import delete_media_asset
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, upload_file_to_spaces
@@ -422,7 +423,11 @@ def set_post_like_state(
     user_id: UUID,
     should_like: bool,
 ) -> dict[str, Any]:
-    _get_post_or_404(db, post_id)
+    post = _get_post_or_404(db, post_id)
+    liker = db.get(User, user_id)
+    if liker is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    post_author_id = cast(UUID, post.user_id)
 
     existing = db.scalar(select(PostLike).where(PostLike.post_id == post_id, PostLike.user_id == user_id))
     existing_dislike = db.scalar(
@@ -443,7 +448,24 @@ def set_post_like_state(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update like") from exc
 
-    return _post_engagement_snapshot(db, post_id, user_id)
+    snapshot = _post_engagement_snapshot(db, post_id, user_id)
+
+    if should_like and existing is None and post_author_id != user_id:
+        liker_name = liker.username or "A user"
+        payload = {"post_id": str(post_id)}
+        try:
+            add_notification(
+                db,
+                recipient_id=post_author_id,
+                sender_id=user_id,
+                content=f"@{liker_name} liked your post.",
+                type_=NotificationType.POST_LIKE,
+                payload=payload,
+            )
+        except Exception:
+            logger.warning("Failed to enqueue like notification for post %s", post_id)
+
+    return snapshot
 
 
 def set_post_dislike_state(
@@ -557,6 +579,51 @@ def create_post_comment(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to add comment") from exc
 
     db.refresh(comment)
+
+    commenter_id = cast(UUID, author.id)
+    post_author_id = cast(UUID, post.user_id)
+    base_payload = {"post_id": str(post.id), "comment_id": str(comment.id)}
+    notified: set[str] = set()
+
+    def _enqueue_notification(recipient_id: UUID, type_: NotificationType, content: str, payload: dict[str, Any]) -> None:
+        if recipient_id == commenter_id:
+            return
+        key = str(recipient_id)
+        if key in notified:
+            return
+        notified.add(key)
+        try:
+            add_notification(
+                db,
+                recipient_id=recipient_id,
+                sender_id=commenter_id,
+                content=content,
+                type_=type_,
+                payload=payload,
+            )
+        except Exception:
+            logger.warning("Failed to enqueue comment notification for post %s", post.id)
+
+    commenter_name = author.username or "A user"
+    if post_author_id != commenter_id:
+        _enqueue_notification(
+            post_author_id,
+            NotificationType.POST_COMMENT,
+            f"@{commenter_name} commented on your post.",
+            base_payload,
+        )
+
+    if parent is not None:
+        parent_author_id = cast(UUID | None, parent.user_id)
+        if parent_author_id is not None and parent_author_id not in {commenter_id, post_author_id}:
+            reply_payload = {**base_payload, "parent_comment_id": str(parent.id)}
+            _enqueue_notification(
+                parent_author_id,
+                NotificationType.POST_COMMENT_REPLY,
+                f"@{commenter_name} replied to your comment.",
+                reply_payload,
+            )
+
     return _serialize_comment(comment, author)
 
 

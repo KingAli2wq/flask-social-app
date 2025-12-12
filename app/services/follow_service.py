@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import cast
 from uuid import UUID
 
@@ -11,6 +12,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, User
+from .notification_service import NotificationType, add_notification
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -48,6 +52,19 @@ def follow_user(db: Session, *, follower: User, target_id: UUID) -> bool:
     except SQLAlchemyError as exc:  # pragma: no cover - database errors
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to follow user") from exc
+
+    follower_name = follower.username or "A user"
+    try:
+        add_notification(
+            db,
+            recipient_id=target_id,
+            sender_id=follower_id,
+            content=f"@{follower_name} started following you.",
+            type_=NotificationType.NEW_FOLLOWER,
+            payload={"user_id": str(follower_id), "username": follower.username},
+        )
+    except Exception:
+        logger.warning("Failed to enqueue follow notification for %s", target_id)
     return True
 
 

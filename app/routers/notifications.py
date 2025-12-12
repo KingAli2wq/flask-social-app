@@ -23,15 +23,7 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 def _to_notification_response(record: Notification) -> NotificationResponse:
-    return NotificationResponse(
-        id=record.id,
-        recipient_id=record.recipient_id,
-        sender_id=record.sender_id,
-        type=record.type,
-        content=record.content,
-        created_at=record.created_at,
-        read=record.read,
-    )
+    return NotificationResponse.model_validate(record)
 
 
 @router.get("/", response_model=NotificationListResponse)

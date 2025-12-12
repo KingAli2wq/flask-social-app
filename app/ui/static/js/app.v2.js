@@ -248,6 +248,7 @@
       retryDelay: 1000,
       pingHandle: null,
       active: false,
+      pendingTarget: null,
     },
     settingsPage: {
       data: null,
@@ -2276,6 +2277,32 @@
       : `${trimmed}?v=${cacheBuster}`;
   }
 
+  function navigateToProfile(target) {
+    if (!target) return;
+    const username = typeof target.username === 'string' ? target.username.replace(/^@/, '').trim() : null;
+    const userId = target.userId || target.id;
+    const path = username ? `/profiles/${encodeURIComponent(username)}` : userId ? `/profiles/${encodeURIComponent(userId)}` : '/profiles';
+    window.location.href = path;
+  }
+
+  function attachProfileNavigation(node, user) {
+    if (!node || !user) return;
+    const payload = {
+      username: user.username || user.user_name || user.userName,
+      userId: user.userId || user.user_id || user.id,
+      id: user.id,
+    };
+    node.classList.add('cursor-pointer');
+    node.setAttribute('tabindex', '0');
+    node.addEventListener('click', () => navigateToProfile(payload));
+    node.addEventListener('keypress', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        navigateToProfile(payload);
+      }
+    });
+  }
+
   function shouldSkipCacheBuster(url) {
     try {
       const parsed = new URL(url, window.location.origin);
@@ -2367,7 +2394,9 @@
   async function initFeedPage() {
     initThemeToggle();
     setupStoriesUI();
+    captureNotificationTargetFromUrl();
     await Promise.allSettled([loadStories(), loadFeed()]);
+    await applyPendingNotificationTarget();
     setupComposer();
     initRealtimeUpdates();
     startFeedAutoRefresh(15000);
@@ -3491,6 +3520,7 @@
         loadMore.classList.toggle('hidden', state.feedItems.length <= FEED_BATCH_SIZE);
         loadMore.onclick = () => renderNextFeedBatch();
       }
+      await applyPendingNotificationTarget();
     } catch (error) {
       showToast(error.message || 'Unable to load feed.', 'error');
     } finally {
@@ -4002,12 +4032,12 @@
     const previewText = comment.content || '';
     wrapper.innerHTML = `
       <div class="flex items-start gap-3">
-        <div class="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
+        <div class="h-8 w-8 flex-shrink-0 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60 cursor-pointer" data-role="comment-avatar" data-user-id="${comment.user_id}" data-username="${comment.username || ''}">
           <img id="${avatarId}" alt="${author}" class="h-full w-full object-cover" />
         </div>
         <div class="flex-1">
           <div class="flex items-center justify-between text-xs text-slate-400">
-            <span class="flex flex-wrap items-center gap-2">${authorLabel}</span>
+            <span class="flex flex-wrap items-center gap-2 cursor-pointer" data-role="comment-author" data-user-id="${comment.user_id}" data-username="${comment.username || ''}">${authorLabel}</span>
             <time class="text-[11px]">${formatDate(comment.created_at)}</time>
           </div>
           <p class="mt-1 text-sm text-slate-200">${previewText}</p>
@@ -4019,6 +4049,10 @@
     `;
     const avatarNode = wrapper.querySelector(`#${avatarId}`);
     applyAvatarToImg(avatarNode, comment.avatar_url);
+    const avatarWrapper = wrapper.querySelector('[data-role="comment-avatar"]');
+    attachProfileNavigation(avatarWrapper, { username: comment.username, userId: comment.user_id });
+    const authorNode = wrapper.querySelector('[data-role="comment-author"]');
+    attachProfileNavigation(authorNode, { username: comment.username, userId: comment.user_id });
     const replyButton = wrapper.querySelector('[data-role="comment-reply"]');
     if (replyButton) {
       replyButton.addEventListener('click', () => {
@@ -4610,9 +4644,9 @@
           <img data-role="post-avatar"
                data-user-id="${post.user_id}"
                src="${DEFAULT_AVATAR}"
-               class="h-12 w-12 rounded-full object-cover"
+               class="h-12 w-12 rounded-full object-cover cursor-pointer"
                alt="Post avatar" />
-          <div>
+          <div data-role="post-author" data-user-id="${post.user_id}" data-username="${normalizedPostUsername || ''}" class="cursor-pointer focus:outline-none">
             <div class="flex flex-wrap items-center gap-2">${decoratedDisplayName}</div>
             <p class="text-xs text-slate-400">${timestamp}</p>
           </div>
@@ -4663,6 +4697,9 @@
     registerPostInstance(post);
     const avatarImg = el.querySelector('[data-role="post-avatar"]');
     applyAvatarToImg(avatarImg, avatarUrl);
+    attachProfileNavigation(avatarImg, { username: normalizedPostUsername || post.username, userId: post.user_id });
+    const authorNode = el.querySelector('[data-role="post-author"]');
+    attachProfileNavigation(authorNode, { username: normalizedPostUsername || post.username, userId: post.user_id });
     const followButton = el.querySelector('[data-role="follow-button"]');
     if (followButton) {
       applyFollowButtonState(followButton, initialFollowing);
@@ -5712,12 +5749,12 @@
       const { username, avatar_url } = state.activeFriendMeta;
       const lockSnippet = shortenLock(state.activeThreadLock);
       header.innerHTML = `
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 cursor-pointer" data-role="chat-header-profile" data-user-id="${state.activeFriendMeta.id || ''}" data-username="${username || ''}">
           <div class="h-12 w-12 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/60">
             <img id="active-friend-avatar" alt="${username}" class="h-full w-full object-cover" />
           </div>
           <div>
-            <h2 class="text-base font-semibold text-white">@${username}</h2>
+            <h2 class="text-base font-semibold text-white" data-role="chat-header-name" data-user-id="${state.activeFriendMeta.id || ''}" data-username="${username || ''}">@${username}</h2>
             <p class="text-xs text-slate-400">Secure lock ${lockSnippet}</p>
           </div>
         </div>
@@ -5725,6 +5762,10 @@
       `;
       const avatarNode = document.getElementById('active-friend-avatar');
       applyAvatarToImg(avatarNode, avatar_url);
+      const profileNode = header.querySelector('[data-role="chat-header-profile"]');
+      attachProfileNavigation(profileNode, { username, userId: state.activeFriendMeta.id });
+      const nameNode = header.querySelector('[data-role="chat-header-name"]');
+      attachProfileNavigation(nameNode, { username, userId: state.activeFriendMeta.id });
       return;
     }
     clearThreadView();
@@ -6305,7 +6346,9 @@
     container.className = `mb-5 flex items-start gap-3 ${outbound ? 'flex-row-reverse' : ''}`;
 
     const avatarWrapper = document.createElement('div');
-    avatarWrapper.className = 'mt-0.5 flex-shrink-0';
+    avatarWrapper.className = 'mt-0.5 flex-shrink-0 cursor-pointer';
+    avatarWrapper.dataset.userId = message.sender_id || '';
+    avatarWrapper.dataset.username = message.sender_username || '';
     const avatarImg = document.createElement('img');
     avatarImg.className = 'h-10 w-10 rounded-full border border-slate-800/70 object-cover shadow-sm';
     avatarImg.alt = identityName;
@@ -6329,11 +6372,12 @@
     }
 
     const safeIdentity = escapeHtml(identityName);
+    const profileAttrs = `data-role="message-sender" data-user-id="${message.sender_id || ''}" data-username="${message.sender_username || ''}" tabindex="0"`;
     const usernameMarkup = message.sender_username
       ? `<span class="text-[10px] font-normal normal-case opacity-80">@${escapeHtml(message.sender_username)}</span>`
       : '';
     const identityMarkup = `
-      <div class="mb-2 flex ${outbound ? 'justify-end text-white/80' : 'justify-start text-emerald-200'} gap-2 text-[11px] font-semibold uppercase tracking-wide">
+      <div ${profileAttrs} class="mb-2 flex ${outbound ? 'justify-end text-white/80' : 'justify-start text-emerald-200'} gap-2 text-[11px] font-semibold uppercase tracking-wide cursor-pointer">
         <span>${safeIdentity}</span>
         ${usernameMarkup}
       </div>
@@ -6380,6 +6424,9 @@
     bubbleShell.appendChild(bubble);
     container.appendChild(avatarWrapper);
     container.appendChild(bubbleShell);
+    attachProfileNavigation(avatarWrapper, { username: message.sender_username, userId: message.sender_id });
+    const senderNode = bubble.querySelector('[data-role="message-sender"]');
+    attachProfileNavigation(senderNode, { username: message.sender_username, userId: message.sender_id });
     return container;
   }
 
@@ -6821,12 +6868,35 @@
     }
   }
 
+  function describeNotificationType(type) {
+    const normalized = String(type || '').toLowerCase();
+    switch (normalized) {
+      case 'message.received':
+        return { label: 'Message', icon: '💬' };
+      case 'post.like':
+        return { label: 'Post like', icon: '❤' };
+      case 'post.comment':
+        return { label: 'Post comment', icon: '💬' };
+      case 'post.comment.reply':
+        return { label: 'Comment reply', icon: '↩' };
+      case 'follow.new':
+        return { label: 'New follower', icon: '➕' };
+      case 'friend.request':
+        return { label: 'Friend request', icon: '🤝' };
+      case 'friend.added':
+        return { label: 'Friend added', icon: '✅' };
+      default:
+        return { label: 'Update', icon: '🔔' };
+    }
+  }
+
   function createNotificationItem(notification) {
     const li = document.createElement('li');
     const isRead = Boolean(notification.read);
+    const descriptor = describeNotificationType(notification.type);
     li.className = `card-surface rounded-2xl p-5 shadow-md shadow-black/10 transition hover:shadow-indigo-500/20 ${
       isRead ? 'bg-slate-900/70' : 'bg-indigo-500/10 border border-indigo-400/30'
-    }`;
+    } cursor-pointer`;
     li.setAttribute('data-notification-item', 'true');
     li.innerHTML = `
       <div class="flex items-center justify-between">
@@ -6835,9 +6905,145 @@
         }</span>
         <time class="text-xs text-slate-400">${formatDate(notification.created_at)}</time>
       </div>
+      <div class="mt-2 inline-flex items-center gap-2 rounded-full bg-slate-800/50 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">
+        <span aria-hidden="true">${descriptor.icon}</span>
+        <span>${descriptor.label}</span>
+      </div>
       <p class="mt-3 text-sm text-slate-200">${notification.content}</p>
     `;
+    li.addEventListener('click', () => handleNotificationNavigation(notification));
+    li.addEventListener('keypress', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        handleNotificationNavigation(notification);
+      }
+    });
     return li;
+  }
+
+  function handleNotificationNavigation(notification) {
+    if (!notification) return;
+    const payload = notification.payload || {};
+    const type = String(notification.type || '').toLowerCase();
+    if (type.startsWith('post.')) {
+      const postId = payload.post_id || payload.postId;
+      const commentId =
+        payload.comment_id || payload.commentId || payload.parent_comment_id || payload.parentCommentId;
+      navigateToPostTarget(postId, commentId);
+      return;
+    }
+
+    if (type === 'message.received') {
+      window.location.href = '/messages';
+      return;
+    }
+
+    if (type === 'follow.new') {
+      const username = (payload.username || payload.user_username || '').toString().replace(/^@/, '');
+      if (username) {
+        window.location.href = `/profiles/${encodeURIComponent(username)}`;
+      } else {
+        window.location.href = '/profiles';
+      }
+      return;
+    }
+
+    if (type === 'friend.request' || type === 'friend.added') {
+      window.location.href = '/friends';
+    }
+  }
+
+  async function navigateToPostTarget(postId, commentId) {
+    if (!postId) {
+      window.location.href = '/';
+      return;
+    }
+
+    state.notifications.pendingTarget = {
+      postId: String(postId),
+      commentId: commentId ? String(commentId) : null,
+    };
+
+    const onFeedPage = Boolean(document.getElementById('feed-list'));
+    if (!onFeedPage) {
+      const params = new URLSearchParams();
+      params.set('post', state.notifications.pendingTarget.postId);
+      if (state.notifications.pendingTarget.commentId) {
+        params.set('comment', state.notifications.pendingTarget.commentId);
+      }
+      const query = params.toString();
+      window.location.href = `/${query ? `?${query}` : ''}`;
+      return;
+    }
+
+    if (!state.feedItems.length) {
+      try {
+        await loadFeed({ forceRefresh: true, silent: true });
+      } catch (error) {
+        console.warn('[notifications] unable to refresh feed for navigation', error);
+      }
+    }
+
+    await applyPendingNotificationTarget();
+  }
+
+  function captureNotificationTargetFromUrl() {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const postId = params.get('post');
+      if (postId) {
+        state.notifications.pendingTarget = {
+          postId,
+          commentId: params.get('comment'),
+        };
+      }
+    } catch (error) {
+      console.warn('[notifications] failed to parse deep link target', error);
+    }
+  }
+
+  async function applyPendingNotificationTarget() {
+    const target = state.notifications.pendingTarget;
+    if (!target || !target.postId) return false;
+    const list = document.getElementById('feed-list');
+    if (!list) return false;
+    let card = list.querySelector(`[data-post-card="${target.postId}"]`);
+    if (!card && Array.isArray(state.feedItems) && state.feedItems.length) {
+      const targetIndex = state.feedItems.findIndex(item => String(item?.id) === String(target.postId));
+      while (card === null && targetIndex !== -1 && state.feedCursor < targetIndex + 1) {
+        renderNextFeedBatch();
+        card = list.querySelector(`[data-post-card="${target.postId}"]`);
+      }
+    }
+    if (!card) return false;
+
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-slate-900');
+    window.setTimeout(() => {
+      card.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-slate-900');
+    }, 2400);
+
+    if (target.commentId) {
+      const toggle = card.querySelector('[data-role="comment-toggle"]');
+      const panel = card.querySelector('[data-role="comment-panel"]');
+      if (toggle && panel) {
+        if (toggle.dataset.open !== 'true') {
+          toggleCommentPanel(toggle, panel, { id: target.postId });
+        }
+        await loadCommentsForPost(target.postId, panel);
+        const commentNode = panel.querySelector(`[data-comment-id="${target.commentId}"]`);
+        if (commentNode) {
+          commentNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          commentNode.classList.add('ring-2', 'ring-indigo-400');
+          window.setTimeout(() => {
+            commentNode.classList.remove('ring-2', 'ring-indigo-400');
+          }, 2000);
+        }
+      }
+    }
+
+    state.notifications.pendingTarget = null;
+    return true;
   }
 
   // -----------------------------------------------------------------------
