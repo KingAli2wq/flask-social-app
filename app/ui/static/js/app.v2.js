@@ -2277,12 +2277,30 @@
       : `${trimmed}?v=${cacheBuster}`;
   }
 
-  function navigateToProfile(target) {
+  async function navigateToProfile(target) {
     if (!target) return;
     const username = typeof target.username === 'string' ? target.username.replace(/^@/, '').trim() : null;
     const userId = target.userId || target.id;
-    const path = username ? `/profiles/${encodeURIComponent(username)}` : userId ? `/profiles/${encodeURIComponent(userId)}` : '/profiles';
-    window.location.href = path;
+
+    if (username) {
+      window.location.href = `/people/${encodeURIComponent(username)}`;
+      return;
+    }
+
+    if (userId) {
+      try {
+        const profile = await apiFetch(`/profiles/by-id/${encodeURIComponent(userId)}`);
+        const resolvedUsername = (profile?.username || '').replace(/^@/, '').trim();
+        if (resolvedUsername) {
+          window.location.href = `/people/${encodeURIComponent(resolvedUsername)}`;
+          return;
+        }
+      } catch (error) {
+        console.warn('[profiles] failed to resolve username for navigation', error);
+      }
+    }
+
+    window.location.href = '/friends/search';
   }
 
   function attachProfileNavigation(node, user) {
