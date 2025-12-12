@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid gap-8 lg:grid-cols-[1fr,2fr]">
-    <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+<section class="grid gap-6 lg:grid-cols-[1fr,2fr]">
+    <aside class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
         <div class="flex flex-col items-center gap-4 text-center">
             <div class="flex flex-col items-center gap-4">
 
@@ -24,7 +24,7 @@
                 <button
                     id="profile-upload-trigger"
                     type="button"
-                    class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition"
+                    class="mobile-tap-target w-full rounded-lg bg-indigo-600 px-4 py-2 text-white shadow transition hover:bg-indigo-700 sm:w-auto"
                 >
                     Change Avatar
                 </button>
@@ -80,10 +80,10 @@
         </dl>
     </aside>
 
-    <div class="flex flex-col gap-8">
+    <div class="flex flex-col gap-6 sm:gap-8">
 
-        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
-            <header class="flex items-center justify-between gap-4">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
+            <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Edit profile</h2>
                     <p class="text-sm text-slate-400">Craft a profile that tells your story.</p>
@@ -92,7 +92,7 @@
                 <button
                     id="profile-save"
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
+                    class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
                     <span>Save changes</span>
@@ -141,7 +141,7 @@
             </form>
         </section>
 
-        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
 
             <header class="flex items-center justify-between">
                 <h2 class="text-lg font-semibold text-white">Recent posts</h2>

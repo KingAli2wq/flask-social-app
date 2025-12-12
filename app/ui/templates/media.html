@@ -2,7 +2,7 @@
 
 {% block content %}
 <section class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-    <header class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
+    <header class="card-surface rounded-3xl bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
         <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-10">
             <div class="lg:flex-1">
                 <p class="text-xs uppercase tracking-widest text-indigo-400">For you</p>
@@ -33,7 +33,7 @@
                     <p class="text-xs text-slate-400">Spaces CDN • Realtime-ready</p>
                 </div>
                 <div class="flex flex-1 flex-col gap-3 lg:flex-row lg:items-center">
-                    <label for="media-file" class="flex-1 cursor-pointer rounded-2xl border border-dashed border-slate-700/70 bg-slate-950/40 px-4 py-6 text-center text-xs text-slate-400 transition hover:border-indigo-500/70">
+                    <label for="media-file" class="mobile-tap-target flex-1 cursor-pointer rounded-2xl border border-dashed border-slate-700/70 bg-slate-950/40 px-4 py-6 text-center text-xs text-slate-400 transition hover:border-indigo-500/70">
                         <span class="text-2xl">⤓</span>
                         <p class="mt-2">Drop files or tap to browse</p>
                         <input id="media-file" name="file" type="file" accept="image/*,video/*" class="hidden">
@@ -41,7 +41,7 @@
                     <button
                         id="media-upload-submit"
                         type="submit"
-                        class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+                        class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 lg:w-auto"
                     >
                         <span class="text-base">⇪</span><span>Upload</span>
                     </button>
@@ -55,10 +55,10 @@
             <div id="media-upload-feedback" class="mt-4 hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
         </form>
     </header>
-    <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20">
+    <section class="card-surface rounded-3xl bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-6">
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-white">Spotlight feed</h2>
-            <button id="media-fullscreen-toggle" class="rounded-full border border-slate-700/70 px-4 py-1 text-xs text-slate-300 transition hover:border-indigo-500/70 hover:text-white">Full screen</button>
+            <button id="media-fullscreen-toggle" class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1 text-xs text-slate-300 transition hover:border-indigo-500/70 hover:text-white">Full screen</button>
         </div>
         <div class="mt-6">
             <div class="relative min-h-[78vh] overflow-hidden rounded-[40px] border border-slate-800/60 bg-gradient-to-b from-slate-950/70 to-slate-900/80 xl:min-h-[84vh]">

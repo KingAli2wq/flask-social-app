@@ -50,6 +50,8 @@
         body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.92) !important; color: #0f172a; box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.35); border-color: rgba(148, 163, 184, 0.25) !important; }
         body.light-theme .text-slate-400 { color: #475569 !important; }
         body.light-theme .text-slate-500 { color: #64748b !important; }
+        body { padding-bottom: env(safe-area-inset-bottom, 0px); }
+        main { width: 100%; }
         .input-field {
             width: 100%;
             border-radius: 0.75rem;
@@ -104,6 +106,29 @@
         ::selection { background-color: rgba(129,140,248,0.4); }
         .scrollbar-thin::-webkit-scrollbar { width: 6px; }
         .scrollbar-thin::-webkit-scrollbar-thumb { background-color: rgba(148,163,184,0.4); border-radius: 9999px; }
+
+        @media (max-width: 640px) {
+            body { background-attachment: scroll; }
+            main { max-width: 100%; padding: 1.25rem 1rem !important; gap: 1.75rem; }
+            header.sticky > div { padding-inline: 0.75rem; }
+            .card-surface { padding: 1rem !important; border: 1px solid rgba(100,116,139,0.35); }
+            button, .mobile-tap-target { min-height: 44px; }
+            .input-field { font-size: 1rem; padding: 0.75rem 0.95rem; }
+            #mobile-nav-panel { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 1rem); }
+            #story-rail { scroll-snap-type: x mandatory; }
+            #story-rail > * { scroll-snap-align: start; }
+            #story-modal, #story-viewer { align-items: flex-start; padding: 1.25rem 0.75rem 1.5rem; overflow-y: auto; }
+            #story-modal > div, #story-viewer > div { max-width: 100%; border-radius: 22px; }
+            #story-preview, #story-viewer-image, #story-viewer-video { max-height: 420px; }
+            #ai-chat-container { gap: 0.75rem; }
+            #ai-chat-input-row { flex-direction: column; }
+            #ai-chat-input { min-height: 48px; }
+            #social-ai-overlay[data-social-ai-overlay="true"] { padding: 1rem 0.75rem; align-items: flex-start; }
+            #social-ai-overlay [data-social-ai-panel] { height: calc(100vh - 2rem); min-height: 0; max-height: none; grid-template-columns: 1fr; border-radius: 20px; }
+            #social-ai-overlay aside { max-height: 32vh; }
+            #social-ai-overlay section { max-height: none; }
+            #social-ai-form { position: sticky; bottom: 0; background: linear-gradient(180deg, rgba(2,6,23,0.9), rgba(2,6,23,0.98)); border-top: 1px solid rgba(148,163,184,0.2); }
+        }
     </style>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">

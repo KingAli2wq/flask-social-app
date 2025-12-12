@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="card-surface grid h-[78vh] min-h-[560px] gap-8 overflow-hidden rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20 md:grid-cols-[320px,1fr]">
+<section class="card-surface grid min-h-[60vh] gap-6 overflow-hidden rounded-3xl bg-slate-900/70 p-4 shadow-xl shadow-black/20 sm:p-6 md:h-[78vh] md:min-h-[560px] md:grid-cols-[320px,1fr]">
     <aside class="flex h-full min-h-0 flex-col">
         <div class="scrollbar-thin flex h-full min-h-0 flex-col gap-6 overflow-y-auto pr-1">
             <header class="flex flex-wrap items-center justify-between gap-3">
@@ -10,11 +10,11 @@
                     <h1 class="text-lg font-semibold text-white">Messages &amp; secure spaces</h1>
                 </div>
                 <div class="flex gap-2">
-                    <a href="/friends/search" class="rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">Add friend</a>
+                    <a href="/friends/search" class="mobile-tap-target rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">Add friend</a>
                     <button
                         id="group-create-trigger"
                         type="button"
-                        class="rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/10"
+                        class="mobile-tap-target rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/10"
                     >
                         New group
                     </button>
@@ -35,7 +35,7 @@
                     <button
                         type="button"
                         data-social-ai-open="true"
-                        class="inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
+                        class="mobile-tap-target inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
                     >
                         Open Social AI
                     </button>
@@ -83,19 +83,19 @@
         </div>
     </aside>
     <div class="card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60">
-        <header id="chat-header" class="flex items-center justify-between border-b border-slate-800/60 px-6 py-4">
+        <header id="chat-header" class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/60 px-4 py-4 sm:px-6">
             <div>
                 <h2 class="text-base font-semibold text-white">Select a conversation</h2>
                 <p class="text-xs text-slate-500">Choose someone from the sidebar to start chatting.</p>
             </div>
             <span id="lock-indicator" class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Locked</span>
         </header>
-        <div id="message-thread" class="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-6 py-6">
+        <div id="message-thread" class="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
             <div class="rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
                 Messages will appear here once you select a chat.
             </div>
         </div>
-        <form id="message-form" class="border-t border-slate-800/60 px-6 py-4">
+        <form id="message-form" class="border-t border-slate-800/60 px-4 py-4 sm:px-6">
             <div class="flex flex-col gap-4 md:flex-row md:items-end">
                 <div class="flex-1">
                     {{ components.forms.textarea("message", label="Message", placeholder="Say hello…", rows=2, required=True) | safe }}
@@ -127,7 +127,7 @@
                     <button
                         id="message-send"
                         type="submit"
-                        class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-full"
                         disabled
                     >
                         <span class="text-base">➤</span><span>Send</span>
@@ -140,7 +140,7 @@
                     <button
                         id="message-attachment-trigger"
                         type="button"
-                        class="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200"
+                        class="mobile-tap-target inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200"
                     >
                         Attach files
                     </button>
@@ -153,14 +153,14 @@
     </div>
 </section>
 
-<div id="group-create-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur">
+<div id="group-create-modal" class="fixed inset-0 z-50 hidden flex items-start justify-center overflow-y-auto bg-slate-950/60 px-4 py-8 backdrop-blur sm:items-center">
     <div class="w-full max-w-lg rounded-3xl border border-slate-800/60 bg-slate-950 p-6 shadow-2xl shadow-black/40">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs uppercase tracking-wide text-slate-500">Secure space</p>
                 <h3 class="text-xl font-semibold text-white">New group chat</h3>
             </div>
-            <button type="button" data-group-create-close class="rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
+            <button type="button" data-group-create-close class="mobile-tap-target rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
         </div>
         <p class="mt-2 text-sm text-slate-400">Give your group a name, choose an avatar, and invite the first members.</p>
         <form id="group-create-form" class="mt-5 space-y-4">
@@ -183,8 +183,8 @@
                 </div>
                 <div class="flex flex-col gap-2 text-[11px] text-slate-400">
                     <input id="group-avatar-input" name="group-avatar" type="file" accept="image/*" class="hidden" />
-                    <button id="group-avatar-trigger" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:text-indigo-200">Upload avatar</button>
-                    <button id="group-avatar-clear" type="button" class="text-left text-[11px] text-slate-500 transition hover:text-slate-200">Remove avatar</button>
+                    <button id="group-avatar-trigger" type="button" class="mobile-tap-target rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:text-indigo-200">Upload avatar</button>
+                    <button id="group-avatar-clear" type="button" class="mobile-tap-target text-left text-[11px] text-slate-500 transition hover:text-slate-200">Remove avatar</button>
                 </div>
             </div>
             <div>
@@ -200,21 +200,21 @@
             </div>
             <div id="group-create-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"></div>
             <div class="flex items-center justify-end gap-3">
-                <button type="button" data-group-create-close class="rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
-                <button type="submit" class="rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">Create group</button>
+                <button type="button" data-group-create-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
+                <button type="submit" class="mobile-tap-target rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">Create group</button>
             </div>
         </form>
     </div>
 </div>
 
-<div id="group-invite-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/60 px-4 backdrop-blur">
+<div id="group-invite-modal" class="fixed inset-0 z-50 hidden flex items-start justify-center overflow-y-auto bg-slate-950/60 px-4 py-8 backdrop-blur sm:items-center">
     <div class="w-full max-w-md rounded-3xl border border-slate-800/60 bg-slate-950 p-6 shadow-2xl shadow-black/40">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs uppercase tracking-wide text-slate-500">Invite people</p>
                 <h3 id="group-invite-title" class="text-lg font-semibold text-white">Group</h3>
             </div>
-            <button type="button" data-group-invite-close class="rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
+            <button type="button" data-group-invite-close class="mobile-tap-target rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
         </div>
         <form id="group-invite-form" class="mt-4 space-y-4">
             <div>
@@ -230,8 +230,8 @@
             </div>
             <div id="group-invite-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"></div>
             <div class="flex items-center justify-end gap-3">
-                <button type="button" data-group-invite-close class="rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
-                <button type="submit" class="rounded-full bg-indigo-500 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-400">Send invites</button>
+                <button type="button" data-group-invite-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
+                <button type="submit" class="mobile-tap-target rounded-full bg-indigo-500 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-400">Send invites</button>
             </div>
         </form>
     </div>

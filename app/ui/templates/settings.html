@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="grid gap-8 lg:grid-cols-[1fr,2fr]">
-    <aside class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+<section class="grid gap-6 lg:grid-cols-[1fr,2fr]">
+    <aside class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
         <div class="flex flex-col items-center gap-4 text-center">
             <img
                 id="settings-avatar"
@@ -20,7 +20,7 @@
             <button
                 id="settings-avatar-trigger"
                 type="button"
-                class="px-4 py-2 bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition"
+                class="mobile-tap-target w-full rounded-lg bg-indigo-600 px-4 py-2 text-white shadow transition hover:bg-indigo-700 sm:w-auto"
             >
                 Change Avatar
             </button>
@@ -35,23 +35,23 @@
             <button
                 id="settings-logout"
                 type="button"
-                class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
+                class="mobile-tap-target rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
             >
                 Sign out
             </button>
         </div>
     </aside>
 
-    <div class="flex flex-col gap-8">
-        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
-            <header class="flex items-center justify-between gap-4">
+    <div class="flex flex-col gap-6 sm:gap-8">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
+            <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Profile basics</h2>
                     <p class="text-sm text-slate-400">Update how others see you.</p>
                 </div>
                 <button
                     id="settings-profile-save"
-                    class="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
+                    class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
                     <span>Save profile</span>
@@ -73,15 +73,15 @@
             </form>
         </section>
 
-        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
-            <header class="flex items-center justify-between gap-4">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
+            <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Contact & security</h2>
                     <p class="text-sm text-slate-400">Keep your account reachable.</p>
                 </div>
                 <button
                     id="settings-contact-save"
-                    class="inline-flex items-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500"
+                    class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
                     <span>Save contact</span>
@@ -96,14 +96,14 @@
                     <button
                         id="settings-verify-email"
                         type="button"
-                        class="rounded-2xl border border-emerald-500/40 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/20"
+                        class="mobile-tap-target rounded-2xl border border-emerald-500/40 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/20"
                     >
                         Verify email
                     </button>
                     <button
                         id="settings-resend-email"
                         type="button"
-                        class="rounded-2xl border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                        class="mobile-tap-target rounded-2xl border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
                     >
                         Resend code
                     </button>
@@ -111,7 +111,7 @@
                 <div id="settings-verify-panel" class="hidden grid gap-3 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
                     <p class="text-sm text-slate-400">Enter the 6-digit code we emailed you.</p>
                     <input id="settings-verify-code" maxlength="6" class="input-field text-center tracking-[0.5em]" placeholder="123456" />
-                    <button id="settings-verify-submit" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+                    <button id="settings-verify-submit" class="mobile-tap-target rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
                         Confirm code
                     </button>
                 </div>
@@ -129,14 +129,14 @@
                         <span>Confirm password</span>
                         <input id="settings-password-confirm" name="confirm_password" type="password" class="input-field" />
                     </label>
-                    <button id="settings-password-save" class="rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
+                    <button id="settings-password-save" class="mobile-tap-target rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
                         Update password
                     </button>
                 </form>
             </div>
         </section>
 
-        <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+        <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
             <header class="flex items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Preferences</h2>
@@ -168,7 +168,7 @@
             </div>
         </section>
 
-        <section class="card-surface rounded-3xl border border-rose-500/40 bg-rose-500/10 p-8 shadow-xl shadow-rose-900/30">
+        <section class="card-surface rounded-3xl border border-rose-500/40 bg-rose-500/10 p-6 shadow-xl shadow-rose-900/30 sm:p-8">
             <header class="flex items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Danger zone</h2>
@@ -176,10 +176,10 @@
                 </div>
             </header>
             <div class="mt-6 grid gap-3">
-                <button id="settings-export-data" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/20">
+                <button id="settings-export-data" class="mobile-tap-target rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/20">
                     Export my data
                 </button>
-                <button id="settings-deactivate" class="rounded-2xl border border-rose-500/60 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/30">
+                <button id="settings-deactivate" class="mobile-tap-target rounded-2xl border border-rose-500/60 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/30">
                     Deactivate account
                 </button>
             </div>

@@ -131,6 +131,11 @@ _HARASSMENT_PATTERNS = [
     "jerk",
 ]
 
+_HARASSMENT_REGEX = re.compile(
+    r"\b(?:kill\s+yourself|go\s+die|you\s+should\s+die|nobody\s+likes\s+you|worthless|loser|idiot|stupid|hate\s+you|bitch|trash|moron|dumb|jerk)\b",
+    re.IGNORECASE,
+)
+
 
 _sonar_instance: Any | None = None
 _HATESONAR_CONFIDENCE_THRESHOLD = 0.6
@@ -183,6 +188,14 @@ def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str
         if compact and compact in squashed:
             return True
     return False
+
+
+def _contains_harassment(text: str, collapsed: str) -> bool:
+    """Stricter harassment detection: require whole words/phrases."""
+
+    if _HARASSMENT_REGEX.search(text):
+        return True
+    return any(keyword for keyword in _HARASSMENT_PATTERNS if f" {keyword} " in f" {collapsed} ")
 
 
 def _get_hatesonar() -> Any | None:
@@ -279,7 +292,7 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
         violations.append(SafetyViolation.HATE)
         reasons.append("Hateful or targeting language detected")
 
-    if _contains_keyword_variants(collapsed, squashed, _HARASSMENT_PATTERNS):
+    if _contains_harassment(normalized, collapsed):
         violations.append(SafetyViolation.HARASSMENT)
         reasons.append("Harassing or bullying language detected")
 

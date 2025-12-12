@@ -1,6 +1,6 @@
 # SocialSphere Terms and Conditions
 
-**Version:** 1.0.0  
+**Version:** 1.0.0 
 **Effective Date:** November 24, 2024  
 **Governing Law:** Province of Saskatchewan, Canada
 
