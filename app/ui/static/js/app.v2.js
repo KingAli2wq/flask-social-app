@@ -4022,6 +4022,34 @@
     return null;
   }
 
+  function computeCommentCount(comments) {
+    if (!Array.isArray(comments) || !comments.length) return 0;
+    return comments.reduce((total, comment) => {
+      const replies = Array.isArray(comment.replies) ? comment.replies : [];
+      return total + 1 + computeCommentCount(replies);
+    }, 0);
+  }
+
+  function pruneCommentTree(comments, targetId) {
+    if (!Array.isArray(comments)) return { next: [], removedCount: 0 };
+    const key = String(targetId);
+    let removedCount = 0;
+    const next = [];
+    for (const comment of comments) {
+      if (String(comment.id) === key) {
+        removedCount += 1 + computeCommentCount(comment.replies || []);
+        continue;
+      }
+      const prunedReplies = pruneCommentTree(comment.replies || [], targetId);
+      if (prunedReplies.removedCount > 0) {
+        comment.replies = prunedReplies.next;
+        removedCount += prunedReplies.removedCount;
+      }
+      next.push(comment);
+    }
+    return { next, removedCount };
+  }
+
   function renderCommentList(postId, comments, container) {
     if (!container) return;
     container.innerHTML = '';
@@ -4044,6 +4072,11 @@
     if (depth > 0) {
       wrapper.style.marginLeft = `${Math.min(depth, 3) * 16}px`;
     }
+    const auth = getAuth();
+    const viewerId = auth.userId ? String(auth.userId) : null;
+    const canModerate = hasModeratorPrivileges(auth.role);
+    const isAuthor = viewerId && String(comment.user_id) === viewerId;
+    const canDelete = Boolean(isAuthor || canModerate);
     const avatarId = `comment-avatar-${comment.id}`;
     const author = comment.username ? `@${comment.username}` : 'User';
     const authorLabel = decorateLabelWithRole(author, comment.role, { compact: true, textClasses: 'font-semibold text-xs' });
@@ -4061,6 +4094,7 @@
           <p class="mt-1 text-sm text-slate-200">${previewText}</p>
           <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
             <button type="button" data-role="comment-reply" class="hover:text-white">Reply</button>
+            ${canDelete ? '<button type="button" data-role="comment-delete" class="text-rose-200 hover:text-white">Delete</button>' : ''}
           </div>
         </div>
       </div>
@@ -4076,6 +4110,13 @@
       replyButton.addEventListener('click', () => {
         const panel = wrapper.closest('[data-role="comment-panel"]');
         beginCommentReply(postId, comment, panel);
+      });
+    }
+    const deleteButton = wrapper.querySelector('[data-role="comment-delete"]');
+    if (deleteButton) {
+      deleteButton.addEventListener('click', () => {
+        const panel = wrapper.closest('[data-role="comment-panel"]');
+        handleDeleteComment(postId, comment.id, panel, deleteButton);
       });
     }
     if (Array.isArray(comment.replies) && comment.replies.length) {
@@ -4184,6 +4225,27 @@
     document.querySelectorAll(`[data-role="comment-count"][data-post-id="${postId}"]`).forEach(node => {
       node.textContent = String(value);
     });
+  }
+
+  function syncPostCommentCount(postId, nextCount) {
+    const key = String(postId);
+    const source = state.postRegistry[key] || state.feedItems.find(item => String(item.id) === key) || null;
+    if (source) {
+      source.comment_count = nextCount;
+      if (source.id) {
+        state.postRegistry[key] = { ...source };
+      }
+      state.feedItems = state.feedItems.map(item => (String(item.id) === key ? { ...item, comment_count: nextCount } : item));
+    }
+    const snapshot = {
+      post_id: key,
+      like_count: source?.like_count ?? 0,
+      dislike_count: source?.dislike_count ?? 0,
+      comment_count: nextCount,
+      viewer_has_liked: Boolean(source?.viewer_has_liked),
+      viewer_has_disliked: Boolean(source?.viewer_has_disliked),
+    };
+    setPostEngagementSnapshot(snapshot);
   }
 
   function applyLikeButtonState(button, isLiked, likeCount) {
@@ -4431,6 +4493,45 @@
     } finally {
       form.classList.remove('opacity-70');
       if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  async function handleDeleteComment(postId, commentId, panel, button) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    const store = getCommentStore(postId);
+    const auth = getAuth();
+    const canModerate = hasModeratorPrivileges(auth.role);
+    const target = findCommentById(store.items, commentId);
+    const viewerId = auth.userId ? String(auth.userId) : null;
+    if (target && !canModerate && viewerId && String(target.user_id) !== viewerId) {
+      showToast('You can only delete your own comments.', 'warning');
+      return;
+    }
+    const confirmed = window.confirm('Delete this comment?');
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+        method: 'DELETE',
+      });
+      const pruned = pruneCommentTree(store.items, commentId);
+      if (pruned.removedCount > 0) {
+        store.items = pruned.next;
+        store.loaded = true;
+        const list = panel?.querySelector('[data-role="comment-list"]');
+        renderCommentList(postId, store.items, list);
+        const nextCount = computeCommentCount(store.items);
+        syncPostCommentCount(postId, nextCount);
+      }
+      showToast('Comment deleted.', 'success');
+    } catch (error) {
+      showToast(getErrorMessage(error, 'Unable to delete comment.'), 'error');
+    } finally {
+      toggleInteractiveState(button, false);
     }
   }
 
@@ -9589,6 +9690,13 @@
           <p class="text-lg font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown user')}</p>
           <p class="text-sm text-slate-400">${escapeHtml(detail.display_name || 'No display name')}</p>
           <div class="text-xs text-slate-400">${renderRoleBadgeHtml(detail.role, { includeUser: true })}</div>
+          ${isOwner ? `
+            <div class="flex flex-wrap items-center gap-3 text-sm text-slate-200">
+              <button type="button" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 font-semibold transition hover:bg-indigo-500/20" data-user-avatar-upload>Upload avatar</button>
+              <input type="file" accept="image/*" class="hidden" data-user-avatar-file />
+              <span class="text-xs text-slate-400" data-user-avatar-status></span>
+            </div>
+          ` : ''}
           <div class="grid grid-cols-2 gap-3 text-sm text-slate-300">
             <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Posts<br><span class="text-lg font-semibold text-white">${Number(detail.post_count || 0).toLocaleString()}</span></div>
             <div class="rounded-2xl border border-slate-800/60 px-3 py-2">Media<br><span class="text-lg font-semibold text-white">${Number(detail.media_count || 0).toLocaleString()}</span></div>
@@ -9665,6 +9773,12 @@
     if (form && state.moderation.viewerRole === 'owner') {
       form.addEventListener('submit', event => handleModerationUserUpdate(event, detail.id));
     }
+    const uploadButton = modal.body.querySelector('[data-user-avatar-upload]');
+    const uploadInput = modal.body.querySelector('[data-user-avatar-file]');
+    if (uploadButton && uploadInput && state.moderation.viewerRole === 'owner') {
+      uploadButton.addEventListener('click', () => uploadInput.click());
+      uploadInput.addEventListener('change', () => handleModerationAvatarUpload(detail.id, uploadInput, uploadButton));
+    }
     const deleteBtn = modal.body.querySelector('[data-user-delete]');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', () => handleModerationUserDelete(detail.id, deleteBtn));
@@ -9710,6 +9824,45 @@
     }
   }
 
+  async function handleModerationAvatarUpload(userId, input, button) {
+    if (state.moderation.viewerRole !== 'owner') {
+      showToast('Only owners can update avatars.', 'warning');
+      return;
+    }
+    const file = input?.files?.[0];
+    if (!file) return;
+    const status = state.moderation.modal.body?.querySelector('[data-user-avatar-status]');
+    toggleInteractiveState(button, true);
+    if (status) status.textContent = 'Uploading…';
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const upload = await apiFetch('/media/upload?scope=avatar', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!upload?.url) {
+        throw new Error('Upload did not return a URL.');
+      }
+      const updated = await apiFetch(`/moderation/users/${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ avatar_url: upload.url }),
+      });
+      showToast('Avatar updated.', 'success');
+      populateModerationUserDetail(updated);
+      await loadModerationDashboard({ silent: true });
+      if (state.moderation.activeDataset === 'users') {
+        await loadModerationDataset('users');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to upload avatar.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+      input.value = '';
+      if (status) status.textContent = '';
+    }
+  }
+
   async function handleModerationUserDelete(userId, button) {
     if (state.moderation.viewerRole !== 'owner') {
       showToast('Only owners can delete accounts.', 'warning');
@@ -9751,6 +9904,7 @@
     try {
       const detail = await apiFetch(`/moderation/posts/${encodeURIComponent(postId)}`);
       populateModerationPostDetail(detail);
+      await loadModerationPostComments(detail.id);
     } catch (error) {
       showModerationDetailModal({
         title: 'Post preview',
@@ -9796,6 +9950,14 @@
           </div>
         </form>
       ` : '<p class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only admins or owners can edit posts.</p>'}
+      <div class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-semibold text-slate-100">Comments & replies</p>
+          <span class="text-xs text-slate-400" data-mod-comment-count>Loading…</span>
+        </div>
+        <p class="mt-3 text-sm text-slate-400" data-mod-comment-status>Loading comments…</p>
+        <div class="mt-3 space-y-3" data-mod-comment-list></div>
+      </div>
     `;
     if (canEdit) {
       const form = modal.body.querySelector('[data-post-edit-form]');
@@ -9809,6 +9971,137 @@
           handleModerationPostDelete(detail.id, deleteBtn);
         });
       }
+    }
+  }
+
+  async function loadModerationPostComments(postId) {
+    const modal = state.moderation.modal;
+    const list = modal.body?.querySelector('[data-mod-comment-list]');
+    const status = modal.body?.querySelector('[data-mod-comment-status]');
+    const countLabel = modal.body?.querySelector('[data-mod-comment-count]');
+    if (!postId || !list) return;
+    list.innerHTML = '';
+    if (status) {
+      status.textContent = 'Loading comments…';
+      status.classList.remove('hidden');
+    }
+    try {
+      const response = await apiFetch(`/posts/${encodeURIComponent(postId)}/comments`);
+      const comments = Array.isArray(response.items) ? response.items : [];
+      const total = computeCommentCount(comments);
+      if (countLabel) countLabel.textContent = `${total} total`;
+      if (!comments.length) {
+        if (status) {
+          status.textContent = 'No comments yet.';
+          status.classList.remove('hidden');
+        }
+        return;
+      }
+      if (status) status.classList.add('hidden');
+      renderModerationCommentList(postId, comments, list, 0);
+    } catch (error) {
+      if (countLabel) countLabel.textContent = '—';
+      if (status) {
+        status.textContent = error.message || 'Unable to load comments.';
+        status.classList.remove('hidden');
+      }
+    }
+  }
+
+  function renderModerationCommentList(postId, comments, container, depth = 0) {
+    if (!container || !Array.isArray(comments)) return;
+    const canModerate = hasModeratorPrivileges(state.moderation.viewerRole);
+    comments.forEach(comment => {
+      const item = document.createElement('div');
+      item.className = 'rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3';
+      if (depth > 0) {
+        item.style.marginLeft = `${Math.min(depth, 3) * 12}px`;
+      }
+      const authorLabel = decorateLabelWithRole(
+        comment.username ? `@${escapeHtml(comment.username)}` : 'User',
+        comment.role,
+        { compact: true, textClasses: 'font-semibold text-xs' }
+      );
+      item.innerHTML = `
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-xs text-slate-300">${authorLabel}</p>
+            <p class="mt-1 text-sm text-slate-200">${escapeHtml(comment.content || '')}</p>
+            <p class="mt-1 text-[11px] text-slate-500">${formatDate(comment.created_at)}</p>
+          </div>
+          ${canModerate ? '<div class="flex flex-col gap-2 text-[11px] text-slate-200"><button type="button" data-mod-comment-edit class="rounded-full border border-slate-700/60 px-3 py-1 font-semibold transition hover:border-indigo-500/60">Edit</button><button type="button" data-mod-comment-delete class="rounded-full border border-rose-500/40 px-3 py-1 font-semibold text-rose-200 transition hover:bg-rose-500/10">Delete</button></div>' : ''}
+        </div>
+      `;
+      const editButton = item.querySelector('[data-mod-comment-edit]');
+      if (editButton && canModerate) {
+        editButton.addEventListener('click', () => handleModerationCommentEdit(comment, postId, editButton));
+      }
+      const deleteButton = item.querySelector('[data-mod-comment-delete]');
+      if (deleteButton && canModerate) {
+        deleteButton.addEventListener('click', () => handleModerationCommentDelete(comment, postId, deleteButton));
+      }
+      container.appendChild(item);
+      if (Array.isArray(comment.replies) && comment.replies.length) {
+        renderModerationCommentList(postId, comment.replies, container, depth + 1);
+      }
+    });
+  }
+
+  async function handleModerationCommentEdit(comment, postId, button) {
+    if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
+      showToast('Only admins or owners can edit comments.', 'warning');
+      return;
+    }
+    const nextContent = window.prompt('Edit comment', comment.content || '');
+    if (nextContent === null) return;
+    const trimmed = nextContent.trim();
+    if (!trimmed) {
+      showToast('Comment cannot be empty.', 'warning');
+      return;
+    }
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/comments/${encodeURIComponent(comment.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content: trimmed }),
+      });
+      showToast('Comment updated.', 'success');
+      await loadModerationPostComments(postId);
+      if (state.moderation.activeDataset === 'posts') {
+        await loadModerationDataset('posts');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to update comment.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handleModerationCommentDelete(comment, postId, button) {
+    if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
+      showToast('Only admins or owners can delete comments.', 'warning');
+      return;
+    }
+    const confirmed = await showModerationConfirm({
+      title: 'Delete comment?',
+      message: 'This will remove the comment and any replies.',
+      confirmLabel: 'Delete comment',
+    });
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/comments/${encodeURIComponent(comment.id)}`, { method: 'DELETE' });
+      showToast('Comment removed.', 'success');
+      await loadModerationPostComments(postId);
+      if (state.moderation.activeDataset === 'posts') {
+        await loadModerationDataset('posts');
+      }
+      await loadModerationDashboard({ silent: true });
+    } catch (error) {
+      showToast(error.message || 'Unable to delete comment.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
     }
   }
 
@@ -9834,6 +10127,7 @@
       });
       showToast('Post updated.', 'success');
       populateModerationPostDetail(updated);
+      await loadModerationPostComments(postId);
       if (state.moderation.activeDataset === 'posts') {
         await loadModerationDataset('posts');
       }
