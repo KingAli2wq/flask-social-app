@@ -31,6 +31,7 @@ class NotificationType(StrEnum):
     POST_COMMENT = "post.comment"
     POST_COMMENT_REPLY = "post.comment.reply"
     POST_LIKE = "post.like"
+    MENTION = "mention"
 
 
 DEFAULT_NOTIFICATION_TYPE = NotificationType.GENERIC

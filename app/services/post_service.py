@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 from uuid import UUID
@@ -142,6 +143,8 @@ async def create_post_record(
     db.add(post)
     db.commit()
     db.refresh(post)
+    actor_name = str(getattr(user, "username", "") or "user")
+    _notify_mentions(db, actor_id=user_id, actor_name=actor_name, post_id=cast(UUID, post.id), text=normalized_caption)
     return post
 
 
@@ -549,6 +552,63 @@ def _serialize_comment(comment: PostComment, user: User) -> dict[str, Any]:
     }
 
 
+def _extract_mentioned_user_ids(
+    db: Session,
+    text: str | None,
+    *,
+    exclude_ids: set[UUID] | None = None,
+    limit: int = 10,
+) -> set[UUID]:
+    value = (text or "").strip()
+    if not value:
+        return set()
+    matches = re.findall(r"@([A-Za-z0-9_\.]{2,32})", value)
+    if not matches:
+        return set()
+    usernames = {token.lower() for token in matches}
+    if not usernames:
+        return set()
+    stmt = select(User.id).where(func.lower(User.username).in_(usernames)).limit(max(limit, 1))
+    rows = db.execute(stmt).scalars().all()
+    found_ids: set[UUID] = set(cast(UUID, row) for row in rows)
+    if exclude_ids:
+        found_ids.difference_update(exclude_ids)
+    return found_ids
+
+
+def _notify_mentions(
+    db: Session,
+    *,
+    actor_id: UUID,
+    actor_name: str,
+    post_id: UUID,
+    text: str | None,
+    comment_id: UUID | None = None,
+) -> None:
+    try:
+        mention_ids = _extract_mentioned_user_ids(db, text, exclude_ids={actor_id})
+    except Exception:
+        logger.warning("Failed to parse mentions", exc_info=True)
+        return
+    if not mention_ids:
+        return
+    payload: dict[str, Any] = {"post_id": str(post_id)}
+    if comment_id is not None:
+        payload["comment_id"] = str(comment_id)
+    for recipient_id in mention_ids:
+        try:
+            add_notification(
+                db,
+                recipient_id=recipient_id,
+                sender_id=actor_id,
+                content=f"@{actor_name} mentioned you.",
+                type_=NotificationType.MENTION,
+                payload=payload,
+            )
+        except Exception:
+            logger.warning("Failed to enqueue mention notification", exc_info=True)
+
+
 def create_post_comment(
     db: Session,
     *,
@@ -604,7 +664,7 @@ def create_post_comment(
         except Exception:
             logger.warning("Failed to enqueue comment notification for post %s", post.id)
 
-    commenter_name = author.username or "A user"
+    commenter_name = str(getattr(author, "username", "") or "A user")
     if post_author_id != commenter_id:
         _enqueue_notification(
             post_author_id,
@@ -623,6 +683,15 @@ def create_post_comment(
                 f"@{commenter_name} replied to your comment.",
                 reply_payload,
             )
+
+    _notify_mentions(
+        db,
+        actor_id=commenter_id,
+        actor_name=commenter_name,
+        post_id=cast(UUID, post.id),
+        text=text,
+        comment_id=cast(UUID, comment.id),
+    )
 
     return _serialize_comment(comment, author)
 
@@ -649,7 +718,8 @@ def update_post_comment(
 
     normalized_role = (requester_role or "").lower()
     can_edit_any = normalized_role in {"owner", "admin"}
-    if comment.user_id != requester_id and not can_edit_any:
+    comment_author_id = cast(UUID, comment.user_id)
+    if comment_author_id != requester_id and not can_edit_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to edit this comment")
 
     text = (content or "").strip()
@@ -682,7 +752,8 @@ def delete_post_comment(
     comment = _get_comment_or_404(db, comment_id)
     normalized_role = (requester_role or "").lower()
     can_delete_any = normalized_role in {"owner", "admin"}
-    if comment.user_id != requester_id and not can_delete_any:
+    comment_author_id = cast(UUID, comment.user_id)
+    if comment_author_id != requester_id and not can_delete_any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not allowed to delete this comment")
 
     post_id = cast(UUID, comment.post_id)

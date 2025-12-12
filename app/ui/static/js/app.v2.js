@@ -2321,6 +2321,33 @@
     });
   }
 
+  function renderTextWithMentions(target, text) {
+    if (!target) return;
+    target.textContent = '';
+    const value = typeof text === 'string' ? text : '';
+    if (!value) return;
+    const fragment = document.createDocumentFragment();
+    const regex = /@([A-Za-z0-9_.]{2,32})/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(value)) !== null) {
+      if (match.index > lastIndex) {
+        fragment.appendChild(document.createTextNode(value.slice(lastIndex, match.index)));
+      }
+      const username = match[1];
+      const mention = document.createElement('span');
+      mention.className = 'text-indigo-300 font-semibold cursor-pointer hover:text-indigo-100';
+      mention.textContent = `@${username}`;
+      attachProfileNavigation(mention, { username });
+      fragment.appendChild(mention);
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < value.length) {
+      fragment.appendChild(document.createTextNode(value.slice(lastIndex)));
+    }
+    target.appendChild(fragment);
+  }
+
   function shouldSkipCacheBuster(url) {
     try {
       const parsed = new URL(url, window.location.origin);
@@ -4091,7 +4118,7 @@
             <span class="flex flex-wrap items-center gap-2 cursor-pointer" data-role="comment-author" data-user-id="${comment.user_id}" data-username="${comment.username || ''}">${authorLabel}</span>
             <time class="text-[11px]">${formatDate(comment.created_at)}</time>
           </div>
-          <p class="mt-1 text-sm text-slate-200">${previewText}</p>
+          <p class="mt-1 text-sm text-slate-200" data-role="comment-body"></p>
           <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
             <button type="button" data-role="comment-reply" class="hover:text-white">Reply</button>
             ${canDelete ? '<button type="button" data-role="comment-delete" class="text-rose-200 hover:text-white">Delete</button>' : ''}
@@ -4105,6 +4132,10 @@
     attachProfileNavigation(avatarWrapper, { username: comment.username, userId: comment.user_id });
     const authorNode = wrapper.querySelector('[data-role="comment-author"]');
     attachProfileNavigation(authorNode, { username: comment.username, userId: comment.user_id });
+    const bodyNode = wrapper.querySelector('[data-role="comment-body"]');
+    if (bodyNode) {
+      renderTextWithMentions(bodyNode, previewText);
+    }
     const replyButton = wrapper.querySelector('[data-role="comment-reply"]');
     if (replyButton) {
       replyButton.addEventListener('click', () => {
@@ -4772,7 +4803,7 @@
         </div>
         ${followButtonMarkup}
       </header>
-      <p class="mt-4 whitespace-pre-line text-sm text-slate-200">${post.caption || ''}</p>
+      <p class="mt-4 whitespace-pre-line text-sm text-slate-200" data-role="post-caption"></p>
       ${mediaSection}
       <footer class="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button
@@ -4819,6 +4850,10 @@
     attachProfileNavigation(avatarImg, { username: normalizedPostUsername || post.username, userId: post.user_id });
     const authorNode = el.querySelector('[data-role="post-author"]');
     attachProfileNavigation(authorNode, { username: normalizedPostUsername || post.username, userId: post.user_id });
+    const captionNode = el.querySelector('[data-role="post-caption"]');
+    if (captionNode) {
+      renderTextWithMentions(captionNode, post.caption || '');
+    }
     const followButton = el.querySelector('[data-role="follow-button"]');
     if (followButton) {
       applyFollowButtonState(followButton, initialFollowing);
@@ -7004,6 +7039,8 @@
         return { label: 'Friend request', icon: '🤝' };
       case 'friend.added':
         return { label: 'Friend added', icon: '✅' };
+      case 'mention':
+        return { label: 'Mention', icon: '📣' };
       default:
         return { label: 'Update', icon: '🔔' };
     }
@@ -7043,6 +7080,12 @@
     if (!notification) return;
     const payload = notification.payload || {};
     const type = String(notification.type || '').toLowerCase();
+    if (type === 'mention') {
+      const postId = payload.post_id || payload.postId;
+      const commentId = payload.comment_id || payload.commentId;
+      navigateToPostTarget(postId, commentId);
+      return;
+    }
     if (type.startsWith('post.')) {
       const postId = payload.post_id || payload.postId;
       const commentId =
