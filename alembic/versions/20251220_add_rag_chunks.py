@@ -4,6 +4,7 @@ Revision ID: 20251220_add_rag_chunks
 Revises: 20251217_merge_chatbot_and_stories_heads
 Create Date: 2025-12-20 00:00:00.000000
 """
+
 from __future__ import annotations
 
 from typing import Sequence
