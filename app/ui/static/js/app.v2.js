@@ -221,6 +221,18 @@
       originalCaption: '',
       escapeHandlerBound: false,
     },
+    spellcheck: {
+      editor: null,
+      hiddenInput: null,
+      statusNode: null,
+      tooltip: null,
+      misspellings: [],
+      requestId: 0,
+      debounceHandle: null,
+      inFlight: false,
+      lastText: '',
+      activeSpan: null,
+    },
     messageReplyTarget: null,
     messageReplyElements: null,
     groupModals: {
@@ -3259,9 +3271,281 @@
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Composer spellcheck
+  // -----------------------------------------------------------------------
+
+  function normalizeEditorText(editor) {
+    if (!editor) return '';
+    const raw = editor.textContent || '';
+    return raw.replace(/\r/g, '').replace(/\u00a0/g, ' ');
+  }
+
+  function syncSpellcheckHidden() {
+    const store = state.spellcheck;
+    if (!store.editor || !store.hiddenInput) return '';
+    const text = normalizeEditorText(store.editor);
+    store.hiddenInput.value = text;
+    store.lastText = text;
+    return text;
+  }
+
+  function getCaretOffset(root) {
+    const selection = window.getSelection();
+    if (!root || !selection || selection.rangeCount === 0) return 0;
+    const range = selection.getRangeAt(0);
+    const pre = range.cloneRange();
+    pre.selectNodeContents(root);
+    pre.setEnd(range.endContainer, range.endOffset);
+    return pre.toString().length;
+  }
+
+  function setCaretOffset(root, offset) {
+    if (!root) return;
+    const targetOffset = Math.max(0, offset);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let traversed = 0;
+    let node = walker.nextNode();
+    while (node) {
+      const next = traversed + node.textContent.length;
+      if (targetOffset <= next) {
+        const position = targetOffset - traversed;
+        const range = document.createRange();
+        range.setStart(node, position);
+        range.collapse(true);
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        return;
+      }
+      traversed = next;
+      node = walker.nextNode();
+    }
+    const fallback = document.createRange();
+    fallback.selectNodeContents(root);
+    fallback.collapse(false);
+    const selection = window.getSelection();
+    if (selection) {
+      selection.removeAllRanges();
+      selection.addRange(fallback);
+    }
+  }
+
+  function updateSpellcheckStatus(message) {
+    const { statusNode } = state.spellcheck;
+    if (!statusNode) return;
+    if (!message) {
+      statusNode.classList.add('hidden');
+      return;
+    }
+    statusNode.textContent = message;
+    statusNode.classList.remove('hidden');
+  }
+
+  function renderSpellcheckHighlights(text, misspellings) {
+    const store = state.spellcheck;
+    if (!store.editor) return;
+    const caretOffset = getCaretOffset(store.editor);
+    store.editor.textContent = '';
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    const sorted = Array.isArray(misspellings) ? [...misspellings].sort((a, b) => a.start - b.start) : [];
+    sorted.forEach((miss, index) => {
+      const start = Math.max(0, Number(miss.start) || 0);
+      const end = Math.max(start, Number(miss.end) || start);
+      if (cursor < start) {
+        frag.appendChild(document.createTextNode(text.slice(cursor, start)));
+      }
+      const span = document.createElement('span');
+      span.className = 'spell-error';
+      span.dataset.index = String(index);
+      span.textContent = text.slice(start, end);
+      frag.appendChild(span);
+      cursor = end;
+    });
+    if (cursor < text.length) {
+      frag.appendChild(document.createTextNode(text.slice(cursor)));
+    }
+    store.editor.appendChild(frag);
+    setCaretOffset(store.editor, caretOffset);
+  }
+
+  function ensureSpellTooltip() {
+    const store = state.spellcheck;
+    if (store.tooltip) return store.tooltip;
+    const tooltip = document.createElement('div');
+    tooltip.className = 'spell-tooltip';
+    document.body.appendChild(tooltip);
+    store.tooltip = tooltip;
+    return tooltip;
+  }
+
+  function hideSpellTooltip() {
+    const tooltip = state.spellcheck.tooltip;
+    if (tooltip) {
+      tooltip.style.display = 'none';
+      tooltip.innerHTML = '';
+    }
+    state.spellcheck.activeSpan = null;
+  }
+
+  function applySpellSuggestion(misspelling, replacement) {
+    const store = state.spellcheck;
+    if (!store.hiddenInput || !store.editor) return;
+    const text = store.hiddenInput.value || '';
+    const start = Math.max(0, misspelling.start || 0);
+    const end = Math.max(start, misspelling.end || start);
+    const nextText = `${text.slice(0, start)}${replacement}${text.slice(end)}`;
+    store.hiddenInput.value = nextText;
+    store.lastText = nextText;
+    hideSpellTooltip();
+    renderSpellcheckHighlights(nextText, []);
+    setCaretOffset(store.editor, start + replacement.length);
+    scheduleSpellcheck(true);
+  }
+
+  function showSpellTooltip(target, misspelling) {
+    const tooltip = ensureSpellTooltip();
+    const prefersLight = !document.documentElement.classList.contains('dark');
+    tooltip.classList.toggle('light', prefersLight);
+    tooltip.innerHTML = '';
+
+    const header = document.createElement('div');
+    header.className = 'px-2 pb-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400';
+    header.textContent = 'Suggestions';
+    tooltip.appendChild(header);
+
+    const suggestions = Array.isArray(misspelling?.suggestions) ? misspelling.suggestions : [];
+    if (suggestions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'px-2 py-1 text-sm text-slate-500';
+      empty.textContent = 'No alternatives available';
+      tooltip.appendChild(empty);
+    } else {
+      suggestions.forEach(option => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'suggestion';
+        button.textContent = option;
+        button.addEventListener('click', () => applySpellSuggestion(misspelling, option));
+        tooltip.appendChild(button);
+      });
+    }
+
+    const keep = document.createElement('button');
+    keep.type = 'button';
+    keep.className = 'keep mt-1';
+    keep.textContent = 'Keep as typed';
+    keep.addEventListener('click', hideSpellTooltip);
+    tooltip.appendChild(keep);
+
+    const rect = target.getBoundingClientRect();
+    const top = rect.bottom + 6 + window.scrollY;
+    const left = rect.left + window.scrollX;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.display = 'block';
+    state.spellcheck.activeSpan = target;
+  }
+
+  async function performSpellcheck(text, immediateId) {
+    const store = state.spellcheck;
+    if (!store.editor || !store.hiddenInput) return;
+    if (!text.trim()) {
+      store.misspellings = [];
+      renderSpellcheckHighlights(text, []);
+      updateSpellcheckStatus('');
+      return;
+    }
+
+    const requestId = immediateId ?? store.requestId + 1;
+    store.requestId = requestId;
+    store.inFlight = true;
+    updateSpellcheckStatus('Checking…');
+
+    try {
+      const result = await apiFetch('/spellcheck/check', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      if (store.requestId !== requestId) return;
+      const misspellings = Array.isArray(result?.misspellings) ? result.misspellings : [];
+      store.misspellings = misspellings;
+      renderSpellcheckHighlights(text, misspellings);
+      updateSpellcheckStatus(misspellings.length ? `${misspellings.length} suggestion${misspellings.length === 1 ? '' : 's'}` : 'Looks good');
+    } catch (error) {
+      if (store.requestId !== requestId) return;
+      console.warn('[spellcheck] failed', error);
+      updateSpellcheckStatus('Spellcheck unavailable');
+    } finally {
+      if (store.requestId === requestId) {
+        store.inFlight = false;
+      }
+    }
+  }
+
+  function scheduleSpellcheck(immediate = false) {
+    const store = state.spellcheck;
+    if (!store.editor || !store.hiddenInput) return;
+    const text = syncSpellcheckHidden();
+    if (store.debounceHandle) {
+      window.clearTimeout(store.debounceHandle);
+      store.debounceHandle = null;
+    }
+    if (immediate) {
+      performSpellcheck(text);
+      return;
+    }
+    store.debounceHandle = window.setTimeout(() => performSpellcheck(text), 500);
+  }
+
+  function initComposerSpellcheck() {
+    const editor = document.getElementById('caption-editor');
+    const hiddenInput = document.getElementById('caption');
+    const statusNode = document.getElementById('spellcheck-status');
+    if (!editor || !hiddenInput) return;
+
+    state.spellcheck.editor = editor;
+    state.spellcheck.hiddenInput = hiddenInput;
+    state.spellcheck.statusNode = statusNode;
+    syncSpellcheckHidden();
+    renderSpellcheckHighlights(state.spellcheck.hiddenInput.value, []);
+
+    editor.addEventListener('input', () => {
+      hideSpellTooltip();
+      scheduleSpellcheck();
+    });
+    editor.addEventListener('blur', () => {
+      syncSpellcheckHidden();
+    });
+    editor.addEventListener('click', event => {
+      const span = event.target.closest('.spell-error');
+      if (!span) {
+        hideSpellTooltip();
+        return;
+      }
+      const index = Number.parseInt(span.dataset.index || '-1', 10);
+      const miss = state.spellcheck.misspellings[index];
+      if (!miss) return;
+      showSpellTooltip(span, miss);
+    });
+    document.addEventListener('click', event => {
+      const tooltip = state.spellcheck.tooltip;
+      if (!tooltip) return;
+      if (tooltip.contains(event.target)) return;
+      if (event.target.closest?.('.spell-error')) return;
+      hideSpellTooltip();
+    });
+
+    scheduleSpellcheck(true);
+  }
+
   function setupComposer() {
     const form = document.getElementById('composer-form');
     if (!form) return;
+    initComposerSpellcheck();
     const fileInput = form.querySelector('input[type="file"]');
     const previewWrapper = document.getElementById('media-preview');
     const previewImage = document.getElementById('media-preview-image');
@@ -3307,6 +3591,7 @@
       } catch {
         return;
       }
+      syncSpellcheckHidden();
       const formData = new FormData(form);
       const caption = formData.get('caption');
       if (!caption || String(caption).trim().length === 0) {

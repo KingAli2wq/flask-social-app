@@ -32,6 +32,7 @@ from .routers import (
     profiles_router,
     realtime_router,
     settings_router,
+    spellcheck_router,
     system_router,
     stories_router,
     uploads_router,
@@ -99,6 +100,7 @@ app.include_router(notifications_router)
 app.include_router(profiles_router)
 app.include_router(realtime_router)
 app.include_router(settings_router)
+app.include_router(spellcheck_router)
 app.include_router(system_router)
 app.include_router(stories_router)
 app.include_router(uploads_router)

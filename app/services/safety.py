@@ -183,9 +183,10 @@ def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str
         if not normalized_keyword:
             continue
         compact = _strip_non_alnum(normalized_keyword)
-        if normalized_keyword in collapsed:
+        # Require whole-word matches to avoid false positives like "analyze" triggering on "anal".
+        if re.search(rf"\b{re.escape(normalized_keyword)}\b", collapsed):
             return True
-        if compact and compact in squashed:
+        if compact and compact == squashed:
             return True
     return False
 

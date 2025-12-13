@@ -45,7 +45,22 @@
                 <span class="hidden rounded-full bg-indigo-500/20 px-3 py-1 text-xs font-medium text-indigo-300 md:inline-flex">Realtime</span>
             </header>
             <form id="composer-form" class="mt-6 flex flex-col gap-4" enctype="multipart/form-data">
-                {{ components.forms.textarea("caption", label="What's happening?", placeholder="Share an update, celebrate a win, or drop a hot take…", rows=4, required=True) | safe }}
+                <div class="flex flex-col gap-2 text-sm font-medium text-slate-200">
+                    <div class="flex items-center justify-between gap-2">
+                        <span>What's happening?</span>
+                        <span id="spellcheck-status" class="hidden text-xs text-slate-500">Spellcheck ready</span>
+                    </div>
+                    <div
+                        id="caption-editor"
+                        class="spell-editor min-h-[140px] whitespace-pre-wrap break-words rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 focus:ring-offset-0"
+                        contenteditable="true"
+                        role="textbox"
+                        aria-label="What's happening?"
+                        data-placeholder="Share an update, celebrate a win, or drop a hot take…"
+                        spellcheck="false"
+                    ></div>
+                    <textarea id="caption" name="caption" class="hidden" required></textarea>
+                </div>
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
                         {{ components.forms.file_input("file", label="Attach media") | safe }}
