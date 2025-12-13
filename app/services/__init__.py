@@ -44,12 +44,6 @@ from .emotion_service import (
     detect_emotions,
     emotions_to_dict,
 )
-from .embeddings_service import (
-    enqueue_document_ingestion,
-    get_queue_status,
-    shutdown_embedding_worker,
-    start_embedding_worker,
-)
 from .media_service import (
     create_media_comment,
     delete_media_asset,
@@ -120,7 +114,6 @@ from .settings_service import (
 )
 from .spaces_service import SpacesConfigurationError, SpacesUploadError, get_spaces_client, upload_file_to_spaces
 from .story_service import create_story, list_active_stories
-from .rag_service import query_similar_chunks
 
 __all__ = [
     "authenticate_user",
@@ -229,9 +222,4 @@ __all__ = [
     "detect_emotions",
     "build_emotion_directive",
     "emotions_to_dict",
-    "enqueue_document_ingestion",
-    "get_queue_status",
-    "start_embedding_worker",
-    "shutdown_embedding_worker",
-    "query_similar_chunks",
 ]

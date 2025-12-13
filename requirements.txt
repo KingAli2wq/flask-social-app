@@ -26,7 +26,6 @@ alembic>=1.17
 pydantic>=2.0
 pydantic-settings>=2.0
 typing-extensions>=4.0
-pgvector>=0.2
 
 # File Uploads & Validation
 python-multipart>=0.0.6

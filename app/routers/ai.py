@@ -14,16 +14,35 @@ from pydantic import BaseModel
 
 from app.services.safety import SafetyViolation, check_content_policy
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://143.198.39.198:11434").rstrip("/")
-OLLAMA_CHAT_URL = f"{OLLAMA_BASE_URL}/api/chat"
-LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "huihui_ai/qwen3-abliterated:0.6b-q4_K_M")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("LOCAL_LLM_MODEL", "huihui_ai/qwen3-abliterated:0.6b-q4_K_M"))
+OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
+OLLAMA_STREAM_TIMEOUT = float(os.getenv("OLLAMA_STREAM_TIMEOUT", os.getenv("OLLAMA_TIMEOUT", "120")))
 OLLAMA_KEEP_ALIVE_SECONDS = int(os.getenv("OLLAMA_KEEP_ALIVE_SECONDS", "20"))
 ALLOW_ADULT_NSFW = os.getenv("ALLOW_ADULT_NSFW", "false").lower() == "true"
 SOCIAL_AI_INTERNAL_TOKEN = os.getenv("SOCIAL_AI_INTERNAL_TOKEN") or None
 INTERNAL_OVERRIDE_HEADER = "x-social-ai-internal"
 _HTTP_LIMITS = httpx.Limits(max_connections=10, max_keepalive_connections=10)
 _async_http_client: httpx.AsyncClient | None = None
+def _is_cloud_host(base_url: str) -> bool:
+    token = base_url.lower()
+    return "ollama.com" in token
+
+
+def _build_ollama_headers() -> dict[str, str]:
+    if not _is_cloud_host(OLLAMA_BASE_URL):
+        return {}
+    if not OLLAMA_API_KEY:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OLLAMA_API_KEY is required for cloud usage")
+    return {"Authorization": f"Bearer {OLLAMA_API_KEY}"}
+
+
+def _resolve_timeouts() -> httpx.Timeout:
+    # Cloud calls tend to be slower; allow a longer read timeout there.
+    connect = max(5.0, OLLAMA_TIMEOUT)
+    read = max(OLLAMA_STREAM_TIMEOUT, OLLAMA_TIMEOUT)
+    return httpx.Timeout(connect=connect, read=read, write=OLLAMA_TIMEOUT, pool=OLLAMA_TIMEOUT)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +52,9 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 def _get_async_http_client() -> httpx.AsyncClient:
     global _async_http_client
     if _async_http_client is None:
-        _async_http_client = httpx.AsyncClient(timeout=OLLAMA_TIMEOUT, limits=_HTTP_LIMITS)
+        timeout = _resolve_timeouts()
+        headers = _build_ollama_headers()
+        _async_http_client = httpx.AsyncClient(timeout=timeout, limits=_HTTP_LIMITS, headers=headers or None)
     return _async_http_client
 
 
@@ -138,7 +159,7 @@ async def chat_with_local_model(payload: ChatRequest, request: Request) -> ChatR
     messages = [{"role": "system", "content": system_prompt}, *history_messages, {"role": "user", "content": payload.message}]
 
     request_payload = {
-        "model": LOCAL_LLM_MODEL,
+        "model": OLLAMA_MODEL,
         "messages": messages,
         "stream": False,
         "keep_alive": payload.keep_alive or OLLAMA_KEEP_ALIVE_SECONDS,
@@ -147,10 +168,11 @@ async def chat_with_local_model(payload: ChatRequest, request: Request) -> ChatR
         request_payload.setdefault("options", {})["num_predict"] = payload.num_predict
 
     client = _get_async_http_client()
+    chat_url = f"{OLLAMA_BASE_URL}/api/chat"
     try:
-        response = await client.post(OLLAMA_CHAT_URL, json=request_payload)
+        response = await client.post(chat_url, json=request_payload)
     except httpx.HTTPError as exc:  # pragma: no cover - network failure path
-        logger.exception("Failed to reach local LLM at %s", OLLAMA_CHAT_URL)
+        logger.exception("Failed to reach LLM at %s", chat_url)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Local LLM is unavailable") from exc
 
     logger.debug("Ollama status=%s body=%s", response.status_code, response.text[:200])
@@ -210,7 +232,7 @@ async def chat_with_local_model_stream(payload: ChatRequest, request: Request) -
     ]
 
     request_payload = {
-        "model": LOCAL_LLM_MODEL,
+        "model": OLLAMA_MODEL,
         "messages": messages,
         "stream": True,
         "keep_alive": payload.keep_alive or OLLAMA_KEEP_ALIVE_SECONDS,
@@ -219,17 +241,18 @@ async def chat_with_local_model_stream(payload: ChatRequest, request: Request) -
         request_payload.setdefault("options", {})["num_predict"] = payload.num_predict
 
     client = _get_async_http_client()
-    stream_ctx = client.stream("POST", OLLAMA_CHAT_URL, json=request_payload)
+    chat_url = f"{OLLAMA_BASE_URL}/api/chat"
+    stream_ctx = client.stream("POST", chat_url, json=request_payload)
     try:
         response = await stream_ctx.__aenter__()
         response.raise_for_status()
     except httpx.TimeoutException as exc:
         await stream_ctx.__aexit__(type(exc), exc, exc.__traceback__)
-        logger.exception("Local LLM timed out when starting stream at %s", OLLAMA_CHAT_URL)
+        logger.exception("LLM timed out when starting stream at %s", chat_url)
         raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Local LLM timed out") from exc
     except httpx.HTTPError as exc:  # pragma: no cover - network failure path
         await stream_ctx.__aexit__(type(exc), exc, exc.__traceback__)
-        logger.exception("Failed to start streaming LLM response at %s", OLLAMA_CHAT_URL)
+        logger.exception("Failed to start streaming LLM response at %s", chat_url)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Local LLM is unavailable") from exc
 
     async def event_generator():
