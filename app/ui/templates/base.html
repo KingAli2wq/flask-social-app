@@ -144,6 +144,16 @@
         .spell-tooltip .keep:hover { background: rgba(15,23,42,0.4); }
         .spell-tooltip.light .keep:hover { background: rgba(148,163,184,0.12); }
 
+        /* App lock overlay styling */
+        body[data-app-locked="true"] > :not(#app-lock-overlay) {
+            filter: blur(6px);
+            pointer-events: none;
+            user-select: none;
+        }
+        #app-lock-overlay {
+            backdrop-filter: blur(8px);
+        }
+
         @media (max-width: 640px) {
             body { background-attachment: scroll; }
             main { max-width: 100%; padding: 1.25rem 1rem !important; gap: 1.75rem; }
@@ -169,6 +179,40 @@
     </style>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
+    <div
+        id="app-lock-overlay"
+        class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-950/90 px-4 py-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="app-lock-title"
+    >
+        <div class="w-full max-w-md space-y-6 rounded-3xl border border-indigo-500/40 bg-slate-900/95 p-8 shadow-2xl shadow-indigo-900/40">
+            <div class="space-y-2 text-center">
+                <p class="text-[11px] uppercase tracking-[0.35em] text-indigo-200/80">Access Required</p>
+                <h1 id="app-lock-title" class="text-2xl font-semibold text-white">Enter Access Password</h1>
+                <p class="text-sm text-slate-300">This app is locked. Enter the provided password to continue.</p>
+            </div>
+            <form id="app-lock-form" class="space-y-3">
+                <label class="block text-sm font-semibold text-slate-200" for="app-lock-input">Password</label>
+                <input
+                    id="app-lock-input"
+                    name="password"
+                    type="password"
+                    class="w-full rounded-2xl border border-slate-700/70 bg-slate-950/90 px-4 py-3 text-sm text-white shadow-inner focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                />
+                <p id="app-lock-error" class="text-sm font-semibold text-rose-300 opacity-0">Incorrect password. Try again.</p>
+                <button
+                    type="submit"
+                    class="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
+                >
+                    Unlock
+                </button>
+            </form>
+        </div>
+    </div>
     {{ components.feedback.toast_container() | safe }}
     {{ components.layout.navbar(active=active_nav) | safe }}
     <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
@@ -433,6 +477,56 @@
             } else {
                 scheduleFallback();
             }
+        })();
+
+        (() => {
+            const LOCK_KEY = 'socialsphere:app-lock';
+            const REQUIRED_PASSWORD = '*70bP+pi*X2.Y';
+            const overlay = document.getElementById('app-lock-overlay');
+            const form = document.getElementById('app-lock-form');
+            const input = document.getElementById('app-lock-input');
+            const errorNode = document.getElementById('app-lock-error');
+
+            if (!overlay || !form || !input) {
+                return;
+            }
+
+            const unlock = () => {
+                overlay.classList.add('hidden');
+                document.body.dataset.appLocked = 'false';
+            };
+
+            const showLock = () => {
+                document.body.dataset.appLocked = 'true';
+                overlay.classList.remove('hidden');
+                window.setTimeout(() => input.focus(), 50);
+            };
+
+            const alreadyUnlocked = sessionStorage.getItem(LOCK_KEY) === 'true';
+            if (alreadyUnlocked) {
+                unlock();
+                return;
+            }
+
+            showLock();
+
+            form.addEventListener('submit', event => {
+                event.preventDefault();
+                const provided = (input.value || '').trim();
+                if (provided === REQUIRED_PASSWORD) {
+                    sessionStorage.setItem(LOCK_KEY, 'true');
+                    if (errorNode) {
+                        errorNode.classList.add('opacity-0');
+                    }
+                    unlock();
+                    return;
+                }
+                input.value = '';
+                if (errorNode) {
+                    errorNode.classList.remove('opacity-0');
+                }
+                input.focus();
+            });
         })();
     </script>
     {% block scripts %}{% endblock %}
