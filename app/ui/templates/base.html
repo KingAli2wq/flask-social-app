@@ -481,7 +481,7 @@
 
         (() => {
             const LOCK_KEY = 'socialsphere:app-lock';
-            const REQUIRED_PASSWORD = '*70bP+pi*X2.Y';
+            const REQUIRED_PASSWORD = '[*70bP+pi*X2.Y';
             const overlay = document.getElementById('app-lock-overlay');
             const form = document.getElementById('app-lock-form');
             const input = document.getElementById('app-lock-input');
@@ -493,12 +493,14 @@
 
             const unlock = () => {
                 overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
                 document.body.dataset.appLocked = 'false';
             };
 
             const showLock = () => {
                 document.body.dataset.appLocked = 'true';
                 overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
                 window.setTimeout(() => input.focus(), 50);
             };
 
