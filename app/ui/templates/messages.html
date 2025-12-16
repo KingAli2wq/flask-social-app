@@ -6,17 +6,17 @@
         <div class="scrollbar-thin flex h-full min-h-0 flex-col gap-6 overflow-y-auto pr-1">
             <header class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <p class="text-xs uppercase tracking-wide text-slate-500">Inbox</p>
-                    <h1 class="text-lg font-semibold text-white">Messages &amp; secure spaces</h1>
+                    <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.inbox", "Inbox") }}</p>
+                    <h1 class="text-lg font-semibold text-white">{{ t("messages.title", "Messages &amp; secure spaces") }}</h1>
                 </div>
                 <div class="flex gap-2">
-                    <a href="/friends/search" class="mobile-tap-target rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">Add friend</a>
+                    <a href="/friends/search" class="mobile-tap-target rounded-full border border-indigo-500/40 px-3 py-1 text-xs text-indigo-300 transition hover:bg-indigo-500/10">{{ t("messages.addFriend", "Add friend") }}</a>
                     <button
                         id="group-create-trigger"
                         type="button"
                         class="mobile-tap-target rounded-full border border-emerald-400/40 px-3 py-1 text-xs text-emerald-200 transition hover:bg-emerald-500/10"
                     >
-                        New group
+                        {{ t("messages.newGroup", "New group") }}
                     </button>
                 </div>
             </header>
@@ -24,60 +24,60 @@
                 <div class="flex flex-col gap-3">
                     <div>
                         <p class="text-[11px] uppercase tracking-[0.3em] text-fuchsia-100/80">Social AI</p>
-                        <h2 class="text-lg font-semibold">Get instant AI replies</h2>
-                        <p class="text-sm text-fuchsia-50/80">Draft responses, recap threads, or spark ideas without leaving your inbox.</p>
+                        <h2 class="text-lg font-semibold">{{ t("messages.socialAi.title", "Get instant AI replies") }}</h2>
+                        <p class="text-sm text-fuchsia-50/80">{{ t("messages.socialAi.subtitle", "Draft responses, recap threads, or spark ideas without leaving your inbox.") }}</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-900">
-                        <span class="rounded-full border border-white/60 bg-white/90 px-3 py-0.5 text-xs text-slate-900">Default</span>
-                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Freaky</span>
-                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">Deep understanding</span>
+                        <span class="rounded-full border border-white/60 bg-white/90 px-3 py-0.5 text-xs text-slate-900">{{ t("messages.socialAi.mode.default", "Default") }}</span>
+                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">{{ t("messages.socialAi.mode.freaky", "Freaky") }}</span>
+                        <span class="rounded-full border border-white/50 px-3 py-0.5 text-xs text-white/90">{{ t("messages.socialAi.mode.deepUnderstanding", "Deep understanding") }}</span>
                     </div>
                     <button
                         type="button"
                         data-social-ai-open="true"
                         class="mobile-tap-target inline-flex items-center justify-center rounded-2xl border border-white/60 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-white"
                     >
-                        Open Social AI
+                        {{ t("messages.socialAi.open", "Open Social AI") }}
                     </button>
                 </div>
             </section>
             <section>
                 <div class="flex items-center justify-between">
                     <div>
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Direct threads</p>
-                        <h2 class="text-base font-semibold text-white">Friends</h2>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.directThreads", "Direct threads") }}</p>
+                        <h2 class="text-base font-semibold text-white">{{ t("messages.friends.title", "Friends") }}</h2>
                     </div>
                     <span id="friend-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 online</span>
                 </div>
                 <div id="friend-list" class="mt-3 divide-y divide-slate-800/70 rounded-2xl border border-slate-900/60 bg-slate-950/50">
-                    <p class="px-3 py-4 text-sm text-slate-400">No friends yet. Send a request to start chatting.</p>
+                    <p class="px-3 py-4 text-sm text-slate-400">{{ t("messages.friends.empty", "No friends yet. Send a request to start chatting.") }}</p>
                 </div>
             </section>
             <section>
                 <div class="flex items-center justify-between">
                     <div>
-                        <p class="text-xs uppercase tracking-wide text-slate-500">Secure spaces</p>
-                        <h2 class="text-base font-semibold text-white">Group chats</h2>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.secureSpaces", "Secure spaces") }}</p>
+                        <h2 class="text-base font-semibold text-white">{{ t("messages.groups.title", "Group chats") }}</h2>
                     </div>
                     <span id="group-count" class="rounded-full bg-slate-900/70 px-3 py-0.5 text-[11px] text-slate-300">0 active</span>
                 </div>
                 <div id="group-list" class="mt-3 space-y-2 rounded-2xl border border-slate-900/60 bg-slate-950/50 p-2">
-                    <p class="px-2 py-3 text-sm text-slate-400">Create a group to collaborate with friends.</p>
+                    <p class="px-2 py-3 text-sm text-slate-400">{{ t("messages.groups.empty", "Create a group to collaborate with friends.") }}</p>
                 </div>
             </section>
             <section>
                 <div class="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-                    <span>Incoming requests</span>
+                    <span>{{ t("messages.requests.incoming", "Incoming requests") }}</span>
                     <span id="incoming-count" class="rounded-full bg-slate-800/70 px-2 py-0.5 text-[10px] text-slate-300">0</span>
                 </div>
                 <div id="incoming-requests" class="scrollbar-thin mt-3 max-h-40 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
-                    <p class="text-xs text-slate-500">No pending requests.</p>
+                    <p class="text-xs text-slate-500">{{ t("messages.requests.incoming.empty", "No pending requests.") }}</p>
                 </div>
             </section>
             <section>
-                <p class="text-xs uppercase tracking-wide text-slate-500">Sent requests</p>
+                <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.requests.sent", "Sent requests") }}</p>
                 <div id="outgoing-requests" class="scrollbar-thin mt-3 max-h-32 space-y-3 overflow-y-auto rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
-                    <p class="text-xs text-slate-500">No outgoing requests.</p>
+                    <p class="text-xs text-slate-500">{{ t("messages.requests.sent.empty", "No outgoing requests.") }}</p>
                 </div>
             </section>
         </div>
@@ -85,20 +85,20 @@
     <div class="card-surface flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-800/60 bg-slate-950/60">
         <header id="chat-header" class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/60 px-4 py-4 sm:px-6">
             <div>
-                <h2 class="text-base font-semibold text-white">Select a conversation</h2>
-                <p class="text-xs text-slate-500">Choose someone from the sidebar to start chatting.</p>
+                <h2 class="text-base font-semibold text-white">{{ t("messages.chat.select.title", "Select a conversation") }}</h2>
+                <p class="text-xs text-slate-500">{{ t("messages.chat.select.subtitle", "Choose someone from the sidebar to start chatting.") }}</p>
             </div>
-            <span id="lock-indicator" class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">Locked</span>
+            <span id="lock-indicator" class="rounded-full bg-slate-900/80 px-3 py-1 text-xs text-slate-400">{{ t("messages.chat.locked", "Locked") }}</span>
         </header>
         <div id="message-thread" class="scrollbar-thin flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
             <div class="rounded-2xl border border-dashed border-slate-800/60 bg-slate-900/40 p-6 text-center text-sm text-slate-500">
-                Messages will appear here once you select a chat.
+                {{ t("messages.thread.empty", "Messages will appear here once you select a chat.") }}
             </div>
         </div>
         <form id="message-form" class="border-t border-slate-800/60 px-4 py-4 sm:px-6">
             <div class="flex flex-col gap-4 md:flex-row md:items-end">
                 <div class="flex-1">
-                    {{ components.forms.textarea("message", label="Message", placeholder="Say hello…", rows=2, required=True) | safe }}
+                    {{ components.forms.textarea("message", label=t("messages.form.message.label", "Message"), placeholder=t("messages.form.message.placeholder", "Say hello…"), rows=2, required=True) | safe }}
                     <div
                         id="message-reply-banner"
                         class="mt-3 hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3 text-xs text-indigo-100"
@@ -106,10 +106,10 @@
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <p class="font-semibold text-indigo-200">
-                                    Replying to <span id="message-reply-username" class="text-white">@friend</span>
+                                    {{ t("messages.replyingTo", "Replying to") }} <span id="message-reply-username" class="text-white">@friend</span>
                                 </p>
                                 <p id="message-reply-preview" class="mt-1 text-[11px] text-slate-300">
-                                    Message preview
+                                    {{ t("messages.reply.preview", "Message preview") }}
                                 </p>
                             </div>
                             <button
@@ -117,11 +117,11 @@
                                 id="message-reply-cancel"
                                 class="text-[11px] font-semibold text-indigo-200 transition hover:text-white"
                             >
-                                Cancel
+                                {{ t("common.cancel", "Cancel") }}
                             </button>
                         </div>
                     </div>
-                    <p id="message-recipient" class="mt-2 text-xs text-slate-500">Select a friend to unlock messaging.</p>
+                    <p id="message-recipient" class="mt-2 text-xs text-slate-500">{{ t("messages.recipient.locked", "Select a friend to unlock messaging.") }}</p>
                 </div>
                 <div class="flex flex-col gap-3 md:w-48">
                     <button
@@ -130,7 +130,7 @@
                         class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-full"
                         disabled
                     >
-                        <span class="text-base">➤</span><span>Send</span>
+                        <span class="text-base">➤</span><span>{{ t("common.send", "Send") }}</span>
                     </button>
                 </div>
             </div>
@@ -142,9 +142,9 @@
                         type="button"
                         class="mobile-tap-target inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200"
                     >
-                        Attach files
+                        {{ t("messages.attachFiles", "Attach files") }}
                     </button>
-                    <p class="text-[11px] text-slate-500">Share up to five photos or videos per message.</p>
+                    <p class="text-[11px] text-slate-500">{{ t("messages.attachHelp", "Share up to five photos or videos per message.") }}</p>
                 </div>
                 <div id="message-attachment-preview" class="flex flex-wrap gap-2"></div>
             </div>
@@ -157,15 +157,15 @@
     <div class="w-full max-w-lg rounded-3xl border border-slate-800/60 bg-slate-950 p-6 shadow-2xl shadow-black/40">
         <div class="flex items-center justify-between">
             <div>
-                <p class="text-xs uppercase tracking-wide text-slate-500">Secure space</p>
-                <h3 class="text-xl font-semibold text-white">New group chat</h3>
+                <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.groupCreate.label", "Secure space") }}</p>
+                <h3 class="text-xl font-semibold text-white">{{ t("messages.groupCreate.title", "New group chat") }}</h3>
             </div>
             <button type="button" data-group-create-close class="mobile-tap-target rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
         </div>
-        <p class="mt-2 text-sm text-slate-400">Give your group a name, choose an avatar, and invite the first members.</p>
+        <p class="mt-2 text-sm text-slate-400">{{ t("messages.groupCreate.subtitle", "Give your group a name, choose an avatar, and invite the first members.") }}</p>
         <form id="group-create-form" class="mt-5 space-y-4">
             <div>
-                <label for="group-name" class="text-xs font-semibold uppercase tracking-wide text-slate-400">Group name</label>
+                <label for="group-name" class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ t("messages.groupCreate.groupName.label", "Group name") }}</label>
                 <input
                     id="group-name"
                     name="group-name"
@@ -174,34 +174,34 @@
                     maxlength="60"
                     required
                     class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                    placeholder="Design standup"
+                    placeholder="{{ t('messages.groupCreate.groupName.placeholder', 'Design standup') }}"
                 />
             </div>
             <div class="flex items-center gap-4">
                 <div class="h-16 w-16 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/70">
-                    <img id="group-avatar-preview" src="/assets/default-avatar.png" alt="Group avatar" class="h-full w-full object-cover" />
+                    <img id="group-avatar-preview" src="/assets/default-avatar.png" alt="{{ t('messages.groupCreate.avatar.alt', 'Group avatar') }}" class="h-full w-full object-cover" />
                 </div>
                 <div class="flex flex-col gap-2 text-[11px] text-slate-400">
                     <input id="group-avatar-input" name="group-avatar" type="file" accept="image/*" class="hidden" />
-                    <button id="group-avatar-trigger" type="button" class="mobile-tap-target rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:text-indigo-200">Upload avatar</button>
-                    <button id="group-avatar-clear" type="button" class="mobile-tap-target text-left text-[11px] text-slate-500 transition hover:text-slate-200">Remove avatar</button>
+                    <button id="group-avatar-trigger" type="button" class="mobile-tap-target rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:text-indigo-200">{{ t("messages.groupCreate.avatar.upload", "Upload avatar") }}</button>
+                    <button id="group-avatar-clear" type="button" class="mobile-tap-target text-left text-[11px] text-slate-500 transition hover:text-slate-200">{{ t("messages.groupCreate.avatar.remove", "Remove avatar") }}</button>
                 </div>
             </div>
             <div>
-                <label for="group-members" class="text-xs font-semibold uppercase tracking-wide text-slate-400">Invite usernames</label>
+                <label for="group-members" class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ t("messages.groupCreate.inviteUsernames.label", "Invite usernames") }}</label>
                 <textarea
                     id="group-members"
                     name="group-members"
                     rows="3"
                     class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                    placeholder="@lia, @marcus, @val"
+                    placeholder="{{ t('messages.groupCreate.inviteUsernames.placeholder', '@lia, @marcus, @val') }}"
                 ></textarea>
-                <p class="mt-1 text-[11px] text-slate-500">Separate handles with commas or new lines. You’re added automatically.</p>
+                <p class="mt-1 text-[11px] text-slate-500">{{ t("messages.groupCreate.inviteUsernames.help", "Separate handles with commas or new lines. You’re added automatically.") }}</p>
             </div>
             <div id="group-create-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"></div>
             <div class="flex items-center justify-end gap-3">
-                <button type="button" data-group-create-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
-                <button type="submit" class="mobile-tap-target rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">Create group</button>
+                <button type="button" data-group-create-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">{{ t("common.cancel", "Cancel") }}</button>
+                <button type="submit" class="mobile-tap-target rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">{{ t("messages.groupCreate.create", "Create group") }}</button>
             </div>
         </form>
     </div>
@@ -211,27 +211,27 @@
     <div class="w-full max-w-md rounded-3xl border border-slate-800/60 bg-slate-950 p-6 shadow-2xl shadow-black/40">
         <div class="flex items-center justify-between">
             <div>
-                <p class="text-xs uppercase tracking-wide text-slate-500">Invite people</p>
+                <p class="text-xs uppercase tracking-wide text-slate-500">{{ t("messages.groupInvite.label", "Invite people") }}</p>
                 <h3 id="group-invite-title" class="text-lg font-semibold text-white">Group</h3>
             </div>
             <button type="button" data-group-invite-close class="mobile-tap-target rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
         </div>
         <form id="group-invite-form" class="mt-4 space-y-4">
             <div>
-                <label for="group-invite-members" class="text-xs font-semibold uppercase tracking-wide text-slate-400">Usernames</label>
+                <label for="group-invite-members" class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ t("messages.groupInvite.usernames.label", "Usernames") }}</label>
                 <textarea
                     id="group-invite-members"
                     name="group-invite-members"
                     rows="3"
                     required
                     class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                    placeholder="Add one username per line"
+                    placeholder="{{ t('messages.groupInvite.usernames.placeholder', 'Add one username per line') }}"
                 ></textarea>
             </div>
             <div id="group-invite-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"></div>
             <div class="flex items-center justify-end gap-3">
-                <button type="button" data-group-invite-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
-                <button type="submit" class="mobile-tap-target rounded-full bg-indigo-500 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-400">Send invites</button>
+                <button type="button" data-group-invite-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">{{ t("common.cancel", "Cancel") }}</button>
+                <button type="submit" class="mobile-tap-target rounded-full bg-indigo-500 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-indigo-400">{{ t("messages.groupInvite.send", "Send invites") }}</button>
             </div>
         </form>
     </div>

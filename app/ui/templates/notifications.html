@@ -4,18 +4,18 @@
 <section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
     <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-            <h1 class="text-lg font-semibold text-white">Notifications</h1>
-            <p class="text-sm text-slate-400">Stay on top of mentions, reactions, and updates.</p>
+            <h1 class="text-lg font-semibold text-white">{{ t("notifications.title", "Notifications") }}</h1>
+            <p class="text-sm text-slate-400">{{ t("notifications.subtitle", "Stay on top of mentions, reactions, and updates.") }}</p>
         </div>
         <div class="flex items-center gap-3">
-            {{ components.buttons.ghost("Mark all as read", id_="notifications-mark", icon="✅") | safe }}
+            {{ components.buttons.ghost(t("notifications.markAll", "Mark all as read"), id_="notifications-mark", icon="✅") | safe }}
             <span id="notifications-count" class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">0 unread</span>
         </div>
     </header>
-    <div id="notifications-loading" class="mt-6">{{ components.feedback.loading_spinner(label="Loading notifications") | safe }}</div>
+    <div id="notifications-loading" class="mt-6">{{ components.feedback.loading_spinner(label=t("notifications.loading", "Loading notifications")) | safe }}</div>
     <ul id="notifications-list" class="mt-6 grid gap-4"></ul>
     <div id="notifications-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
-        You're all caught up. Come back later for new updates.
+        {{ t("notifications.empty", "You're all caught up. Come back later for new updates.") }}
     </div>
 </section>
 {% endblock %}

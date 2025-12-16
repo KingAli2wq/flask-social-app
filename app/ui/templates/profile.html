@@ -11,7 +11,7 @@
                     data-current-user-avatar
                     class="h-32 w-32 rounded-full object-cover border shadow"
                     src=""
-                    alt="Profile Avatar"
+                    alt="{{ t('profile.avatar.alt', 'Profile Avatar') }}"
                 />
 
                 <input
@@ -26,17 +26,17 @@
                     type="button"
                     class="mobile-tap-target w-full rounded-lg bg-indigo-600 px-4 py-2 text-white shadow transition hover:bg-indigo-700 sm:w-auto"
                 >
-                    Change Avatar
+                    {{ t("profile.avatar.change", "Change Avatar") }}
                 </button>
             </div>
 
             <div class="text-center">
-                <h1 id="profile-display-name" class="text-2xl font-semibold text-white">Your name</h1>
+                <h1 id="profile-display-name" class="text-2xl font-semibold text-white">{{ t("profile.displayName.placeholder", "Your name") }}</h1>
                 <p id="profile-username" class="text-sm text-slate-400">@username</p>
-                <p id="profile-location" class="text-sm text-slate-400">Location not set</p>
+                <p id="profile-location" class="text-sm text-slate-400">{{ t("profile.location.notSet", "Location not set") }}</p>
             </div>
 
-            <p id="profile-bio" class="text-sm text-slate-300">Add a short bio to introduce yourself.</p>
+            <p id="profile-bio" class="text-sm text-slate-300">{{ t("profile.bio.empty", "Add a short bio to introduce yourself.") }}</p>
 
             <a
                 id="profile-website"
@@ -45,23 +45,23 @@
                 target="_blank"
                 class="text-sm font-medium text-indigo-300 hover:text-indigo-200"
             >
-                Website
+                {{ t("profile.website", "Website") }}
             </a>
         </div>
 
         <dl class="mt-8 grid grid-cols-2 gap-4 text-center md:grid-cols-4">
             <div class="rounded-2xl bg-slate-900/90 p-4">
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Posts</dt>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">{{ t("profile.stats.posts", "Posts") }}</dt>
                 <dd id="profile-post-count" class="mt-1 text-lg font-semibold text-white">0</dd>
             </div>
 
             <div class="rounded-2xl bg-slate-900/90 p-4">
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Member since</dt>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">{{ t("profile.stats.memberSince", "Member since") }}</dt>
                 <dd id="profile-created" class="mt-1 text-lg font-semibold text-white">—</dd>
             </div>
 
             <div class="rounded-2xl bg-slate-900/90 p-4">
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Followers</dt>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">{{ t("profile.stats.followers", "Followers") }}</dt>
                 <dd
                     id="profile-followers-count"
                     data-empty-label="0"
@@ -70,7 +70,7 @@
             </div>
 
             <div class="rounded-2xl bg-slate-900/90 p-4">
-                <dt class="text-xs uppercase tracking-wide text-slate-500">Following</dt>
+                <dt class="text-xs uppercase tracking-wide text-slate-500">{{ t("profile.stats.following", "Following") }}</dt>
                 <dd
                     id="profile-following-count"
                     data-empty-label="0"
@@ -85,8 +85,8 @@
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
             <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-white">Edit profile</h2>
-                    <p class="text-sm text-slate-400">Craft a profile that tells your story.</p>
+                    <h2 class="text-lg font-semibold text-white">{{ t("profile.edit.title", "Edit profile") }}</h2>
+                    <p class="text-sm text-slate-400">{{ t("profile.edit.subtitle", "Craft a profile that tells your story.") }}</p>
                 </div>
 
                 <button
@@ -95,41 +95,41 @@
                     class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
-                    <span>Save changes</span>
+                    <span>{{ t("profile.save", "Save changes") }}</span>
                 </button>
             </header>
 
             <form id="profile-form" class="mt-6 grid gap-6">
 
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="location">
-                    <span>Location</span>
+                    <span>{{ t("profile.form.location.label", "Location") }}</span>
                     <input
                         id="location"
                         name="location"
                         type="text"
-                        placeholder="New York, USA"
+                        placeholder="{{ t('profile.form.location.placeholder', 'New York, USA') }}"
                         class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600"
                     >
                 </label>
 
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="website">
-                    <span>Website</span>
+                    <span>{{ t("profile.form.website.label", "Website") }}</span>
                     <input
                         id="website"
                         name="website"
                         type="url"
-                        placeholder="https://example.com"
+                        placeholder="{{ t('profile.form.website.placeholder', 'https://example.com') }}"
                         class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600"
                     >
                 </label>
 
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="bio">
-                    <span>Bio</span>
+                    <span>{{ t("profile.form.bio.label", "Bio") }}</span>
                     <textarea
                         id="bio"
                         name="bio"
                         rows="4"
-                        placeholder="Share what you're building…"
+                        placeholder="{{ t("profile.form.bio.placeholder", "Share what you're building…") }}"
                         class="block w-full rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-600 resize-none"
                     ></textarea>
                 </label>
@@ -144,20 +144,20 @@
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
 
             <header class="flex items-center justify-between">
-                <h2 class="text-lg font-semibold text-white">Recent posts</h2>
-                <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">Auto-updates</span>
+                <h2 class="text-lg font-semibold text-white">{{ t("profile.recentPosts.title", "Recent posts") }}</h2>
+                <span class="rounded-full bg-slate-900/90 px-3 py-1 text-xs text-slate-400">{{ t("profile.recentPosts.badge", "Auto-updates") }}</span>
             </header>
 
             <div id="profile-feed-loading" class="mt-6 flex items-center gap-3 text-sm text-slate-400">
                 <span class="h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-transparent"></span>
-                <span>Loading posts…</span>
+                <span>{{ t("profile.recentPosts.loading", "Loading posts…") }}</span>
             </div>
 
             <div
                 id="profile-feed-empty"
                 class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400"
             >
-                No posts yet. Share something from the feed to see it here.
+                {{ t("profile.recentPosts.empty", "No posts yet. Share something from the feed to see it here.") }}
             </div>
 
             <div id="profile-feed" class="mt-6 grid gap-6"></div>

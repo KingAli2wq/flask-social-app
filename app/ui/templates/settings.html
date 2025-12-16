@@ -9,7 +9,7 @@
                 data-current-user-avatar
                 class="h-32 w-32 rounded-full object-cover border shadow"
                 src=""
-                alt="Profile Avatar"
+                alt="{{ t('settings.avatar.alt', 'Profile Avatar') }}"
             />
             <input
                 type="file"
@@ -22,14 +22,14 @@
                 type="button"
                 class="mobile-tap-target w-full rounded-lg bg-indigo-600 px-4 py-2 text-white shadow transition hover:bg-indigo-700 sm:w-auto"
             >
-                Change Avatar
+                {{ t("settings.avatar.change", "Change Avatar") }}
             </button>
             <div>
                 <h1 id="settings-display-name" class="text-xl font-semibold text-white">@username</h1>
                 <p id="settings-email" class="text-sm text-slate-400">user@example.com</p>
                 <span id="settings-email-status" class="mt-1 inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-400">
                     <span aria-hidden="true">⚠️</span>
-                    Email unverified
+                    {{ t("settings.email.unverified", "Email unverified") }}
                 </span>
             </div>
             <button
@@ -37,7 +37,7 @@
                 type="button"
                 class="mobile-tap-target rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/20"
             >
-                Sign out
+                {{ t("settings.signOut", "Sign out") }}
             </button>
         </div>
     </aside>
@@ -46,29 +46,29 @@
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
             <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-white">Profile basics</h2>
-                    <p class="text-sm text-slate-400">Update how others see you.</p>
+                    <h2 class="text-lg font-semibold text-white">{{ t("settings.profileBasics.title", "Profile basics") }}</h2>
+                    <p class="text-sm text-slate-400">{{ t("settings.profileBasics.subtitle", "Update how others see you.") }}</p>
                 </div>
                 <button
                     id="settings-profile-save"
                     class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
-                    <span>Save profile</span>
+                    <span>{{ t("settings.profileBasics.save", "Save profile") }}</span>
                 </button>
             </header>
             <form id="settings-profile-form" class="mt-6 grid gap-6">
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-name">
-                    <span>Display name</span>
-                    <input id="settings-name" name="name" type="text" class="input-field" placeholder="Connor" />
+                    <span>{{ t("settings.profileBasics.displayName", "Display name") }}</span>
+                    <input id="settings-name" name="name" type="text" class="input-field" placeholder="{{ t('settings.profileBasics.displayName.placeholder', 'Connor') }}" />
                 </label>
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-username">
-                    <span>Username</span>
-                    <input id="settings-username" name="username" type="text" class="input-field" placeholder="@connor" />
+                    <span>{{ t("settings.profileBasics.username", "Username") }}</span>
+                    <input id="settings-username" name="username" type="text" class="input-field" placeholder="{{ t('settings.profileBasics.username.placeholder', '@connor') }}" />
                 </label>
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-bio">
-                    <span>Bio</span>
-                    <textarea id="settings-bio" name="bio" rows="4" class="input-field resize-none" placeholder="Tell your story..."></textarea>
+                    <span>{{ t("settings.profileBasics.bio", "Bio") }}</span>
+                    <textarea id="settings-bio" name="bio" rows="4" class="input-field resize-none" placeholder="{{ t('settings.profileBasics.bio.placeholder', 'Tell your story...') }}"></textarea>
                 </label>
             </form>
         </section>
@@ -76,21 +76,21 @@
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
             <header class="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-white">Contact & security</h2>
-                    <p class="text-sm text-slate-400">Keep your account reachable.</p>
+                    <h2 class="text-lg font-semibold text-white">{{ t("settings.contactSecurity.title", "Contact & security") }}</h2>
+                    <p class="text-sm text-slate-400">{{ t("settings.contactSecurity.subtitle", "Keep your account reachable.") }}</p>
                 </div>
                 <button
                     id="settings-contact-save"
                     class="mobile-tap-target inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-indigo-500/40 bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 sm:w-auto"
                 >
                     <span aria-hidden="true">💾</span>
-                    <span>Save contact</span>
+                    <span>{{ t("settings.contactSecurity.save", "Save contact") }}</span>
                 </button>
             </header>
             <div class="mt-6 grid gap-6">
                 <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-email-input">
-                    <span>Email address</span>
-                    <input id="settings-email-input" type="email" class="input-field" placeholder="you@studio.so" />
+                    <span>{{ t("settings.contactSecurity.email.label", "Email address") }}</span>
+                    <input id="settings-email-input" type="email" class="input-field" placeholder="{{ t('settings.contactSecurity.email.placeholder', 'you@studio.so') }}" />
                 </label>
                 <div class="flex flex-wrap gap-3">
                     <button
@@ -98,39 +98,39 @@
                         type="button"
                         class="mobile-tap-target rounded-2xl border border-emerald-500/40 px-4 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/20"
                     >
-                        Verify email
+                        {{ t("settings.contactSecurity.verifyEmail", "Verify email") }}
                     </button>
                     <button
                         id="settings-resend-email"
                         type="button"
                         class="mobile-tap-target rounded-2xl border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
                     >
-                        Resend code
+                        {{ t("settings.contactSecurity.resendCode", "Resend code") }}
                     </button>
                 </div>
                 <div id="settings-verify-panel" class="hidden grid gap-3 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
-                    <p class="text-sm text-slate-400">Enter the 6-digit code we emailed you.</p>
+                    <p class="text-sm text-slate-400">{{ t("settings.contactSecurity.verifyPanel.prompt", "Enter the 6-digit code we emailed you.") }}</p>
                     <input id="settings-verify-code" maxlength="6" class="input-field text-center tracking-[0.5em]" placeholder="123456" />
                     <button id="settings-verify-submit" class="mobile-tap-target rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
-                        Confirm code
+                        {{ t("settings.contactSecurity.verifyPanel.confirm", "Confirm code") }}
                     </button>
                 </div>
                 <hr class="border-slate-800/60" />
                 <form id="settings-password-form" class="grid gap-4">
                     <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-password-current">
-                        <span>Current password</span>
+                        <span>{{ t("settings.password.current", "Current password") }}</span>
                         <input id="settings-password-current" name="current_password" type="password" class="input-field" />
                     </label>
                     <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-password-new">
-                        <span>New password</span>
+                        <span>{{ t("settings.password.new", "New password") }}</span>
                         <input id="settings-password-new" name="new_password" type="password" class="input-field" />
                     </label>
                     <label class="flex flex-col gap-2 text-sm font-medium text-slate-200" for="settings-password-confirm">
-                        <span>Confirm password</span>
+                        <span>{{ t("settings.password.confirm", "Confirm password") }}</span>
                         <input id="settings-password-confirm" name="confirm_password" type="password" class="input-field" />
                     </label>
                     <button id="settings-password-save" class="mobile-tap-target rounded-2xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
-                        Update password
+                        {{ t("settings.password.update", "Update password") }}
                     </button>
                 </form>
             </div>
@@ -139,8 +139,8 @@
         <section class="card-surface rounded-3xl bg-slate-900/80 p-6 shadow-xl shadow-black/20 sm:p-8">
             <header class="flex items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-white">Preferences</h2>
-                    <p class="text-sm text-slate-400">Control notifications, privacy, and language.</p>
+                    <h2 class="text-lg font-semibold text-white">{{ t("settings.preferences.title", "Preferences") }}</h2>
+                    <p class="text-sm text-slate-400">{{ t("settings.preferences.subtitle", "Control notifications, privacy, and language.") }}</p>
                 </div>
             </header>
             <div class="mt-6 grid gap-4">
@@ -157,22 +157,22 @@
                 </label>
                 <label class="flex items-center justify-between gap-4 rounded-2xl border border-slate-800/60 px-4 py-3">
                     <div>
-                        <p class="text-sm font-semibold text-white">Email me about new messages</p>
-                        <p class="text-xs text-slate-400">We'll alert you when DMs arrive.</p>
+                        <p class="text-sm font-semibold text-white">{{ t("settings.preferences.emailMessages.title", "Email me about new messages") }}</p>
+                        <p class="text-xs text-slate-400">{{ t("settings.preferences.emailMessages.help", "We'll alert you when DMs arrive.") }}</p>
                     </div>
                     <input id="settings-pref-email-dm" type="checkbox" class="toggle-input" />
                 </label>
                 <label class="flex items-center justify-between gap-4 rounded-2xl border border-slate-800/60 px-4 py-3">
                     <div>
-                        <p class="text-sm font-semibold text-white">Allow friend requests</p>
-                        <p class="text-xs text-slate-400">Disable to block new requests.</p>
+                        <p class="text-sm font-semibold text-white">{{ t("settings.preferences.friendRequests.title", "Allow friend requests") }}</p>
+                        <p class="text-xs text-slate-400">{{ t("settings.preferences.friendRequests.help", "Disable to block new requests.") }}</p>
                     </div>
                     <input id="settings-pref-friend-requests" type="checkbox" class="toggle-input" />
                 </label>
                 <label class="flex items-center justify-between gap-4 rounded-2xl border border-slate-800/60 px-4 py-3">
                     <div>
-                        <p class="text-sm font-semibold text-white">Allow messages from followers only</p>
-                        <p class="text-xs text-slate-400">Helps reduce unwanted DMs.</p>
+                        <p class="text-sm font-semibold text-white">{{ t("settings.preferences.followersOnly.title", "Allow messages from followers only") }}</p>
+                        <p class="text-xs text-slate-400">{{ t("settings.preferences.followersOnly.help", "Helps reduce unwanted DMs.") }}</p>
                     </div>
                     <input id="settings-pref-follower-dms" type="checkbox" class="toggle-input" />
                 </label>
@@ -182,16 +182,16 @@
         <section class="card-surface rounded-3xl border border-rose-500/40 bg-rose-500/10 p-6 shadow-xl shadow-rose-900/30 sm:p-8">
             <header class="flex items-center justify-between gap-4">
                 <div>
-                    <h2 class="text-lg font-semibold text-white">Danger zone</h2>
-                    <p class="text-sm text-rose-200">Once done, there's no way back.</p>
+                    <h2 class="text-lg font-semibold text-white">{{ t("settings.dangerZone.title", "Danger zone") }}</h2>
+                    <p class="text-sm text-rose-200">{{ t("settings.dangerZone.subtitle", "Once done, there's no way back.") }}</p>
                 </div>
             </header>
             <div class="mt-6 grid gap-3">
                 <button id="settings-export-data" class="mobile-tap-target rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/20">
-                    Export my data
+                    {{ t("settings.dangerZone.export", "Export my data") }}
                 </button>
                 <button id="settings-deactivate" class="mobile-tap-target rounded-2xl border border-rose-500/60 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500/30">
-                    Deactivate account
+                    {{ t("settings.dangerZone.deactivate", "Deactivate account") }}
                 </button>
             </div>
         </section>

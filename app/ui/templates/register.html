@@ -3,33 +3,33 @@
 {% block content %}
 <section class="card-surface mx-auto flex w-full max-w-2xl flex-col gap-8 rounded-3xl bg-slate-900/80 p-10 shadow-xl shadow-black/20">
     <header>
-        <h1 class="text-2xl font-semibold text-white">Join SocialSphere</h1>
-        <p class="mt-2 text-sm text-slate-400">Create an account to share, connect, and collaborate.</p>
+        <h1 class="text-2xl font-semibold text-white">{{ t("auth.register.title", "Join SocialSphere") }}</h1>
+        <p class="mt-2 text-sm text-slate-400">{{ t("auth.register.subtitle", "Create an account to share, connect, and collaborate.") }}</p>
     </header>
     <form id="register-form" class="grid gap-5 md:grid-cols-2">
         <div class="md:col-span-1">
-            {{ components.forms.text_input("username", label="Username", placeholder="jane_doe") | safe }}
+            {{ components.forms.text_input("username", label=t("auth.username", "Username"), placeholder="jane_doe") | safe }}
         </div>
         <div class="md:col-span-1">
-            {{ components.forms.text_input("email", label="Email", placeholder="jane@example.com", required=False, type_="email") | safe }}
+            {{ components.forms.text_input("email", label=t("auth.email", "Email"), placeholder="jane@example.com", required=False, type_="email") | safe }}
         </div>
         <div class="md:col-span-2">
-            {{ components.forms.password_input("password", label="Password", placeholder="Choose a secure password") | safe }}
+            {{ components.forms.password_input("password", label=t("auth.password", "Password"), placeholder=t("auth.register.passwordPlaceholder", "Choose a secure password")) | safe }}
         </div>
         <div id="register-error" class="hidden md:col-span-2 rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300"></div>
         <div class="md:col-span-2 flex items-center justify-between">
-            <p class="text-xs text-slate-500">By creating an account you agree to our terms of service.</p>
+            <p class="text-xs text-slate-500">{{ t("auth.register.terms", "By creating an account you agree to our terms of service.") }}</p>
             <button
                 id="register-submit"
                 type="submit"
                 class="inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
             >
-                <span class="text-base">✦</span><span>Create account</span>
+                <span class="text-base">✦</span><span>{{ t("auth.register.button", "Create account") }}</span>
             </button>
         </div>
     </form>
-    <p class="text-sm text-slate-400">Already have an account?
-        <a href="/login" class="font-semibold text-indigo-300 hover:text-indigo-200">Log in</a>.
+    <p class="text-sm text-slate-400">{{ t("auth.register.haveAccount", "Already have an account?") }}
+        <a href="/login" class="font-semibold text-indigo-300 hover:text-indigo-200">{{ t("auth.register.login", "Log in") }}</a>.
     </p>
 </section>
 {% endblock %}

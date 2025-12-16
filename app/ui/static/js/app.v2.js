@@ -68,7 +68,8 @@
   const PRIVILEGED_SOCIAL_AI_ROLES = new Set(['owner', 'admin']);
   const APP_CONFIG = window.__SOCIAL_CONFIG__ || {};
   const TERMS_VERSION = APP_CONFIG.termsVersion || '1.0.0';
-  const TERMS_MESSAGE = APP_CONFIG.termsMessage || 'Please review the updated Terms and Conditions.';
+  const TERMS_MESSAGE_FALLBACK = 'Please review the updated Terms and Conditions.';
+  const TERMS_MESSAGE = APP_CONFIG.termsMessage || TERMS_MESSAGE_FALLBACK;
   const TERMS_DOCUMENT_URL = APP_CONFIG.termsDocumentUrl || '/terms';
   const SOCIAL_AI_DEBUG = Boolean(
     APP_CONFIG.socialAiDebugLogging || (typeof window !== 'undefined' && window.__SOCIAL_AI_DEBUG__)
@@ -94,6 +95,10 @@
       return I18N.fallback[key];
     }
     return fallback !== undefined ? fallback : key;
+  }
+
+  function getTermsMessage() {
+    return APP_CONFIG.termsMessage || tUI('terms.reviewMessage', TERMS_MESSAGE_FALLBACK);
   }
 
   function formatUI(key, vars = {}, fallback) {
@@ -649,6 +654,7 @@
     const { token } = getAuth();
     if (!token) {
       showToast('Sign in to continue.', 'warning');
+        showToast(tUI('auth.signInToContinue', 'Sign in to continue.'), 'warning');
       window.location.href = '/login';
       throw new Error('Authentication required');
     }
@@ -672,6 +678,7 @@
         <span class="text-base">${iconForType(type)}</span>
         <div class="flex-1">${message}</div>
         <button class="text-xs opacity-70 hover:opacity-100">Close</button>
+        <button class="text-xs opacity-70 hover:opacity-100">${tUI('common.close', 'Close')}</button>
       </div>
     `;
     const closeBtn = toast.querySelector('button');
@@ -755,10 +762,10 @@
     state.terms.versionLabel = overlay.querySelector('[data-terms-version]');
 
     if (state.terms.messageNode) {
-      state.terms.messageNode.textContent = TERMS_MESSAGE;
+      state.terms.messageNode.textContent = getTermsMessage();
     }
     if (state.terms.versionLabel) {
-      state.terms.versionLabel.textContent = `Version ${TERMS_VERSION}`;
+      state.terms.versionLabel.textContent = formatUI('terms.versionLabel', { version: TERMS_VERSION }, 'Version {version}');
     }
 
     bindTermsEvents();
@@ -781,17 +788,22 @@
     const body = state.terms.body;
     if (!body) return;
     try {
-      body.textContent = 'Loading…';
+      body.textContent = tUI('terms.loading', 'Loading…');
       const response = await fetch(TERMS_DOCUMENT_URL, { cache: 'no-cache' });
       if (!response.ok) {
         throw new Error('Unable to load document');
       }
       const text = await response.text();
-      body.textContent = text || 'Terms document is temporarily unavailable. Use the download link below.';
+      body.textContent =
+        text ||
+        tUI('terms.unavailableShort', 'Terms document is temporarily unavailable. Use the download link below.');
       state.terms.documentLoaded = true;
     } catch (error) {
       console.warn('[terms] failed to load document', error);
-      body.textContent = 'Unable to load the Terms document. Please download it using the link below or try again later.';
+      body.textContent = tUI(
+        'terms.unavailableLong',
+        'Unable to load the Terms document. Please download it using the link below or try again later.'
+      );
     }
   }
 
@@ -806,10 +818,14 @@
     lockBodyScroll();
 
     if (state.terms.messageNode) {
-      state.terms.messageNode.textContent = detailMessage || TERMS_MESSAGE;
+      state.terms.messageNode.textContent = detailMessage || getTermsMessage();
     }
     if (state.terms.versionLabel) {
-      state.terms.versionLabel.textContent = `Version ${versionHint || TERMS_VERSION}`;
+      state.terms.versionLabel.textContent = formatUI(
+        'terms.versionLabel',
+        { version: versionHint || TERMS_VERSION },
+        'Version {version}'
+      );
     }
     setTermsStatus('');
     loadTermsDocument();
@@ -857,20 +873,20 @@
     if (state.terms.accepting) return;
     state.terms.accepting = true;
     setTermsButtonState(true);
-    setTermsStatus('Saving your acceptance…', 'info');
+    setTermsStatus(tUI('terms.status.saving', 'Saving your acceptance…'), 'info');
     try {
       await apiFetch('/auth/accept-terms', {
         method: 'POST',
         body: JSON.stringify({ version: TERMS_VERSION })
       });
       recordTermsAcceptance(TERMS_VERSION);
-      setTermsStatus('Thanks! You can continue using SocialSphere.', 'success');
+      setTermsStatus(tUI('terms.status.thanks', 'Thanks! You can continue using SocialSphere.'), 'success');
       setTimeout(() => {
         closeTermsOverlay();
         window.location.reload();
       }, 800);
     } catch (error) {
-      setTermsStatus(error?.message || 'Unable to save acceptance. Please try again.', 'error');
+      setTermsStatus(error?.message || tUI('terms.status.saveFailed', 'Unable to save acceptance. Please try again.'), 'error');
     } finally {
       state.terms.accepting = false;
       setTermsButtonState(false);
@@ -878,7 +894,7 @@
   }
 
   function handleTermsDecline() {
-    showToast('You need to accept the updated Terms to keep using SocialSphere.', 'warning');
+    showToast(tUI('terms.declineToast', 'You need to accept the updated Terms to keep using SocialSphere.'), 'warning');
     clearAuth();
     persistAcceptedTerms(null);
     window.location.href = '/login';
@@ -893,7 +909,7 @@
       if (!profile) return;
       recordTermsAcceptance(profile.accepted_terms_version || null);
       if (profile.accepted_terms_version !== TERMS_VERSION) {
-        openTermsOverlay(TERMS_MESSAGE, profile.accepted_terms_version);
+        openTermsOverlay(getTermsMessage(), profile.accepted_terms_version);
       }
     } catch (error) {
       console.warn('[terms] bootstrap check failed', error);
@@ -902,7 +918,7 @@
 
   function handleTermsEnforcement(detail, payload) {
     const versionHint = payload?.current_terms_version || null;
-    const message = extractDetailMessage(detail) || TERMS_MESSAGE;
+    const message = extractDetailMessage(detail) || getTermsMessage();
     openTermsOverlay(message, versionHint);
   }
 
@@ -1381,19 +1397,25 @@
       const { key: statusKey, meta: statusMeta } = getSocialAiSessionStatusMeta(session.status);
       const title = document.createElement('p');
       title.className = 'text-sm font-semibold text-white';
-      title.textContent = session.title || 'Untitled chat';
+      title.textContent = session.title || tUI('socialAi.session.untitled', 'Untitled chat');
       const preview = document.createElement('p');
       preview.className = 'mt-1 line-clamp-2 text-xs text-slate-400';
       preview.textContent = session.last_message_preview || 'No messages yet.';
+        preview.textContent = session.last_message_preview || tUI('socialAi.session.noMessages', 'No messages yet.');
       const metaRow = document.createElement('div');
       metaRow.className = 'mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide';
       const personaLabel = document.createElement('span');
       const personaKey = normalizeSocialAiMode(session.persona);
       personaLabel.className = 'text-fuchsia-200';
       personaLabel.textContent = (SOCIAL_AI_MODES[personaKey] || SOCIAL_AI_MODES.default).label;
+            personaLabel.textContent = tUI(
+              `socialAi.mode.${personaKey}.label`,
+              (SOCIAL_AI_MODES[personaKey] || SOCIAL_AI_MODES.default).label
+            );
       const statusBadge = document.createElement('span');
       statusBadge.className = `rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusMeta.badgeClass}`;
       statusBadge.textContent = statusMeta.label;
+        statusBadge.textContent = tUI(`socialAi.sessionStatus.${statusKey}.label`, statusMeta.label);
       if (statusKey === 'preparing') {
         statusBadge.setAttribute('title', 'Session is still syncing, but you can keep chatting.');
       }
@@ -1411,6 +1433,7 @@
       deleteButton.dataset.socialAiSessionDelete = sessionId;
       deleteButton.className = 'absolute right-3 top-3 rounded-full border border-slate-800/70 p-1 text-[11px] text-slate-400 opacity-0 transition group-hover:opacity-100 hover:border-rose-500/60 hover:text-rose-200';
       deleteButton.setAttribute('aria-label', 'Delete chat');
+        deleteButton.setAttribute('aria-label', tUI('socialAi.session.deleteAriaLabel', 'Delete chat'));
       deleteButton.textContent = '✕';
       button.appendChild(title);
       button.appendChild(preview);
@@ -4115,10 +4138,10 @@
     const baseClasses = 'follow-toggle inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2';
     if (isFollowing) {
       button.className = `${baseClasses} border-emerald-400/70 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25`;
-      button.innerHTML = '<span>✓</span><span>Following</span>';
+      button.innerHTML = `<span>✓</span><span>${tUI('follow.following', 'Following')}</span>`;
     } else {
       button.className = `${baseClasses} border-indigo-500/60 bg-indigo-600 text-white hover:bg-indigo-500`;
-      button.innerHTML = '<span>+</span><span>Follow</span>';
+      button.innerHTML = `<span>+</span><span>${tUI('follow.follow', 'Follow')}</span>`;
     }
   }
 
@@ -4164,7 +4187,7 @@
     if (publicFeed) {
       const total = publicFeed.querySelectorAll('article').length;
       const badge = document.getElementById('public-profile-post-count');
-      if (badge) badge.textContent = `${total} posts`;
+      if (badge) badge.textContent = formatUI('home.feed.count', { count: total }, `${total} posts`);
       const empty = document.getElementById('public-profile-posts-empty');
       if (empty) empty.classList.toggle('hidden', total > 0);
     }
@@ -4181,7 +4204,7 @@
     state.feedCursor = Math.min(state.feedCursor, state.feedItems.length);
     const countBadge = document.getElementById('feed-count');
     if (countBadge) {
-      countBadge.textContent = `${state.feedItems.length} posts`;
+      countBadge.textContent = formatUI('home.feed.count', { count: state.feedItems.length }, `${state.feedItems.length} posts`);
     }
     const loadMore = document.getElementById('feed-load-more');
     if (loadMore) {
@@ -4210,10 +4233,10 @@
       return;
     }
     if (!post?.id) {
-      showToast('Missing post identifier.', 'error');
+      showToast(tUI('post.errors.missingId', 'Missing post identifier.'), 'error');
       return;
     }
-    const confirmed = window.confirm('Delete this post? This cannot be undone.');
+    const confirmed = window.confirm(tUI('post.delete.confirm', 'Delete this post? This cannot be undone.'));
     if (!confirmed) return;
     if (trigger) {
       trigger.disabled = true;
@@ -4221,7 +4244,7 @@
     }
     try {
       await apiFetch(`/posts/${encodeURIComponent(post.id)}`, { method: 'DELETE' });
-      showToast('Post deleted.', 'success');
+      showToast(tUI('post.delete.success', 'Post deleted.'), 'success');
       prunePostFromCollections(post.id);
       removePostCard(cardElement);
       if (typeof loadMediaReel === 'function') {
@@ -4230,7 +4253,7 @@
         });
       }
     } catch (error) {
-      showToast(error.message || 'Unable to delete post.', 'error');
+      showToast(error.message || tUI('post.delete.error', 'Unable to delete post.'), 'error');
       if (trigger) {
         trigger.disabled = false;
         trigger.classList.remove('opacity-60', 'cursor-not-allowed');
@@ -4256,28 +4279,28 @@
         <form data-role="post-edit-form" class="space-y-5">
           <header class="flex items-center justify-between">
             <div>
-              <p class="text-lg font-semibold text-white">Edit post</p>
-              <p class="text-xs text-slate-400">Update your caption or replace the media.</p>
+              <p class="text-lg font-semibold text-white">${tUI('postEdit.title', 'Edit post')}</p>
+              <p class="text-xs text-slate-400">${tUI('postEdit.subtitle', 'Update your caption or replace the media.')}</p>
             </div>
-            <button type="button" data-role="post-edit-cancel" class="text-xs font-semibold text-slate-400 hover:text-white">Close</button>
+            <button type="button" data-role="post-edit-cancel" class="text-xs font-semibold text-slate-400 hover:text-white">${tUI('common.close', 'Close')}</button>
           </header>
           <div class="space-y-2">
-            <label class="text-sm font-semibold text-slate-200">Caption</label>
+            <label class="text-sm font-semibold text-slate-200">${tUI('postEdit.captionLabel', 'Caption')}</label>
             <textarea data-role="post-edit-caption" rows="4" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"></textarea>
           </div>
           <div class="space-y-2">
-            <label class="text-sm font-semibold text-slate-200">Replace media (optional)</label>
+            <label class="text-sm font-semibold text-slate-200">${tUI('postEdit.replaceMediaLabel', 'Replace media (optional)')}</label>
             <input data-role="post-edit-file" type="file" accept="image/*,video/*" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 text-sm text-slate-200 file:mr-4 file:cursor-pointer file:rounded-full file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-xs file:font-semibold file:text-white file:hover:bg-indigo-500" />
-            <p data-role="post-edit-media-status" class="text-xs text-slate-400">No media attached.</p>
+            <p data-role="post-edit-media-status" class="text-xs text-slate-400">${tUI('postEdit.media.none', 'No media attached.')}</p>
           </div>
           <label class="flex items-center gap-2 text-xs text-slate-300">
             <input type="checkbox" data-role="post-edit-remove" class="h-4 w-4 rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-indigo-500" />
-            Remove current media
+            ${tUI('postEdit.removeMedia', 'Remove current media')}
           </label>
           <div data-role="post-edit-error" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-100"></div>
           <div class="flex items-center justify-end gap-3">
-            <button type="button" data-role="post-edit-cancel" class="rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white">Cancel</button>
-            <button type="submit" data-role="post-edit-submit" class="rounded-full bg-indigo-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Save changes</button>
+            <button type="button" data-role="post-edit-cancel" class="rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:text-white">${tUI('common.cancel', 'Cancel')}</button>
+            <button type="submit" data-role="post-edit-submit" class="rounded-full bg-indigo-600 px-5 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">${tUI('common.saveChanges', 'Save changes')}</button>
           </div>
         </form>
       </div>
@@ -4345,7 +4368,9 @@
       controls.removeMediaInput.disabled = !post.media_url;
     }
     if (controls.mediaStatus) {
-      controls.mediaStatus.textContent = post.media_url ? 'Media currently attached.' : 'No media attached.';
+      controls.mediaStatus.textContent = post.media_url
+        ? tUI('postEdit.media.attached', 'Media currently attached.')
+        : tUI('postEdit.media.none', 'No media attached.');
     }
     if (controls.errorNode) {
       controls.errorNode.classList.add('hidden');
@@ -4397,7 +4422,7 @@
     const removeMedia = Boolean(controls.removeMediaInput && controls.removeMediaInput.checked);
     const hasCaptionChange = Boolean(captionValue) && captionValue !== originalCaption;
     if (!hasCaptionChange && !file && !removeMedia) {
-      const message = 'Make a change before saving your post.';
+      const message = tUI('postEdit.errors.noChanges', 'Make a change before saving your post.');
       if (controls.errorNode) {
         controls.errorNode.textContent = message;
         controls.errorNode.classList.remove('hidden');
@@ -4430,13 +4455,13 @@
       });
       applyPostEditPatch(updatedPost);
       closePostEditor();
-      showToast('Post updated.', 'success');
+      showToast(tUI('postEdit.success', 'Post updated.'), 'success');
     } catch (error) {
       if (controls.errorNode) {
-        controls.errorNode.textContent = error.message || 'Unable to update post.';
+        controls.errorNode.textContent = error.message || tUI('postEdit.errors.updateFailed', 'Unable to update post.');
         controls.errorNode.classList.remove('hidden');
       } else {
-        showToast(error.message || 'Unable to update post.', 'error');
+        showToast(error.message || tUI('postEdit.errors.updateFailed', 'Unable to update post.'), 'error');
       }
     } finally {
       if (controls.submitButton) {
@@ -4591,13 +4616,13 @@
           <div class="mt-1 space-y-1">
             <p class="text-sm text-slate-200" data-role="comment-body"></p>
             <div data-role="comment-translation-wrapper" class="hidden rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-2 py-1.5">
-              <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="comment-translation-label">Translated</p>
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="comment-translation-label">${tUI('translation.label', 'Translated')}</p>
               <p class="text-sm text-slate-50 whitespace-pre-line" data-role="comment-translation"></p>
             </div>
           </div>
           <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
-            <button type="button" data-role="comment-reply" class="hover:text-white">Reply</button>
-            ${canDelete ? '<button type="button" data-role="comment-delete" class="text-rose-200 hover:text-white">Delete</button>' : ''}
+            <button type="button" data-role="comment-reply" class="hover:text-white">${tUI('comments.reply', 'Reply')}</button>
+            ${canDelete ? `<button type="button" data-role="comment-delete" class="text-rose-200 hover:text-white">${tUI('common.delete', 'Delete')}</button>` : ''}
           </div>
         </div>
       </div>
@@ -4621,7 +4646,11 @@
         comment.translation_language === viewerLanguage &&
         viewerLanguage !== 'en';
       if (hasTranslation && translationWrapper && translationNode && translationLabel) {
-        translationLabel.textContent = `Translated to ${getLanguageLabel(comment.translation_language)}`;
+        translationLabel.textContent = formatUI(
+          'translation.to',
+          { language: getLanguageLabel(comment.translation_language) },
+          `Translated to ${getLanguageLabel(comment.translation_language)}`
+        );
         renderTextWithMentions(translationNode, comment.translated_content || '');
         translationWrapper.classList.remove('hidden');
         bodyNode.classList.remove('text-slate-200');
@@ -4693,7 +4722,7 @@
       store.loaded = true;
       renderCommentList(postId, store.items, list);
     } catch (error) {
-      showToast(error.message || 'Unable to load comments.', 'error');
+      showToast(error.message || tUI('comments.errors.loadFailed', 'Unable to load comments.'), 'error');
     } finally {
       panel.classList.remove('opacity-70');
     }
@@ -4707,7 +4736,7 @@
     const previewNode = panel.querySelector('[data-role="comment-reply-preview"]');
     if (!form || !pill || !usernameNode) return;
     form.dataset.replyId = comment.id;
-    usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
+    usernameNode.textContent = comment.username ? `@${comment.username}` : tUI('comments.reply.targetFallback', 'this comment');
     if (previewNode) {
       const viewerLanguage = getLanguagePreference();
       const previewSource =
@@ -4715,7 +4744,9 @@
           ? comment.translated_content
           : comment.content;
       const preview = (previewSource || '').trim();
-      previewNode.textContent = preview ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '') : 'No text available.';
+      previewNode.textContent = preview
+        ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '')
+        : tUI('comments.reply.noText', 'No text available.');
     }
     pill.classList.remove('hidden');
     focusCommentInput(panel);
@@ -4794,7 +4825,7 @@
       : `${baseClasses} border-indigo-500/60 bg-slate-800/80 text-white hover:bg-indigo-600`;
     const label = button.querySelector('[data-role="like-label"]');
     const count = button.querySelector('[data-role="like-count"]');
-    if (label) label.textContent = isLiked ? 'Liked' : 'Like';
+    if (label) label.textContent = isLiked ? tUI('post.liked', 'Liked') : tUI('post.like', 'Like');
     if (count) count.textContent = String(likeCount ?? 0);
   }
 
@@ -4813,7 +4844,7 @@
       : `${baseClasses} border-slate-700/60 bg-slate-800/80 text-white hover:border-rose-500/60 hover:bg-rose-600/70`;
     const label = button.querySelector('[data-role="dislike-label"]');
     const count = button.querySelector('[data-role="dislike-count"]');
-    if (label) label.textContent = isDisliked ? 'Disliked' : 'Dislike';
+    if (label) label.textContent = isDisliked ? tUI('post.disliked', 'Disliked') : tUI('post.dislike', 'Dislike');
     if (count) count.textContent = String(dislikeCount ?? 0);
   }
 
@@ -4928,10 +4959,10 @@
       post.viewer_has_disliked = snapshot.viewer_has_disliked;
       post.dislike_count = snapshot.dislike_count;
       if (!shouldUnlike) {
-        showToast('Post liked.', 'success');
+        showToast(tUI('post.like.toast', 'Post liked.'), 'success');
       }
     } catch (error) {
-      showToast(error.message || 'Unable to update like.', 'error');
+      showToast(error.message || tUI('post.like.error', 'Unable to update like.'), 'error');
     } finally {
       button.disabled = false;
       button.classList.remove('opacity-70');
@@ -4958,10 +4989,10 @@
       post.viewer_has_liked = snapshot.viewer_has_liked;
       post.like_count = snapshot.like_count;
       if (!shouldUndislike) {
-        showToast('Post disliked.', 'info');
+        showToast(tUI('post.dislike.toast', 'Post disliked.'), 'info');
       }
     } catch (error) {
-      showToast(error.message || 'Unable to update dislike.', 'error');
+      showToast(error.message || tUI('post.dislike.error', 'Unable to update dislike.'), 'error');
     } finally {
       button.disabled = false;
       button.classList.remove('opacity-70');
@@ -4984,7 +5015,7 @@
     button.dataset.open = nextState ? 'true' : 'false';
     panel.classList.toggle('hidden', !nextState);
     const label = button.querySelector('[data-role="comment-toggle-label"]');
-    if (label) label.textContent = nextState ? 'Hide' : 'Comment';
+    if (label) label.textContent = nextState ? tUI('comments.hide', 'Hide') : tUI('comments.comment', 'Comment');
     if (nextState) {
       loadCommentsForPost(post.id, panel);
       focusCommentInput(panel);
@@ -5003,7 +5034,7 @@
     const textarea = form.querySelector('textarea');
     const content = String(textarea?.value || '').trim();
     if (!content) {
-      showToast('Write a comment before posting.', 'warning');
+      showToast(tUI('comments.errors.empty', 'Write a comment before posting.'), 'warning');
       return;
     }
     const submitButton = form.querySelector('button[type="submit"]');
@@ -5035,9 +5066,9 @@
         viewer_has_disliked: Boolean(post.viewer_has_disliked),
       };
       setPostEngagementSnapshot(snapshot);
-      showToast('Comment added.', 'success');
+      showToast(tUI('comments.added', 'Comment added.'), 'success');
     } catch (error) {
-      showToast(getErrorMessage(error, 'Unable to add comment.'), 'error');
+      showToast(getErrorMessage(error, tUI('comments.errors.addFailed', 'Unable to add comment.')), 'error');
     } finally {
       form.classList.remove('opacity-70');
       if (submitButton) submitButton.disabled = false;
@@ -5056,10 +5087,10 @@
     const target = findCommentById(store.items, commentId);
     const viewerId = auth.userId ? String(auth.userId) : null;
     if (target && !canModerate && viewerId && String(target.user_id) !== viewerId) {
-      showToast('You can only delete your own comments.', 'warning');
+      showToast(tUI('comments.delete.ownOnly', 'You can only delete your own comments.'), 'warning');
       return;
     }
-    const confirmed = window.confirm('Delete this comment?');
+    const confirmed = window.confirm(tUI('comments.delete.confirm', 'Delete this comment?'));
     if (!confirmed) return;
     toggleInteractiveState(button, true);
     try {
@@ -5075,9 +5106,9 @@
         const nextCount = computeCommentCount(store.items);
         syncPostCommentCount(postId, nextCount);
       }
-      showToast('Comment deleted.', 'success');
+      showToast(tUI('comments.delete.success', 'Comment deleted.'), 'success');
     } catch (error) {
-      showToast(getErrorMessage(error, 'Unable to delete comment.'), 'error');
+      showToast(getErrorMessage(error, tUI('comments.delete.error', 'Unable to delete comment.')), 'error');
     } finally {
       toggleInteractiveState(button, false);
     }
@@ -5181,7 +5212,7 @@
       <div class="${containerClasses}" data-role="post-media">
         <img
           src="${url}"
-          alt="Post media"
+          alt="${tUI('post.media.alt', 'Post media')}"
           loading="lazy"
           decoding="async"
           data-role="post-media-image"
@@ -5237,7 +5268,7 @@
           class="inline-flex items-center gap-2 rounded-full border border-rose-500/40 px-4 py-2 text-xs font-semibold text-rose-200 transition hover:border-rose-400 hover:bg-rose-500/10 hover:text-white"
         >
           <span aria-hidden="true">🗑</span>
-          <span>Delete</span>
+          <span>${tUI('common.delete', 'Delete')}</span>
         </button>`
       : '';
     const editButtonMarkup = isCurrentUser
@@ -5247,7 +5278,7 @@
           class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600"
         >
           <span aria-hidden="true">✎</span>
-          <span>Edit</span>
+          <span>${tUI('common.edit', 'Edit')}</span>
         </button>`
       : '';
     const commentPanelMarkup = postId
@@ -5258,7 +5289,7 @@
           class="mt-5 hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 shadow-inner shadow-black/20"
         >
           <div data-role="comments-empty" class="text-sm text-slate-400">
-            No comments yet. Be the first to say something nice.
+            ${tUI('comments.empty', 'No comments yet. Be the first to say something nice.')}
           </div>
           <div data-role="comment-list" class="mt-4 space-y-3"></div>
           <form data-role="comment-form" class="mt-4 space-y-3">
@@ -5269,7 +5300,7 @@
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <p class="font-semibold text-indigo-200">
-                    Replying to <span data-role="comment-reply-username" class="text-white">@commenter</span>
+                    ${tUI('comments.replyingTo', 'Replying to')} <span data-role="comment-reply-username" class="text-white">@commenter</span>
                   </p>
                   <p data-role="comment-reply-preview" class="mt-1 text-[11px] text-slate-300"></p>
                 </div>
@@ -5278,7 +5309,7 @@
                   data-role="comment-reply-cancel"
                   class="text-[11px] font-semibold text-indigo-200 transition hover:text-white"
                 >
-                  Cancel
+                  ${tUI('common.cancel', 'Cancel')}
                 </button>
               </div>
             </div>
@@ -5286,19 +5317,19 @@
               data-role="comment-input"
               rows="3"
               class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
-              placeholder="Share your thoughts…"
+              placeholder="${tUI('comments.placeholder', 'Share your thoughts…')}"
               required
             ></textarea>
             <div class="flex items-center justify-between gap-3">
               <button type="button" data-role="comment-reset" class="text-xs font-semibold text-slate-400 hover:text-white">
-                Clear
+                ${tUI('common.clear', 'Clear')}
               </button>
               <button
                 type="submit"
                 class="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
               >
                 <span class="text-base">➤</span>
-                <span>Post comment</span>
+                <span>${tUI('comments.post', 'Post comment')}</span>
               </button>
             </div>
           </form>
@@ -5312,7 +5343,7 @@
                data-user-id="${post.user_id}"
                src="${DEFAULT_AVATAR}"
                class="h-12 w-12 rounded-full object-cover cursor-pointer"
-               alt="Post avatar" />
+            alt="${tUI('post.avatar.alt', 'Post avatar')}" />
           <div data-role="post-author" data-user-id="${post.user_id}" data-username="${normalizedPostUsername || ''}" class="cursor-pointer focus:outline-none">
             <div class="flex flex-wrap items-center gap-2">${decoratedDisplayName}</div>
             <p class="text-xs text-slate-400">${timestamp}</p>
@@ -5323,9 +5354,9 @@
       <div class="mt-4 space-y-2" data-role="post-text">
         <p class="whitespace-pre-line text-sm text-slate-200" data-role="post-caption"></p>
         <div data-role="post-translation-wrapper" class="hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="post-translation-label">Translated</p>
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="post-translation-label">${tUI('translation.label', 'Translated')}</p>
           <p class="mt-1 whitespace-pre-line text-sm text-slate-50" data-role="post-translation"></p>
-          <p class="mt-1 text-[11px] text-slate-400">Usernames stay as-is.</p>
+          <p class="mt-1 text-[11px] text-slate-400">${tUI('translation.usernamesAsIs', 'Usernames stay as-is.')}</p>
         </div>
       </div>
       ${mediaSection}
@@ -5336,7 +5367,7 @@
           class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold"
         >
           <span aria-hidden="true">❤</span>
-          <span data-role="like-label">${viewerHasLiked ? 'Liked' : 'Like'}</span>
+          <span data-role="like-label">${viewerHasLiked ? tUI('post.liked', 'Liked') : tUI('post.like', 'Like')}</span>
           <span data-role="like-count" class="text-[11px] text-slate-300">${likeCount}</span>
         </button>
         <button
@@ -5345,7 +5376,7 @@
           class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold"
         >
           <span aria-hidden="true">👎</span>
-          <span data-role="dislike-label">${viewerHasDisliked ? 'Disliked' : 'Dislike'}</span>
+          <span data-role="dislike-label">${viewerHasDisliked ? tUI('post.disliked', 'Disliked') : tUI('post.dislike', 'Dislike')}</span>
           <span data-role="dislike-count" class="text-[11px] text-slate-300">${dislikeCount}</span>
         </button>
         <button
@@ -5355,14 +5386,14 @@
           class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-800/80 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600"
         >
           <span aria-hidden="true">💬</span>
-          <span data-role="comment-toggle-label">Comment</span>
+          <span data-role="comment-toggle-label">${tUI('comments.comment', 'Comment')}</span>
           <span
             data-role="comment-count"
             data-post-id="${post.id}"
             class="text-[11px] text-slate-200"
           >${commentCount}</span>
         </button>
-        <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>Share</span></button>
+        <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>${tUI('common.share', 'Share')}</span></button>
         ${editButtonMarkup}
         ${deleteButtonMarkup}
       </footer>
@@ -5387,7 +5418,11 @@
         post.translation_language === viewerLanguage &&
         viewerLanguage !== 'en';
       if (hasTranslation && translationWrapper && translationNode && translationLabel) {
-        translationLabel.textContent = `Translated to ${getLanguageLabel(post.translation_language)}`;
+        translationLabel.textContent = formatUI(
+          'translation.to',
+          { language: getLanguageLabel(post.translation_language) },
+          `Translated to ${getLanguageLabel(post.translation_language)}`
+        );
         renderTextWithMentions(translationNode, post.translated_caption || '');
         translationWrapper.classList.remove('hidden');
         captionNode.classList.remove('text-slate-200');
@@ -5421,10 +5456,13 @@
             applyPublicProfileStats(response);
           }
           if (statusText !== 'noop') {
-            showToast(shouldFollow ? 'Followed user.' : 'Unfollowed user.', 'success');
+            showToast(
+              shouldFollow ? tUI('follow.toast.followed', 'Followed user.') : tUI('follow.toast.unfollowed', 'Unfollowed user.'),
+              'success'
+            );
           }
         } catch (error) {
-          showToast(error.message || 'Unable to update follow state.', 'error');
+          showToast(error.message || tUI('follow.toast.error', 'Unable to update follow state.'), 'error');
           applyFollowButtonState(followButton, !shouldFollow);
         } finally {
           followButton.disabled = false;
@@ -5491,7 +5529,7 @@
     }
     const shareButton = el.querySelector('.share-btn');
     if (shareButton) {
-      shareButton.addEventListener('click', () => showToast('Link copied! Share coming soon.', 'info'));
+      shareButton.addEventListener('click', () => showToast(tUI('share.toast.copied', 'Link copied! Share coming soon.'), 'info'));
     }
     return el;
   }
@@ -7842,7 +7880,7 @@
     }
     const img = document.createElement('img');
     img.src = asset.url;
-    img.alt = 'Media item';
+    img.alt = tUI('media.item.alt', 'Media item');
     img.loading = 'lazy';
     img.decoding = 'async';
     img.className = variant === 'fullscreen'
@@ -7870,7 +7908,7 @@
       : `${baseClasses} border-slate-700/60 bg-slate-900/70 text-white hover:border-emerald-400/60 hover:text-emerald-100`;
     const label = button.querySelector('[data-media-role="like-label"]');
     const count = button.querySelector('[data-media-role="like-count"]');
-    if (label) label.textContent = isLiked ? 'Liked' : 'Like';
+    if (label) label.textContent = isLiked ? tUI('post.liked', 'Liked') : tUI('post.like', 'Like');
     if (count) count.textContent = String(likeCount ?? 0);
   }
 
@@ -7883,7 +7921,7 @@
       : `${baseClasses} border-slate-700/60 bg-slate-900/70 text-white hover:border-amber-400/60 hover:text-amber-200`;
     const label = button.querySelector('[data-media-role="dislike-label"]');
     const count = button.querySelector('[data-media-role="dislike-count"]');
-    if (label) label.textContent = isDisliked ? 'Disliked' : 'Dislike';
+    if (label) label.textContent = isDisliked ? tUI('post.disliked', 'Disliked') : tUI('post.dislike', 'Dislike');
     if (count) count.textContent = String(dislikeCount ?? 0);
   }
 
@@ -7943,10 +7981,10 @@
       asset.viewer_has_disliked = snapshot.viewer_has_disliked;
       asset.dislike_count = snapshot.dislike_count;
       if (!shouldUnlike) {
-        showToast('Media liked.', 'success');
+        showToast(tUI('media.like.toast', 'Media liked.'), 'success');
       }
     } catch (error) {
-      showToast(error.message || 'Unable to update like.', 'error');
+      showToast(error.message || tUI('media.like.error', 'Unable to update like.'), 'error');
     } finally {
       button.disabled = false;
       button.classList.remove('opacity-70');
@@ -7973,10 +8011,10 @@
       asset.viewer_has_liked = snapshot.viewer_has_liked;
       asset.like_count = snapshot.like_count;
       if (!shouldUndislike) {
-        showToast('Media disliked.', 'info');
+        showToast(tUI('media.dislike.toast', 'Media disliked.'), 'info');
       }
     } catch (error) {
-      showToast(error.message || 'Unable to update dislike.', 'error');
+      showToast(error.message || tUI('media.dislike.error', 'Unable to update dislike.'), 'error');
     } finally {
       button.disabled = false;
       button.classList.remove('opacity-70');
@@ -8039,7 +8077,7 @@
           </div>
           <p class="mt-1 text-sm text-slate-200">${comment.content || ''}</p>
           <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
-            <button type="button" data-media-role="comment-reply" class="hover:text-white">Reply</button>
+            <button type="button" data-media-role="comment-reply" class="hover:text-white">${tUI('comments.reply', 'Reply')}</button>
           </div>
         </div>
       </div>
@@ -8084,10 +8122,12 @@
     const previewNode = panel.querySelector('[data-media-role="comment-reply-preview"]');
     if (!form || !pill || !usernameNode) return;
     form.dataset.replyId = comment.id;
-    usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
+    usernameNode.textContent = comment.username ? `@${comment.username}` : tUI('comments.reply.targetFallback', 'this comment');
     if (previewNode) {
       const preview = (comment.content || '').trim();
-      previewNode.textContent = preview ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '') : 'No text available.';
+      previewNode.textContent = preview
+        ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '')
+        : tUI('comments.reply.noText', 'No text available.');
     }
     pill.classList.remove('hidden');
     const textarea = panel.querySelector('textarea');
@@ -8113,7 +8153,7 @@
       store.loaded = true;
       renderMediaCommentList(assetId, store.items, list);
     } catch (error) {
-      showToast(error.message || 'Unable to load comments.', 'error');
+      showToast(error.message || tUI('comments.errors.loadFailed', 'Unable to load comments.'), 'error');
     } finally {
       panel.classList.remove('opacity-70');
     }
@@ -8129,7 +8169,7 @@
     const textarea = form.querySelector('textarea');
     const content = String(textarea?.value || '').trim();
     if (!content) {
-      showToast('Write a comment before posting.', 'warning');
+      showToast(tUI('comments.errors.empty', 'Write a comment before posting.'), 'warning');
       return;
     }
     const submitButton = form.querySelector('button[type="submit"]');
@@ -8161,9 +8201,9 @@
         viewer_has_disliked: Boolean(asset.viewer_has_disliked),
       };
       setMediaReelEngagementSnapshot(snapshot);
-      showToast('Comment added.', 'success');
+      showToast(tUI('comments.added', 'Comment added.'), 'success');
     } catch (error) {
-      showToast(error.message || 'Unable to add comment.', 'error');
+      showToast(error.message || tUI('comments.errors.addFailed', 'Unable to add comment.'), 'error');
     } finally {
       form.classList.remove('opacity-70');
       if (submitButton) submitButton.disabled = false;
@@ -8177,7 +8217,7 @@
     button.dataset.open = nextState ? 'true' : 'false';
     panel.classList.toggle('hidden', !nextState);
     const label = button.querySelector('[data-media-role="comment-toggle-label"]');
-    if (label) label.textContent = nextState ? 'Hide' : 'Comment';
+    if (label) label.textContent = nextState ? tUI('comments.hide', 'Hide') : tUI('comments.comment', 'Comment');
     if (nextState) {
       loadCommentsForMediaAsset(asset.id, panel);
       const textarea = panel.querySelector('textarea');
@@ -8449,7 +8489,7 @@
     const viewerHasDisliked = Boolean(asset.viewer_has_disliked);
     wrapper.innerHTML = `
       <header class="flex items-center gap-4">
-        <img data-media-role="avatar" data-user-id="${asset.user_id}" src="${DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" alt="Creator avatar" />
+        <img data-media-role="avatar" data-user-id="${asset.user_id}" src="${DEFAULT_AVATAR}" class="h-12 w-12 rounded-full object-cover" alt="${tUI('media.creatorAvatar.alt', 'Creator avatar')}" />
         <div class="flex-1">
           <p class="leading-tight">${decoratedDisplayName}</p>
           <p class="text-xs text-slate-400">
@@ -8463,41 +8503,41 @@
       <footer class="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button data-media-role="like-button" data-media-id="${asset.id}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold">
           <span aria-hidden="true">❤️</span>
-          <span data-media-role="like-label">${viewerHasLiked ? 'Liked' : 'Like'}</span>
+          <span data-media-role="like-label">${viewerHasLiked ? tUI('post.liked', 'Liked') : tUI('post.like', 'Like')}</span>
           <span data-media-role="like-count" class="text-[11px] text-slate-300">${likeCount}</span>
         </button>
         <button data-media-role="dislike-button" data-media-id="${asset.id}" class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold">
           <span aria-hidden="true">👎</span>
-          <span data-media-role="dislike-label">${viewerHasDisliked ? 'Disliked' : 'Dislike'}</span>
+          <span data-media-role="dislike-label">${viewerHasDisliked ? tUI('post.disliked', 'Disliked') : tUI('post.dislike', 'Dislike')}</span>
           <span data-media-role="dislike-count" class="text-[11px] text-slate-300">${dislikeCount}</span>
         </button>
         <button data-media-role="comment-toggle" data-media-id="${asset.id}" data-open="false" class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-900/80 px-4 py-2 text-xs font-semibold text-white transition hover:border-indigo-500/60 hover:bg-indigo-600">
           <span aria-hidden="true">💬</span>
-          <span data-media-role="comment-toggle-label">Comment</span>
+          <span data-media-role="comment-toggle-label">${tUI('comments.comment', 'Comment')}</span>
           <span data-media-role="comment-count" data-media-id="${asset.id}" class="text-[11px] text-slate-200">${commentCount}</span>
         </button>
       </footer>
       <section data-media-role="comment-panel" data-media-id="${asset.id}" class="mt-4 hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
-        <div data-media-role="comments-empty" class="text-sm text-slate-400">No comments yet. Spark the conversation.</div>
+        <div data-media-role="comments-empty" class="text-sm text-slate-400">${tUI('comments.empty.media', 'No comments yet. Spark the conversation.')}</div>
         <div data-media-role="comment-list" class="mt-4 space-y-3"></div>
         <form data-media-role="comment-form" class="mt-4 space-y-3">
           <div data-media-role="comment-reply-pill" class="hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2 text-xs text-indigo-100">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <p class="font-semibold text-indigo-200">
-                  Replying to <span data-media-role="comment-reply-username" class="text-white">@commenter</span>
+                  ${tUI('comments.replyingTo', 'Replying to')} <span data-media-role="comment-reply-username" class="text-white">@commenter</span>
                 </p>
                 <p data-media-role="comment-reply-preview" class="mt-1 text-[11px] text-slate-300"></p>
               </div>
-              <button type="button" data-media-role="comment-reply-cancel" class="text-[11px] font-semibold text-indigo-200 transition hover:text-white">Cancel</button>
+              <button type="button" data-media-role="comment-reply-cancel" class="text-[11px] font-semibold text-indigo-200 transition hover:text-white">${tUI('common.cancel', 'Cancel')}</button>
             </div>
           </div>
-          <textarea rows="3" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none" placeholder="Share your thoughts…" required></textarea>
+          <textarea rows="3" class="w-full rounded-2xl border border-slate-800/70 bg-slate-900/80 p-3 text-sm text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none" placeholder="${tUI('comments.placeholder', 'Share your thoughts…')}" required></textarea>
           <div class="flex items-center justify-between gap-3">
-            <button type="button" data-media-role="comment-reset" class="text-xs font-semibold text-slate-400 hover:text-white">Clear</button>
+            <button type="button" data-media-role="comment-reset" class="text-xs font-semibold text-slate-400 hover:text-white">${tUI('common.clear', 'Clear')}</button>
             <button type="submit" class="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
               <span class="text-base">➤</span>
-              <span>Post comment</span>
+              <span>${tUI('comments.post', 'Post comment')}</span>
             </button>
           </div>
         </form>
@@ -10372,7 +10412,7 @@
         ${isOwner ? `
           <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
             <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-user-delete>Delete account</button>
-            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">Save changes</button>
+            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">${tUI('common.saveChanges', 'Save changes')}</button>
           </div>
         ` : '<p class="rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only owners can edit profiles.</p>'}
       </form>
@@ -10540,9 +10580,9 @@
       await loadModerationPostComments(detail.id);
     } catch (error) {
       showModerationDetailModal({
-        title: 'Post preview',
-        label: 'Content inspection',
-        body: `<p class="text-center text-rose-200">${escapeHtml(error.message || 'Unable to load post.')}</p>`,
+        title: tUI('moderation.postPreview.title', 'Post preview'),
+        label: tUI('moderation.postPreview.label', 'Content inspection'),
+        body: `<p class="text-center text-rose-200">${escapeHtml(error.message || tUI('moderation.postPreview.error', 'Unable to load post.'))}</p>`,
       });
     }
   }
@@ -10554,41 +10594,41 @@
     modal.body.innerHTML = `
       <div class="space-y-3">
         <div class="flex items-center gap-3">
-          <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-12 w-12 rounded-2xl border border-slate-800/70 object-cover" />
+          <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="${tUI('common.avatar.alt', 'avatar')}" class="h-12 w-12 rounded-2xl border border-slate-800/70 object-cover" />
           <div>
-            <p class="font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown')}</p>
-            <p class="text-xs text-slate-400">${escapeHtml(detail.display_name || 'No display')}</p>
+            <p class="font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : tUI('common.unknown', 'Unknown'))}</p>
+            <p class="text-xs text-slate-400">${escapeHtml(detail.display_name || tUI('common.noDisplay', 'No display'))}</p>
             ${renderRoleBadgeHtml(detail.role, { includeUser: true })}
           </div>
         </div>
-        <p class="text-sm text-slate-300">Created ${detail.created_at ? formatDate(detail.created_at) : '—'}</p>
+        <p class="text-sm text-slate-300">${formatUI('moderation.created', { date: detail.created_at ? formatDate(detail.created_at) : '—' }, `Created ${detail.created_at ? formatDate(detail.created_at) : '—'}`)}</p>
         <p class="rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4 text-sm text-slate-100">${escapeHtml(detail.caption || '')}</p>
-        ${detail.media_url ? `<a href="${escapeHtml(detail.media_url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 px-3 py-1 text-xs font-semibold text-indigo-200">Open media</a>` : ''}
+        ${detail.media_url ? `<a href="${escapeHtml(detail.media_url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-2 rounded-full border border-indigo-500/40 px-3 py-1 text-xs font-semibold text-indigo-200">${tUI('moderation.openMedia', 'Open media')}</a>` : ''}
       </div>
       ${canEdit ? `
         <form data-post-edit-form class="mt-6 space-y-4">
-          <label class="block text-sm font-semibold text-slate-200">Caption
+          <label class="block text-sm font-semibold text-slate-200">${tUI('moderation.post.caption', 'Caption')}
             <textarea name="caption" rows="4" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none">${escapeHtml(detail.caption || '')}</textarea>
           </label>
-          <label class="block text-sm font-semibold text-slate-200">Attach media asset ID
-            <input name="media_asset_id" value="${escapeHtml(detail.media_asset_id || '')}" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" placeholder="Optional MediaAsset UUID" />
+          <label class="block text-sm font-semibold text-slate-200">${tUI('moderation.post.mediaAssetId', 'Attach media asset ID')}
+            <input name="media_asset_id" value="${escapeHtml(detail.media_asset_id || '')}" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" placeholder="${tUI('moderation.post.mediaAssetPlaceholder', 'Optional MediaAsset UUID')}" />
           </label>
           <label class="inline-flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" name="remove_media" class="h-4 w-4 rounded border-slate-700/70 bg-transparent" />
-            Remove attached media
+            ${tUI('moderation.post.removeMedia', 'Remove attached media')}
           </label>
           <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-post" data-post-id="${detail.id}">Delete post</button>
-            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">Save changes</button>
+            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-post" data-post-id="${detail.id}">${tUI('moderation.post.delete', 'Delete post')}</button>
+            <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">${tUI('common.saveChanges', 'Save changes')}</button>
           </div>
         </form>
-      ` : '<p class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only admins or owners can edit posts.</p>'}
+      ` : `<p class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">${tUI('moderation.post.edit.permission', 'Only admins or owners can edit posts.')}</p>`}
       <div class="mt-6 rounded-2xl border border-slate-800/60 bg-slate-950/60 p-4">
         <div class="flex items-center justify-between gap-3">
-          <p class="text-sm font-semibold text-slate-100">Comments & replies</p>
-          <span class="text-xs text-slate-400" data-mod-comment-count>Loading…</span>
+          <p class="text-sm font-semibold text-slate-100">${tUI('moderation.comments.title', 'Comments & replies')}</p>
+          <span class="text-xs text-slate-400" data-mod-comment-count>${tUI('common.loading', 'Loading…')}</span>
         </div>
-        <p class="mt-3 text-sm text-slate-400" data-mod-comment-status>Loading comments…</p>
+        <p class="mt-3 text-sm text-slate-400" data-mod-comment-status>${tUI('moderation.comments.loading', 'Loading comments…')}</p>
         <div class="mt-3 space-y-3" data-mod-comment-list></div>
       </div>
     `;
@@ -10615,17 +10655,17 @@
     if (!postId || !list) return;
     list.innerHTML = '';
     if (status) {
-      status.textContent = 'Loading comments…';
+      status.textContent = tUI('moderation.comments.loading', 'Loading comments…');
       status.classList.remove('hidden');
     }
     try {
       const response = await apiFetch(`/posts/${encodeURIComponent(postId)}/comments`);
       const comments = Array.isArray(response.items) ? response.items : [];
       const total = computeCommentCount(comments);
-      if (countLabel) countLabel.textContent = `${total} total`;
+      if (countLabel) countLabel.textContent = formatUI('moderation.comments.total', { count: total }, `${total} total`);
       if (!comments.length) {
         if (status) {
-          status.textContent = 'No comments yet.';
+          status.textContent = tUI('moderation.comments.empty', 'No comments yet.');
           status.classList.remove('hidden');
         }
         return;
@@ -10633,9 +10673,9 @@
       if (status) status.classList.add('hidden');
       renderModerationCommentList(postId, comments, list, 0);
     } catch (error) {
-      if (countLabel) countLabel.textContent = '—';
+      if (countLabel) countLabel.textContent = tUI('common.dash', '—');
       if (status) {
-        status.textContent = error.message || 'Unable to load comments.';
+        status.textContent = error.message || tUI('moderation.comments.loadFailed', 'Unable to load comments.');
         status.classList.remove('hidden');
       }
     }
@@ -10651,7 +10691,7 @@
         item.style.marginLeft = `${Math.min(depth, 3) * 12}px`;
       }
       const authorLabel = decorateLabelWithRole(
-        comment.username ? `@${escapeHtml(comment.username)}` : 'User',
+        comment.username ? `@${escapeHtml(comment.username)}` : tUI('common.user', 'User'),
         comment.role,
         { compact: true, textClasses: 'font-semibold text-xs' }
       );
@@ -10662,7 +10702,7 @@
             <p class="mt-1 text-sm text-slate-200">${escapeHtml(comment.content || '')}</p>
             <p class="mt-1 text-[11px] text-slate-500">${formatDate(comment.created_at)}</p>
           </div>
-          ${canModerate ? '<div class="flex flex-col gap-2 text-[11px] text-slate-200"><button type="button" data-mod-comment-edit class="rounded-full border border-slate-700/60 px-3 py-1 font-semibold transition hover:border-indigo-500/60">Edit</button><button type="button" data-mod-comment-delete class="rounded-full border border-rose-500/40 px-3 py-1 font-semibold text-rose-200 transition hover:bg-rose-500/10">Delete</button></div>' : ''}
+          ${canModerate ? `<div class="flex flex-col gap-2 text-[11px] text-slate-200"><button type="button" data-mod-comment-edit class="rounded-full border border-slate-700/60 px-3 py-1 font-semibold transition hover:border-indigo-500/60">${tUI('common.edit', 'Edit')}</button><button type="button" data-mod-comment-delete class="rounded-full border border-rose-500/40 px-3 py-1 font-semibold text-rose-200 transition hover:bg-rose-500/10">${tUI('common.delete', 'Delete')}</button></div>` : ''}
         </div>
       `;
       const editButton = item.querySelector('[data-mod-comment-edit]');
@@ -10682,14 +10722,14 @@
 
   async function handleModerationCommentEdit(comment, postId, button) {
     if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
-      showToast('Only admins or owners can edit comments.', 'warning');
+      showToast(tUI('moderation.comments.edit.permission', 'Only admins or owners can edit comments.'), 'warning');
       return;
     }
-    const nextContent = window.prompt('Edit comment', comment.content || '');
+    const nextContent = window.prompt(tUI('moderation.comments.edit.promptTitle', 'Edit comment'), comment.content || '');
     if (nextContent === null) return;
     const trimmed = nextContent.trim();
     if (!trimmed) {
-      showToast('Comment cannot be empty.', 'warning');
+      showToast(tUI('moderation.comments.edit.empty', 'Comment cannot be empty.'), 'warning');
       return;
     }
     toggleInteractiveState(button, true);
@@ -10698,14 +10738,14 @@
         method: 'PATCH',
         body: JSON.stringify({ content: trimmed }),
       });
-      showToast('Comment updated.', 'success');
+      showToast(tUI('moderation.comments.edit.success', 'Comment updated.'), 'success');
       await loadModerationPostComments(postId);
       if (state.moderation.activeDataset === 'posts') {
         await loadModerationDataset('posts');
       }
       await loadModerationDashboard({ silent: true });
     } catch (error) {
-      showToast(error.message || 'Unable to update comment.', 'error');
+      showToast(error.message || tUI('moderation.comments.edit.error', 'Unable to update comment.'), 'error');
     } finally {
       toggleInteractiveState(button, false);
     }
@@ -10713,26 +10753,26 @@
 
   async function handleModerationCommentDelete(comment, postId, button) {
     if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
-      showToast('Only admins or owners can delete comments.', 'warning');
+      showToast(tUI('moderation.comments.delete.permission', 'Only admins or owners can delete comments.'), 'warning');
       return;
     }
     const confirmed = await showModerationConfirm({
-      title: 'Delete comment?',
-      message: 'This will remove the comment and any replies.',
-      confirmLabel: 'Delete comment',
+      title: tUI('moderation.comments.delete.title', 'Delete comment?'),
+      message: tUI('moderation.comments.delete.message', 'This will remove the comment and any replies.'),
+      confirmLabel: tUI('moderation.comments.delete.confirm', 'Delete comment'),
     });
     if (!confirmed) return;
     toggleInteractiveState(button, true);
     try {
       await apiFetch(`/moderation/comments/${encodeURIComponent(comment.id)}`, { method: 'DELETE' });
-      showToast('Comment removed.', 'success');
+      showToast(tUI('moderation.comments.delete.success', 'Comment removed.'), 'success');
       await loadModerationPostComments(postId);
       if (state.moderation.activeDataset === 'posts') {
         await loadModerationDataset('posts');
       }
       await loadModerationDashboard({ silent: true });
     } catch (error) {
-      showToast(error.message || 'Unable to delete comment.', 'error');
+      showToast(error.message || tUI('moderation.comments.delete.error', 'Unable to delete comment.'), 'error');
     } finally {
       toggleInteractiveState(button, false);
     }
@@ -10741,7 +10781,7 @@
   async function handleModerationPostUpdate(event, postId) {
     event.preventDefault();
     if (!hasModeratorPrivileges(state.moderation.viewerRole)) {
-      showToast('Only admins or owners can edit posts.', 'warning');
+      showToast(tUI('moderation.post.edit.permission', 'Only admins or owners can edit posts.'), 'warning');
       return;
     }
     const form = event.currentTarget;
@@ -10758,7 +10798,7 @@
         method: 'PATCH',
         body: JSON.stringify(payload),
       });
-      showToast('Post updated.', 'success');
+      showToast(tUI('postEdit.success', 'Post updated.'), 'success');
       populateModerationPostDetail(updated);
       await loadModerationPostComments(postId);
       if (state.moderation.activeDataset === 'posts') {
@@ -10766,7 +10806,7 @@
       }
       await loadModerationDashboard({ silent: true });
     } catch (error) {
-      showToast(error.message || 'Unable to update post.', 'error');
+      showToast(error.message || tUI('postEdit.errors.updateFailed', 'Unable to update post.'), 'error');
     } finally {
       toggleInteractiveState(submitButton, false);
     }

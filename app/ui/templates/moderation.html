@@ -4,9 +4,9 @@
 <section id="moderation-root" data-viewer-role="{{ viewer_role or 'user' }}" class="mx-auto flex w-full max-w-6xl flex-col gap-8">
     <header class="flex flex-col gap-4 rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30 md:flex-row md:items-center md:justify-between">
         <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">Command deck</p>
-            <h1 class="mt-2 text-2xl font-semibold text-white">Moderation dashboard</h1>
-            <p class="text-sm text-slate-400">Review recent activity, promote trusted members, and remove harmful content in one place.</p>
+            <p class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">{{ t("moderation.kicker", "Command deck") }}</p>
+            <h1 class="mt-2 text-2xl font-semibold text-white">{{ t("moderation.title", "Moderation dashboard") }}</h1>
+            <p class="text-sm text-slate-400">{{ t("moderation.subtitle", "Review recent activity, promote trusted members, and remove harmful content in one place.") }}</p>
         </div>
         <button
             id="moderation-refresh"
@@ -14,7 +14,7 @@
             class="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-500/60 px-5 py-2 text-sm font-semibold text-indigo-200 transition hover:bg-indigo-600/10"
         >
             <span class="text-lg">↻</span>
-            <span>Refresh data</span>
+            <span>{{ t("moderation.refresh", "Refresh data") }}</span>
         </button>
     </header>
 
@@ -26,7 +26,7 @@
             data-moderation-card="users"
             data-moderation-card-title="All users"
         >
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Total users</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">{{ t("moderation.cards.totalUsers", "Total users") }}</p>
             <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-users">0</p>
         </article>
         <article
@@ -37,7 +37,7 @@
             data-moderation-card-title="Active users"
             data-moderation-card-filter="active"
         >
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Active last 24h</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">{{ t("moderation.cards.activeLast24h", "Active last 24h") }}</p>
             <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="active-last-24h">0</p>
         </article>
         <article
@@ -47,7 +47,7 @@
             data-moderation-card="posts"
             data-moderation-card-title="All posts"
         >
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Posts</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">{{ t("moderation.cards.posts", "Posts") }}</p>
             <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-posts">0</p>
         </article>
         <article
@@ -57,34 +57,34 @@
             data-moderation-card="media"
             data-moderation-card-title="All media"
         >
-            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">Media assets</p>
+            <p class="text-xs uppercase tracking-[0.2em] text-slate-400">{{ t("moderation.cards.mediaAssets", "Media assets") }}</p>
             <p class="mt-3 text-3xl font-semibold text-white" data-moderation-stat="total-media-assets">0</p>
         </article>
     </div>
 
     <div id="moderation-error" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"></div>
     <div id="moderation-loading" class="hidden rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-6 text-center text-sm text-slate-400">
-        {{ components.feedback.loading_spinner(label="Loading moderation data") | safe }}
+        {{ components.feedback.loading_spinner(label=t("moderation.loading", "Loading moderation data")) | safe }}
     </div>
 
     <section class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-lg font-semibold text-white">User oversight</h2>
-                <p class="text-sm text-slate-400">Recent sign ups and their trust levels.</p>
+                <h2 class="text-lg font-semibold text-white">{{ t("moderation.users.title", "User oversight") }}</h2>
+                <p class="text-sm text-slate-400">{{ t("moderation.users.subtitle", "Recent sign ups and their trust levels.") }}</p>
             </div>
-            <span class="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-400">Owners can adjust roles directly.</span>
+            <span class="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-400">{{ t("moderation.users.note", "Owners can adjust roles directly.") }}</span>
         </div>
-        <p id="moderation-users-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">No user data yet.</p>
+        <p id="moderation-users-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">{{ t("moderation.users.empty", "No user data yet.") }}</p>
         <div class="mt-6 overflow-x-auto">
             <table id="moderation-user-table" class="min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200">
                 <thead>
                     <tr class="text-xs uppercase tracking-wider text-slate-400">
-                        <th class="px-4 py-2 font-medium">User</th>
-                        <th class="px-4 py-2 font-medium">Role</th>
-                        <th class="px-4 py-2 font-medium text-center">Posts</th>
-                        <th class="px-4 py-2 font-medium">Last active</th>
-                        <th class="px-4 py-2 font-medium text-right">Controls</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.users.table.user", "User") }}</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.users.table.role", "Role") }}</th>
+                        <th class="px-4 py-2 font-medium text-center">{{ t("moderation.users.table.posts", "Posts") }}</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.users.table.lastActive", "Last active") }}</th>
+                        <th class="px-4 py-2 font-medium text-right">{{ t("moderation.users.table.controls", "Controls") }}</th>
                     </tr>
                 </thead>
                 <tbody id="moderation-user-body"></tbody>
@@ -95,19 +95,19 @@
     <section class="rounded-3xl border border-slate-800/60 bg-slate-950/70 p-6 shadow-xl shadow-black/30">
         <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-                <h2 class="text-lg font-semibold text-white">Recent posts</h2>
-                <p class="text-sm text-slate-400">Spot abusive captions and remove them instantly.</p>
+                <h2 class="text-lg font-semibold text-white">{{ t("moderation.posts.title", "Recent posts") }}</h2>
+                <p class="text-sm text-slate-400">{{ t("moderation.posts.subtitle", "Spot abusive captions and remove them instantly.") }}</p>
             </div>
         </div>
-        <p id="moderation-posts-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">No posts found.</p>
+        <p id="moderation-posts-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/50 px-4 py-6 text-center text-sm text-slate-400">{{ t("moderation.posts.empty", "No posts found.") }}</p>
         <div class="mt-6 overflow-x-auto">
             <table id="moderation-post-table" class="min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200">
                 <thead>
                     <tr class="text-xs uppercase tracking-wider text-slate-400">
-                        <th class="px-4 py-2 font-medium">Author</th>
-                        <th class="px-4 py-2 font-medium">Content</th>
-                        <th class="px-4 py-2 font-medium">Engagement</th>
-                        <th class="px-4 py-2 font-medium text-right">Actions</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.posts.table.author", "Author") }}</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.posts.table.content", "Content") }}</th>
+                        <th class="px-4 py-2 font-medium">{{ t("moderation.posts.table.engagement", "Engagement") }}</th>
+                        <th class="px-4 py-2 font-medium text-right">{{ t("moderation.posts.table.actions", "Actions") }}</th>
                     </tr>
                 </thead>
                 <tbody id="moderation-post-body"></tbody>
@@ -120,33 +120,33 @@
     <div class="w-full max-w-5xl rounded-3xl border border-slate-800/70 bg-slate-950/90 p-6 shadow-2xl shadow-black/50 max-h-[95vh] overflow-y-auto" role="dialog" aria-modal="true">
         <header class="flex flex-col gap-2 border-b border-slate-800/60 pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p id="moderation-panel-label" class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">Dataset</p>
+                <p id="moderation-panel-label" class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">{{ t("moderation.dataset.label", "Dataset") }}</p>
                 <h3 id="moderation-panel-title" class="text-2xl font-semibold text-white">Dataset</h3>
             </div>
-            <button id="moderation-panel-close" type="button" class="self-start rounded-full border border-slate-700/60 px-3 py-1 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">Close</button>
+            <button id="moderation-panel-close" type="button" class="self-start rounded-full border border-slate-700/60 px-3 py-1 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">{{ t("common.close", "Close") }}</button>
         </header>
         <div class="mt-4 flex flex-col gap-4">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <div class="flex-1">
-                    <label for="moderation-panel-search" class="sr-only">Search dataset</label>
+                    <label for="moderation-panel-search" class="sr-only">{{ t("moderation.dataset.searchLabel", "Search dataset") }}</label>
                     <div class="relative">
                         <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⌕</span>
                         <input
                             id="moderation-panel-search"
                             type="search"
                             class="w-full rounded-2xl border border-slate-800/70 bg-slate-950/70 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/70 focus:outline-none"
-                            placeholder="Search records"
+                            placeholder="{{ t('moderation.dataset.searchPlaceholder', 'Search records') }}"
                             autocomplete="off"
                         />
                     </div>
                 </div>
                 <div class="flex items-center gap-2 text-xs text-slate-400">
-                    <button id="moderation-panel-prev" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 transition hover:border-indigo-500/60">Prev</button>
+                    <button id="moderation-panel-prev" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 transition hover:border-indigo-500/60">{{ t("common.prev", "Prev") }}</button>
                     <span id="moderation-panel-page" class="min-w-[90px] text-center">Page 1</span>
-                    <button id="moderation-panel-next" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 transition hover:border-indigo-500/60">Next</button>
+                    <button id="moderation-panel-next" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 transition hover:border-indigo-500/60">{{ t("common.next", "Next") }}</button>
                 </div>
             </div>
-            <p id="moderation-panel-empty" class="hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/60 px-4 py-6 text-center text-sm text-slate-400">No records found.</p>
+            <p id="moderation-panel-empty" class="hidden rounded-2xl border border-dashed border-slate-800/60 bg-slate-950/60 px-4 py-6 text-center text-sm text-slate-400">{{ t("moderation.dataset.empty", "No records found.") }}</p>
             <div id="moderation-panel-table" class="overflow-x-auto"></div>
         </div>
     </div>
@@ -156,24 +156,24 @@
     <div class="w-full max-w-3xl rounded-3xl border border-slate-800/70 bg-slate-950/95 p-6 shadow-2xl shadow-black/60 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true">
         <header class="flex flex-col gap-2 border-b border-slate-800/70 pb-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-                <p id="moderation-detail-label" class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">Detail</p>
+                <p id="moderation-detail-label" class="text-xs font-semibold uppercase tracking-[0.3em] text-indigo-300">{{ t("moderation.detail.label", "Detail") }}</p>
                 <h3 id="moderation-detail-title" class="text-2xl font-semibold text-white">Details</h3>
             </div>
-            <button id="moderation-detail-close" type="button" class="self-start rounded-full border border-slate-700/60 px-3 py-1 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">Close</button>
+            <button id="moderation-detail-close" type="button" class="self-start rounded-full border border-slate-700/60 px-3 py-1 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white">{{ t("common.close", "Close") }}</button>
         </header>
         <div id="moderation-detail-body" class="mt-4 text-sm text-slate-200">
-            <p class="text-center text-slate-400">Select a record to view details.</p>
+            <p class="text-center text-slate-400">{{ t("moderation.detail.empty", "Select a record to view details.") }}</p>
         </div>
     </div>
 </div>
 
 <div id="moderation-confirm-modal" class="moderation-overlay hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
     <div class="w-full max-w-md rounded-3xl border border-slate-800/70 bg-slate-950/95 p-6 text-sm text-slate-200 shadow-2xl shadow-black/70 max-h-[85vh] overflow-y-auto" role="alertdialog" aria-modal="true">
-        <h3 id="moderation-confirm-title" class="text-lg font-semibold text-white">Confirm action</h3>
-        <p id="moderation-confirm-message" class="mt-3 text-slate-300">Are you sure?</p>
+        <h3 id="moderation-confirm-title" class="text-lg font-semibold text-white">{{ t("moderation.confirm.title", "Confirm action") }}</h3>
+        <p id="moderation-confirm-message" class="mt-3 text-slate-300">{{ t("moderation.confirm.message", "Are you sure?") }}</p>
         <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button id="moderation-confirm-cancel" type="button" class="rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500">Cancel</button>
-            <button id="moderation-confirm-accept" type="button" class="rounded-2xl border border-rose-500/60 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20">Confirm</button>
+            <button id="moderation-confirm-cancel" type="button" class="rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500">{{ t("common.cancel", "Cancel") }}</button>
+            <button id="moderation-confirm-accept" type="button" class="rounded-2xl border border-rose-500/60 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20">{{ t("common.confirm", "Confirm") }}</button>
         </div>
     </div>
 </div>
