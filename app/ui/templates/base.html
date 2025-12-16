@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full dark">
+<html lang="{{ locale }}" class="h-full dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -216,7 +216,7 @@
         </div>
     </div>
     {{ components.feedback.toast_container() | safe }}
-    {{ components.layout.navbar(active=active_nav) | safe }}
+    {{ components.layout.navbar(active=active_nav, t=t) | safe }}
     <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
         {% block content %}{% endblock %}
     </main>
@@ -396,6 +396,11 @@
         </div>
     </div>
     <script>
+        window.__LOCALE__ = {{ locale | tojson }};
+        window.__I18N__ = {{ i18n_messages | tojson }};
+        window.__I18N_DEFAULT__ = {{ i18n_default_messages | tojson }};
+    </script>
+    <script>
         window.__SOCIAL_CONFIG__ = Object.assign({}, window.__SOCIAL_CONFIG__ || {}, {
             termsVersion: {{ terms_version | tojson }},
             termsMessage: {{ terms_block_message | tojson }},
@@ -416,13 +421,22 @@
                 const label = toggle.querySelector('[data-mobile-nav-label]');
                 const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
                 const closeIcon = toggle.querySelector('[data-mobile-nav-icon="close"]');
+                const messages = window.__I18N__ || {};
+                const fallbackMessages = window.__I18N_DEFAULT__ || {};
+                const translate = (key, fallback) => {
+                    if (Object.prototype.hasOwnProperty.call(messages, key)) return messages[key];
+                    if (Object.prototype.hasOwnProperty.call(fallbackMessages, key)) return fallbackMessages[key];
+                    return fallback || key;
+                };
+                const menuLabel = translate('nav.menu', 'Menu');
+                const closeLabel = translate('nav.menu.close', 'Close');
 
                 const setState = next => {
                     panel.classList.toggle('hidden', !next);
                     toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
                     toggle.dataset.open = next ? 'true' : 'false';
                     if (label) {
-                        label.textContent = next ? 'Close' : 'Menu';
+                        label.textContent = next ? closeLabel : menuLabel;
                     }
                     if (openIcon && closeIcon) {
                         openIcon.classList.toggle('hidden', next);

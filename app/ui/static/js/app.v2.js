@@ -79,6 +79,34 @@
     fa: 'Persian',
   };
 
+  const I18N = {
+    locale: (typeof window !== 'undefined' && window.__LOCALE__) || 'en',
+    messages: (typeof window !== 'undefined' && window.__I18N__) || {},
+    fallback: (typeof window !== 'undefined' && window.__I18N_DEFAULT__) || {},
+  };
+
+  function tUI(key, fallback) {
+    if (!key) return fallback || '';
+    if (Object.prototype.hasOwnProperty.call(I18N.messages, key)) {
+      return I18N.messages[key];
+    }
+    if (Object.prototype.hasOwnProperty.call(I18N.fallback, key)) {
+      return I18N.fallback[key];
+    }
+    return fallback !== undefined ? fallback : key;
+  }
+
+  function formatUI(key, vars = {}, fallback) {
+    const template = tUI(key, fallback);
+    if (typeof template !== 'string') return template;
+    return template.replace(/\{(\w+)\}/g, (_, token) => (vars[token] !== undefined ? vars[token] : `{${token}}`));
+  }
+
+  if (typeof window !== 'undefined') {
+    window.__t = tUI;
+    window.__formatUI = formatUI;
+  }
+
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
     error: 'bg-rose-500/90 text-white shadow-rose-500/30',
@@ -468,10 +496,16 @@
   function setLanguagePreference(value) {
     const normalized = typeof value === 'string' && value.trim() ? value.trim() : 'en';
     state.settingsPage.languagePreference = normalized;
+    I18N.locale = normalized;
     try {
       localStorage.setItem(LANGUAGE_KEY, normalized);
     } catch (err) {
       console.warn('Failed to persist language preference', err);
+    }
+    try {
+      document.cookie = `ui_locale=${normalized}; path=/; max-age=31536000; samesite=lax`;
+    } catch (err) {
+      console.warn('Failed to persist locale cookie', err);
     }
   }
 
@@ -9168,11 +9202,7 @@
       });
       hydrateSettings(updated);
       showToast('Language preference updated.', 'success');
-      if (document.getElementById('feed-list')) {
-        loadFeed({ forceRefresh: true, silent: true }).catch(error => {
-          console.warn('[settings] feed reload after language change failed', error);
-        });
-      }
+      window.setTimeout(() => window.location.reload(), 100);
     } catch (error) {
       showToast(error.message || 'Unable to update language.', 'error');
       select.value = state.settingsPage.languagePreference || getLanguagePreference();

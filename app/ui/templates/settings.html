@@ -147,11 +147,11 @@
                 <label class="flex flex-col gap-2 rounded-2xl border border-slate-800/60 px-4 py-3 text-sm font-medium text-slate-200" for="settings-language">
                     <div class="flex items-center justify-between gap-3">
                         <div>
-                            <p class="font-semibold text-white">App language</p>
-                            <p class="text-xs text-slate-400">Translate posts and comments in your feed.</p>
+                            <p class="font-semibold text-white">{{ t("settings.language.label", "App language") }}</p>
+                            <p class="text-xs text-slate-400">{{ t("settings.language.help", "Change the interface language") }}</p>
                         </div>
                         <select id="settings-language" class="input-field w-44 text-sm">
-                            <option value="en">Original (English)</option>
+                            <option value="en">{{ t("settings.language.original", "Original (English)") }}</option>
                         </select>
                     </div>
                 </label>
