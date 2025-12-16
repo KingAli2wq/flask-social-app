@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, HttpUrl
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
 
 
 class SettingsResponse(BaseModel):
@@ -23,6 +23,8 @@ class SettingsResponse(BaseModel):
     email_dm_notifications: bool = False
     allow_friend_requests: bool = True
     dm_followers_only: bool = False
+    language_preference: str = "en"
+    language_options: dict[str, str] = Field(default_factory=dict)
 
 
 class SettingsProfileUpdate(BaseModel):
@@ -41,6 +43,7 @@ class SettingsPreferencesUpdate(BaseModel):
     email_dm_notifications: bool | None = None
     allow_friend_requests: bool | None = None
     dm_followers_only: bool | None = None
+    language_preference: str | None = None
 
 
 class SettingsPasswordUpdate(BaseModel):

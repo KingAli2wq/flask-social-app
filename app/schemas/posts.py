@@ -38,6 +38,8 @@ class PostResponse(BaseModel):
     comment_count: int = 0
     viewer_has_liked: bool = False
     viewer_has_disliked: bool = False
+    translated_caption: str | None = None
+    translation_language: str | None = None
 
 
 class PostFeedResponse(BaseModel):
@@ -77,6 +79,8 @@ class PostCommentResponse(BaseModel):
     parent_id: UUID | None = None
     created_at: datetime
     replies: list["PostCommentResponse"] = Field(default_factory=list)
+    translated_content: str | None = None
+    translation_language: str | None = None
 
 
 class PostCommentListResponse(BaseModel):

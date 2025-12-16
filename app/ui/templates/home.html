@@ -85,6 +85,33 @@
                 <h2 class="text-lg font-semibold text-white">Your feed</h2>
                 <span id="feed-count" class="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-400">0 posts</span>
             </div>
+            <div class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 lg:max-w-xl">
+                    <label for="feed-hashtag-input" class="sr-only">Search hashtags</label>
+                    <div class="relative flex-1">
+                        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">#</span>
+                        <input
+                            id="feed-hashtag-input"
+                            type="text"
+                            inputmode="search"
+                            autocomplete="off"
+                            placeholder="Search hashtags (e.g. launch, devtools)"
+                            class="w-full rounded-2xl border border-slate-800/60 bg-slate-950/70 py-2 pl-7 pr-24 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+                        />
+                        <button
+                            id="feed-hashtag-submit"
+                            type="button"
+                            class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1 text-xs font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-500"
+                        >
+                            Go
+                        </button>
+                    </div>
+                </div>
+                <div id="feed-hashtag-active" class="hidden items-center gap-2 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1 text-xs font-semibold text-sky-100">
+                    <span class="text-sky-200">Filtering by <span data-hashtag-label></span></span>
+                    <button type="button" id="feed-hashtag-clear" class="rounded-full border border-sky-400/50 px-2 py-1 text-[11px] font-semibold text-sky-50 transition hover:bg-sky-500/20">Clear</button>
+                </div>
+            </div>
             <div id="feed-loading" class="mt-6">{{ components.feedback.loading_spinner(label="Fetching posts") | safe }}</div>
             <div id="feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
                 No posts yet. Be the first to kick off the conversation!
@@ -99,9 +126,9 @@
         <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">
             <h2 class="text-base font-semibold text-white">Trending tags</h2>
             <ul id="trends" class="mt-4 space-y-3 text-sm text-indigo-300">
-                <li class="flex items-center justify-between"><span>#fastapi</span><span class="text-slate-500">12.4K</span></li>
-                <li class="flex items-center justify-between"><span>#buildinpublic</span><span class="text-slate-500">8.8K</span></li>
-                <li class="flex items-center justify-between"><span>#tailwind</span><span class="text-slate-500">5.6K</span></li>
+                    <li class="flex items-center justify-between"><button type="button" data-hashtag-link="#fastapi" class="text-left text-indigo-200 transition hover:text-white">#fastapi</button><span class="text-slate-500">12.4K</span></li>
+                    <li class="flex items-center justify-between"><button type="button" data-hashtag-link="#buildinpublic" class="text-left text-indigo-200 transition hover:text-white">#buildinpublic</button><span class="text-slate-500">8.8K</span></li>
+                    <li class="flex items-center justify-between"><button type="button" data-hashtag-link="#tailwind" class="text-left text-indigo-200 transition hover:text-white">#tailwind</button><span class="text-slate-500">5.6K</span></li>
             </ul>
         </section>
         <section class="card-surface rounded-3xl bg-slate-900/70 p-6 shadow-xl shadow-black/20">

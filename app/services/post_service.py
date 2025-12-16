@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..models import Follow, MediaAsset, Post, PostComment, PostDislike, PostLike, User
+from .translation_service import SupportedLang, translate_batch, translate_text
 from .notification_service import NotificationType, add_notification
 from .media_crypto import protect_media_value, reveal_media_value
 from .media_service import delete_media_asset
@@ -232,6 +233,8 @@ def list_feed_records(
     *,
     viewer_id: UUID | None = None,
     author_id: UUID | None = None,
+    hashtag: str | None = None,
+    target_language: SupportedLang | None = None,
 ) -> list[dict[str, Any]]:
     """Return posts ordered by personalised priority, optionally filtered by author."""
 
@@ -262,6 +265,12 @@ def list_feed_records(
     statement = statement.add_columns(like_count_subquery, dislike_count_subquery, comment_count_subquery)
     if author_id is not None:
         statement = statement.where(Post.user_id == author_id)
+
+    if hashtag:
+        normalized_tag = hashtag.strip().lstrip('#').lower()
+        if normalized_tag:
+            pattern = f"%#{normalized_tag}%"
+            statement = statement.where(func.lower(Post.caption).like(pattern))
 
     include_follow_weight = viewer_id is not None
     follow_match_col = None
@@ -367,6 +376,13 @@ def list_feed_records(
             record["follow_priority"] = int(follow_priority_value or 0)
 
         records.append(record)
+
+    if target_language is not None and records:
+        captions = [record.get("caption") or "" for record in records]
+        translations = translate_batch(captions, target_language)
+        for record, translated_caption in zip(records, translations):
+            record["translated_caption"] = translated_caption
+            record["translation_language"] = target_language
 
     return records
 
@@ -500,7 +516,7 @@ def set_post_dislike_state(
     return _post_engagement_snapshot(db, post_id, user_id)
 
 
-def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
+def list_post_comments(db: Session, *, post_id: UUID, target_language: SupportedLang | None = None) -> list[dict[str, Any]]:
     _get_post_or_404(db, post_id)
     stmt = (
         select(PostComment, User.username, User.avatar_url, User.role)
@@ -533,6 +549,10 @@ def list_post_comments(db: Session, *, post_id: UUID) -> list[dict[str, Any]]:
         else:
             roots.append(node)
 
+    if target_language is not None:
+        for root in roots:
+            _apply_comment_translation(root, target_language)
+
     return roots
 
 
@@ -550,6 +570,13 @@ def _serialize_comment(comment: PostComment, user: User) -> dict[str, Any]:
         "created_at": comment.created_at,
         "replies": [],
     }
+
+
+def _apply_comment_translation(comment: dict[str, Any], target_language: SupportedLang) -> None:
+    comment["translated_content"] = translate_text(comment.get("content") or "", target_language)
+    comment["translation_language"] = target_language
+    for reply in comment.get("replies") or []:
+        _apply_comment_translation(reply, target_language)
 
 
 def _extract_mentioned_user_ids(
@@ -616,6 +643,7 @@ def create_post_comment(
     author: User,
     content: str,
     parent_id: UUID | None = None,
+    target_language: SupportedLang | None = None,
 ) -> dict[str, Any]:
     post = _get_post_or_404(db, post_id)
     text = (content or "").strip()
@@ -693,7 +721,10 @@ def create_post_comment(
         comment_id=cast(UUID, comment.id),
     )
 
-    return _serialize_comment(comment, author)
+    payload = _serialize_comment(comment, author)
+    if target_language is not None:
+        _apply_comment_translation(payload, target_language)
+    return payload
 
 
 def _get_comment_or_404(db: Session, comment_id: UUID) -> PostComment:
@@ -710,6 +741,7 @@ def update_post_comment(
     requester_id: UUID,
     requester_role: str | None,
     content: str,
+    target_language: SupportedLang | None = None,
 ) -> dict[str, Any]:
     comment = _get_comment_or_404(db, comment_id)
     user = db.get(User, comment.user_id)
@@ -728,7 +760,10 @@ def update_post_comment(
     enforce_safe_text(text, field_name="comment")
 
     if text == comment.content:
-        return _serialize_comment(comment, user)
+        payload = _serialize_comment(comment, user)
+        if target_language is not None:
+            _apply_comment_translation(payload, target_language)
+        return payload
 
     setattr(comment, "content", text)
 
@@ -739,7 +774,10 @@ def update_post_comment(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update comment") from exc
 
     db.refresh(comment)
-    return _serialize_comment(comment, user)
+    payload = _serialize_comment(comment, user)
+    if target_language is not None:
+        _apply_comment_translation(payload, target_language)
+    return payload
 
 
 def delete_post_comment(

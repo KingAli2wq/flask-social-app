@@ -103,6 +103,7 @@ def register_user(db: Session, payload: RegisterRequest) -> Tuple[User, str]:
         email=str(payload.email) if payload.email else None,
         hashed_password=hashed,
         bio=bio,
+        language_preference="en",
     )
 
     try:

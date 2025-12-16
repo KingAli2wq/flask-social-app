@@ -49,6 +49,7 @@ hatesonar>=0.0.7
 scikit-learn>=1.4
 pandas>=2.1
 pyspellchecker>=0.8
+easygoogletranslate>=0.0.4
 
 # Development & Testing
 pytest>=7.0

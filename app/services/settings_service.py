@@ -24,9 +24,17 @@ from ..schemas import (
 )
 from .auth_service import hash_password, verify_password
 from .email_service import EmailDeliveryError, send_email
+from .translation_service import DEFAULT_LANGUAGE, normalize_language_preference, supported_languages
 
 _VERIFICATION_CODE_TTL = timedelta(minutes=15)
 _VERIFICATION_RESEND_COOLDOWN = timedelta(minutes=2)
+
+
+def _resolve_language_preference(preference: str | None) -> str:
+    try:
+        return normalize_language_preference(preference)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 def _generate_code() -> str:
@@ -38,6 +46,7 @@ def _now() -> datetime:
 
 
 def build_settings_response(user: User) -> SettingsResponse:
+    lang_pref = _resolve_language_preference(cast(str | None, getattr(user, "language_preference", None)))
     return SettingsResponse(
         id=cast(UUID, user.id),
         username=cast(str, user.username),
@@ -52,6 +61,8 @@ def build_settings_response(user: User) -> SettingsResponse:
         email_dm_notifications=bool(cast(bool | None, user.email_dm_notifications)),
         allow_friend_requests=bool(cast(bool | None, user.allow_friend_requests)),
         dm_followers_only=bool(cast(bool | None, user.dm_followers_only)),
+        language_preference=lang_pref or DEFAULT_LANGUAGE,
+        language_options=supported_languages(),
     )
 
 
@@ -119,6 +130,8 @@ def update_contact_settings(db: Session, user: User, payload: SettingsContactUpd
 
 def update_preferences(db: Session, user: User, payload: SettingsPreferencesUpdate) -> User:
     update_data = payload.model_dump(exclude_unset=True)
+    if "language_preference" in update_data:
+        update_data["language_preference"] = _resolve_language_preference(update_data.get("language_preference"))
     for field, value in update_data.items():
         setattr(user, field, value)
 

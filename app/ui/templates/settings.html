@@ -140,10 +140,21 @@
             <header class="flex items-center justify-between gap-4">
                 <div>
                     <h2 class="text-lg font-semibold text-white">Preferences</h2>
-                    <p class="text-sm text-slate-400">Control notifications and privacy.</p>
+                    <p class="text-sm text-slate-400">Control notifications, privacy, and language.</p>
                 </div>
             </header>
             <div class="mt-6 grid gap-4">
+                <label class="flex flex-col gap-2 rounded-2xl border border-slate-800/60 px-4 py-3 text-sm font-medium text-slate-200" for="settings-language">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <p class="font-semibold text-white">App language</p>
+                            <p class="text-xs text-slate-400">Translate posts and comments in your feed.</p>
+                        </div>
+                        <select id="settings-language" class="input-field w-44 text-sm">
+                            <option value="en">Original (English)</option>
+                        </select>
+                    </div>
+                </label>
                 <label class="flex items-center justify-between gap-4 rounded-2xl border border-slate-800/60 px-4 py-3">
                     <div>
                         <p class="text-sm font-semibold text-white">Email me about new messages</p>

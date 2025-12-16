@@ -24,6 +24,7 @@ from .friendship_service import (
     require_friendship,
     send_friend_request,
 )
+from .translation_service import translate_batch, translate_text, supported_languages
 from .chatbot_service import (
     ChatbotServiceError,
     ChatbotTranscript,
@@ -187,6 +188,9 @@ __all__ = [
     "update_post_comment",
     "delete_post_comment",
     "update_post_record",
+    "translate_text",
+    "translate_batch",
+    "supported_languages",
     "create_story",
     "list_active_stories",
     "FollowStats",

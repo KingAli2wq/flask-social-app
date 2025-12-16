@@ -4,6 +4,7 @@
   const USER_ID_KEY = 'socialsphere:user_id';
   const USER_ROLE_KEY = 'socialsphere:role';
   const THEME_KEY = 'socialsphere:theme';
+  const LANGUAGE_KEY = 'socialsphere:language';
   const TERMS_ACCEPTANCE_KEY = 'socialsphere:terms-version';
   const MEDIA_HISTORY_KEY = 'socialsphere:media-history';
   const MEDIA_REEL_CACHE_KEY = 'socialsphere:media-reel-cache';
@@ -72,6 +73,11 @@
   const SOCIAL_AI_DEBUG = Boolean(
     APP_CONFIG.socialAiDebugLogging || (typeof window !== 'undefined' && window.__SOCIAL_AI_DEBUG__)
   );
+  const LANGUAGE_LABELS = {
+    'zh-CN': 'Chinese (China)',
+    'fr-CA': 'French (Canada)',
+    fa: 'Persian',
+  };
 
   const palette = {
     success: 'bg-emerald-500/90 text-white shadow-emerald-500/30',
@@ -105,6 +111,9 @@
   const state = {
     feedItems: [],
     feedCursor: 0,
+    feedFilters: {
+      hashtag: null,
+    },
     friends: [],
     incomingRequests: [],
     outgoingRequests: [],
@@ -265,6 +274,7 @@
     settingsPage: {
       data: null,
       verificationCooldownHandle: null,
+      languagePreference: 'en',
     },
     mediaReel: {
       items: [],
@@ -363,6 +373,8 @@
     },
   };
 
+  state.settingsPage.languagePreference = getLanguagePreference();
+
   const scrollLock = {
     count: 0,
     bodyOverflow: '',
@@ -443,6 +455,30 @@
     localStorage.removeItem(USER_ID_KEY);
     localStorage.removeItem(USER_ROLE_KEY);
     localStorage.removeItem(TERMS_ACCEPTANCE_KEY);
+  }
+
+  function getLanguagePreference() {
+    const stored = localStorage.getItem(LANGUAGE_KEY);
+    if (stored && stored.trim()) {
+      return stored.trim();
+    }
+    return 'en';
+  }
+
+  function setLanguagePreference(value) {
+    const normalized = typeof value === 'string' && value.trim() ? value.trim() : 'en';
+    state.settingsPage.languagePreference = normalized;
+    try {
+      localStorage.setItem(LANGUAGE_KEY, normalized);
+    } catch (err) {
+      console.warn('Failed to persist language preference', err);
+    }
+  }
+
+  function getLanguageLabel(code) {
+    if (!code || code === 'en') return 'English';
+    const normalized = String(code);
+    return state.settingsPage.data?.language_options?.[normalized] || LANGUAGE_LABELS[normalized] || normalized;
   }
 
   async function apiFetch(path, options = {}) {
@@ -2339,19 +2375,31 @@
     const value = typeof text === 'string' ? text : '';
     if (!value) return;
     const fragment = document.createDocumentFragment();
-    const regex = /@([A-Za-z0-9_.]{2,32})/g;
+    const regex = /(@[A-Za-z0-9_.]{2,32}|#[A-Za-z0-9_]{1,50})/g;
     let lastIndex = 0;
     let match;
     while ((match = regex.exec(value)) !== null) {
       if (match.index > lastIndex) {
         fragment.appendChild(document.createTextNode(value.slice(lastIndex, match.index)));
       }
-      const username = match[1];
-      const mention = document.createElement('span');
-      mention.className = 'text-indigo-300 font-semibold cursor-pointer hover:text-indigo-100';
-      mention.textContent = `@${username}`;
-      attachProfileNavigation(mention, { username });
-      fragment.appendChild(mention);
+      const token = match[1];
+      if (token.startsWith('@')) {
+        const username = token.slice(1);
+        const mention = document.createElement('span');
+        mention.className = 'text-indigo-300 font-semibold cursor-pointer hover:text-indigo-100';
+        mention.textContent = `@${username}`;
+        attachProfileNavigation(mention, { username });
+        fragment.appendChild(mention);
+      } else if (token.startsWith('#')) {
+        const hashtag = token.slice(1);
+        const tagNode = document.createElement('span');
+        tagNode.className = 'hashtag-token';
+        tagNode.textContent = `#${hashtag}`;
+        tagNode.addEventListener('click', () => navigateToHashtag(hashtag));
+        fragment.appendChild(tagNode);
+      } else {
+        fragment.appendChild(document.createTextNode(token));
+      }
       lastIndex = regex.lastIndex;
     }
     if (lastIndex < value.length) {
@@ -2452,6 +2500,9 @@
     initThemeToggle();
     setupStoriesUI();
     captureNotificationTargetFromUrl();
+    initHashtagFilterFromUrl();
+    bindHashtagSearchUI();
+    bindHashtagLinks();
     await Promise.allSettled([loadStories(), loadFeed()]);
     await applyPendingNotificationTarget();
     setupComposer();
@@ -3785,6 +3836,96 @@
     }, 250);
   }
 
+  function sanitizeHashtag(tag) {
+    if (typeof tag !== 'string') return '';
+    return tag.trim().replace(/^#+/, '').slice(0, 60);
+  }
+
+  function updateHashtagFilterUI() {
+    const hashtag = state.feedFilters.hashtag;
+    const input = document.getElementById('feed-hashtag-input');
+    const pill = document.getElementById('feed-hashtag-active');
+    const label = pill?.querySelector('[data-hashtag-label]');
+    if (input) {
+      input.value = hashtag ? `#${hashtag}` : '';
+    }
+    if (pill && label) {
+      if (hashtag) {
+        label.textContent = `#${hashtag}`;
+        pill.classList.remove('hidden');
+      } else {
+        pill.classList.add('hidden');
+      }
+    }
+  }
+
+  function applyHashtagFilter(tag, { skipReload = false } = {}) {
+    const normalized = sanitizeHashtag(tag);
+    state.feedFilters.hashtag = normalized || null;
+    updateHashtagFilterUI();
+    const url = new URL(window.location.href);
+    if (normalized) {
+      url.searchParams.set('hashtag', normalized);
+    } else {
+      url.searchParams.delete('hashtag');
+    }
+    window.history.replaceState({}, '', url.toString());
+    if (!skipReload && document.getElementById('feed-list')) {
+      loadFeed({ forceRefresh: true }).catch(error => {
+        console.warn('[feed] hashtag filter reload failed', error);
+      });
+    }
+  }
+
+  function navigateToHashtag(tag) {
+    const normalized = sanitizeHashtag(tag);
+    if (!normalized) return;
+    if (document.getElementById('feed-list')) {
+      applyHashtagFilter(normalized);
+      return;
+    }
+    const url = new URL('/', window.location.origin);
+    url.searchParams.set('hashtag', normalized);
+    window.location.href = url.toString();
+  }
+
+  function bindHashtagSearchUI() {
+    const input = document.getElementById('feed-hashtag-input');
+    const submit = document.getElementById('feed-hashtag-submit');
+    const clear = document.getElementById('feed-hashtag-clear');
+    if (input) {
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          applyHashtagFilter(input.value || '');
+        }
+      });
+    }
+    if (submit) {
+      submit.addEventListener('click', () => applyHashtagFilter(input?.value || ''));
+    }
+    if (clear) {
+      clear.addEventListener('click', () => applyHashtagFilter(null));
+    }
+  }
+
+  function initHashtagFilterFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const initialTag = params.get('hashtag');
+    if (initialTag) {
+      state.feedFilters.hashtag = sanitizeHashtag(initialTag) || null;
+    }
+    updateHashtagFilterUI();
+  }
+
+  function bindHashtagLinks() {
+    document.querySelectorAll('[data-hashtag-link]').forEach(node => {
+      if (node.dataset.bound === 'true') return;
+      node.dataset.bound = 'true';
+      node.addEventListener('click', () => navigateToHashtag(node.dataset.hashtagLink || node.textContent));
+    });
+  }
+
   function computeFeedSignature(items) {
     if (!Array.isArray(items) || items.length === 0) {
       return `len:${items ? items.length : 0}`;
@@ -3817,8 +3958,14 @@
     }
 
     try {
-      const data = await apiFetch('/posts/feed');
+      const hashtag = state.feedFilters.hashtag;
+      const path = hashtag ? `/posts/feed?hashtag=${encodeURIComponent(hashtag)}` : '/posts/feed';
+      const data = await apiFetch(path);
       const incomingItems = Array.isArray(data.items) ? data.items : [];
+      const firstTranslation = incomingItems.find(item => item && item.translation_language)?.translation_language;
+      if (firstTranslation) {
+        setLanguagePreference(firstTranslation);
+      }
       const newSignature = computeFeedSignature(incomingItems);
 
       if (onlyOnChange && state.feedSignature === newSignature) {
@@ -3841,7 +3988,9 @@
       }
       renderNextFeedBatch();
       if (countBadge) {
-        countBadge.textContent = `${state.feedItems.length} posts`;
+        countBadge.textContent = state.feedFilters.hashtag
+          ? `${state.feedItems.length} posts · #${state.feedFilters.hashtag}`
+          : `${state.feedItems.length} posts`;
       }
       if (state.feedItems.length === 0 && empty) {
         empty.classList.remove('hidden');
@@ -4276,6 +4425,8 @@
       caption: updatedPost.caption,
       media_url: updatedPost.media_url,
       media_asset_id: updatedPost.media_asset_id,
+      translated_caption: updatedPost.translated_caption,
+      translation_language: updatedPost.translation_language,
     };
     if (updatedPost.user_id) {
       overrides.user_id = updatedPost.user_id;
@@ -4403,7 +4554,13 @@
             <span class="flex flex-wrap items-center gap-2 cursor-pointer" data-role="comment-author" data-user-id="${comment.user_id}" data-username="${comment.username || ''}">${authorLabel}</span>
             <time class="text-[11px]">${formatDate(comment.created_at)}</time>
           </div>
-          <p class="mt-1 text-sm text-slate-200" data-role="comment-body"></p>
+          <div class="mt-1 space-y-1">
+            <p class="text-sm text-slate-200" data-role="comment-body"></p>
+            <div data-role="comment-translation-wrapper" class="hidden rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-2 py-1.5">
+              <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="comment-translation-label">Translated</p>
+              <p class="text-sm text-slate-50 whitespace-pre-line" data-role="comment-translation"></p>
+            </div>
+          </div>
           <div class="mt-2 flex gap-3 text-[11px] text-indigo-200">
             <button type="button" data-role="comment-reply" class="hover:text-white">Reply</button>
             ${canDelete ? '<button type="button" data-role="comment-delete" class="text-rose-200 hover:text-white">Delete</button>' : ''}
@@ -4420,6 +4577,26 @@
     const bodyNode = wrapper.querySelector('[data-role="comment-body"]');
     if (bodyNode) {
       renderTextWithMentions(bodyNode, previewText);
+      const translationWrapper = wrapper.querySelector('[data-role="comment-translation-wrapper"]');
+      const translationNode = wrapper.querySelector('[data-role="comment-translation"]');
+      const translationLabel = wrapper.querySelector('[data-role="comment-translation-label"]');
+      const viewerLanguage = getLanguagePreference();
+      const hasTranslation =
+        comment.translated_content &&
+        comment.translation_language &&
+        comment.translation_language === viewerLanguage &&
+        viewerLanguage !== 'en';
+      if (hasTranslation && translationWrapper && translationNode && translationLabel) {
+        translationLabel.textContent = `Translated to ${getLanguageLabel(comment.translation_language)}`;
+        renderTextWithMentions(translationNode, comment.translated_content || '');
+        translationWrapper.classList.remove('hidden');
+        bodyNode.classList.remove('text-slate-200');
+        bodyNode.classList.add('text-slate-400');
+      } else if (translationWrapper) {
+        translationWrapper.classList.add('hidden');
+        bodyNode.classList.remove('text-slate-400');
+        bodyNode.classList.add('text-slate-200');
+      }
     }
     const replyButton = wrapper.querySelector('[data-role="comment-reply"]');
     if (replyButton) {
@@ -4446,11 +4623,12 @@
     return wrapper;
   }
 
-  async function loadCommentsForPost(postId, panel) {
+  async function loadCommentsForPost(postId, panel, options = {}) {
     if (!panel || !postId) return;
+    const forceRefresh = Boolean(options.forceRefresh);
     const list = panel.querySelector('[data-role="comment-list"]');
     const store = getCommentStore(postId);
-    if (store.loaded) {
+    if (store.loaded && !forceRefresh) {
       renderCommentList(postId, store.items, list);
       return;
     }
@@ -4458,6 +4636,10 @@
     try {
       const response = await apiFetch(`/posts/${encodeURIComponent(postId)}/comments`);
       const fetched = Array.isArray(response.items) ? response.items : [];
+      const firstTranslation = fetched.find(item => item && item.translation_language)?.translation_language;
+      if (firstTranslation) {
+        setLanguagePreference(firstTranslation);
+      }
       if (store.loaded && Array.isArray(store.items) && store.items.length) {
         const merged = new Map();
         store.items.forEach(item => {
@@ -4493,7 +4675,12 @@
     form.dataset.replyId = comment.id;
     usernameNode.textContent = comment.username ? `@${comment.username}` : 'this comment';
     if (previewNode) {
-      const preview = (comment.content || '').trim();
+      const viewerLanguage = getLanguagePreference();
+      const previewSource =
+        comment.translation_language === viewerLanguage && comment.translated_content
+          ? comment.translated_content
+          : comment.content;
+      const preview = (previewSource || '').trim();
       previewNode.textContent = preview ? preview.slice(0, 160) + (preview.length > 160 ? '…' : '') : 'No text available.';
     }
     pill.classList.remove('hidden');
@@ -4661,12 +4848,23 @@
     if (!comment || !rawPostId) return;
     const postId = String(rawPostId);
     const store = getCommentStore(postId);
+    const viewerLanguage = getLanguagePreference();
+    const translationMatches =
+      !viewerLanguage || viewerLanguage === 'en' || comment.translation_language === viewerLanguage;
+    const shouldRefreshForTranslation = viewerLanguage !== 'en' && !translationMatches;
     const wasLoaded = store.loaded;
     appendCommentRecord(postId, comment);
+    if (shouldRefreshForTranslation) {
+      store.loaded = false;
+    }
     if (wasLoaded) {
       document.querySelectorAll(`[data-role="comment-panel"][data-post-id="${postId}"]`).forEach(panel => {
         const list = panel.querySelector('[data-role="comment-list"]');
-        renderCommentList(postId, store.items, list);
+        if (shouldRefreshForTranslation) {
+          loadCommentsForPost(postId, panel, { forceRefresh: true });
+        } else {
+          renderCommentList(postId, store.items, list);
+        }
       });
     }
     if (payload.counts) {
@@ -5088,7 +5286,14 @@
         </div>
         ${followButtonMarkup}
       </header>
-      <p class="mt-4 whitespace-pre-line text-sm text-slate-200" data-role="post-caption"></p>
+      <div class="mt-4 space-y-2" data-role="post-text">
+        <p class="whitespace-pre-line text-sm text-slate-200" data-role="post-caption"></p>
+        <div data-role="post-translation-wrapper" class="hidden rounded-2xl border border-indigo-500/30 bg-indigo-500/5 px-3 py-2">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-indigo-200" data-role="post-translation-label">Translated</p>
+          <p class="mt-1 whitespace-pre-line text-sm text-slate-50" data-role="post-translation"></p>
+          <p class="mt-1 text-[11px] text-slate-400">Usernames stay as-is.</p>
+        </div>
+      </div>
       ${mediaSection}
       <footer class="mt-6 flex flex-wrap items-center gap-3 text-sm text-slate-400">
         <button
@@ -5136,8 +5341,28 @@
     const authorNode = el.querySelector('[data-role="post-author"]');
     attachProfileNavigation(authorNode, { username: normalizedPostUsername || post.username, userId: post.user_id });
     const captionNode = el.querySelector('[data-role="post-caption"]');
+    const translationWrapper = el.querySelector('[data-role="post-translation-wrapper"]');
+    const translationNode = el.querySelector('[data-role="post-translation"]');
+    const translationLabel = el.querySelector('[data-role="post-translation-label"]');
+    const viewerLanguage = getLanguagePreference();
     if (captionNode) {
       renderTextWithMentions(captionNode, post.caption || '');
+      const hasTranslation =
+        post.translated_caption &&
+        post.translation_language &&
+        post.translation_language === viewerLanguage &&
+        viewerLanguage !== 'en';
+      if (hasTranslation && translationWrapper && translationNode && translationLabel) {
+        translationLabel.textContent = `Translated to ${getLanguageLabel(post.translation_language)}`;
+        renderTextWithMentions(translationNode, post.translated_caption || '');
+        translationWrapper.classList.remove('hidden');
+        captionNode.classList.remove('text-slate-200');
+        captionNode.classList.add('text-slate-400');
+      } else if (translationWrapper) {
+        translationWrapper.classList.add('hidden');
+        captionNode.classList.remove('text-slate-400');
+        captionNode.classList.add('text-slate-200');
+      }
     }
     const followButton = el.querySelector('[data-role="follow-button"]');
     if (followButton) {
@@ -8800,6 +9025,26 @@
     if (!data) return;
     state.settingsPage.data = data;
 
+    const nextLanguage = data.language_preference || 'en';
+    setLanguagePreference(nextLanguage);
+
+    const languageSelect = document.getElementById('settings-language');
+    if (languageSelect) {
+      const options = data.language_options && typeof data.language_options === 'object' ? data.language_options : {};
+      languageSelect.innerHTML = '';
+      const defaultOption = document.createElement('option');
+      defaultOption.value = 'en';
+      defaultOption.textContent = 'Original (English)';
+      languageSelect.appendChild(defaultOption);
+      Object.entries(options).forEach(([code, label]) => {
+        const option = document.createElement('option');
+        option.value = code;
+        option.textContent = label;
+        languageSelect.appendChild(option);
+      });
+      languageSelect.value = nextLanguage;
+    }
+
     const nameInput = document.getElementById('settings-name');
     if (nameInput) nameInput.value = data.display_name || '';
 
@@ -8912,6 +9157,30 @@
     checkbox.addEventListener('change', () => handlePreferenceToggle(checkbox, field));
   }
 
+  async function handleLanguagePreferenceUpdate(select) {
+    if (!select) return;
+    const next = select.value || 'en';
+    toggleInteractiveState(select, true);
+    try {
+      const updated = await apiFetch('/settings/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify({ language_preference: next })
+      });
+      hydrateSettings(updated);
+      showToast('Language preference updated.', 'success');
+      if (document.getElementById('feed-list')) {
+        loadFeed({ forceRefresh: true, silent: true }).catch(error => {
+          console.warn('[settings] feed reload after language change failed', error);
+        });
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to update language.', 'error');
+      select.value = state.settingsPage.languagePreference || getLanguagePreference();
+    } finally {
+      toggleInteractiveState(select, false);
+    }
+  }
+
   function bindSettingsEvents() {
     const logoutBtn = document.getElementById('settings-logout');
     if (logoutBtn && logoutBtn.dataset.bound !== 'true') {
@@ -8943,6 +9212,12 @@
     bindPreferenceToggle('settings-pref-email-dm', 'email_dm_notifications');
     bindPreferenceToggle('settings-pref-friend-requests', 'allow_friend_requests');
     bindPreferenceToggle('settings-pref-follower-dms', 'dm_followers_only');
+
+    const languageSelect = document.getElementById('settings-language');
+    if (languageSelect && languageSelect.dataset.bound !== 'true') {
+      languageSelect.dataset.bound = 'true';
+      languageSelect.addEventListener('change', () => handleLanguagePreferenceUpdate(languageSelect));
+    }
 
     const verifyBtn = document.getElementById('settings-verify-email');
     if (verifyBtn && verifyBtn.dataset.bound !== 'true') {

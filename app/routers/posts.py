@@ -6,7 +6,7 @@ import logging
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -41,15 +41,19 @@ from ..services import (
 from ..services.media_crypto import reveal_media_value
 from ..services.realtime import feed_updates_manager
 from ..services.moderation_service import ModerationResult, moderate_text
+from ..services.translation_service import resolve_target_language, translate_text, SupportedLang
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 logger = logging.getLogger(__name__)
 
 
-def _serialize_post_model(post) -> PostResponse:
+def _serialize_post_model(post, target_language: SupportedLang | None = None) -> PostResponse:
     response = PostResponse.model_validate(post)
     response.media_url = reveal_media_value(response.media_url)
+    if target_language is not None:
+        response.translated_caption = translate_text(response.caption or "", target_language)
+        response.translation_language = target_language
     return response
 
 
@@ -172,6 +176,8 @@ async def create_post_endpoint(
         file=file,
     )
 
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None))
+
     await _safe_feed_broadcast(
         {
             "type": "post_created",
@@ -183,7 +189,7 @@ async def create_post_endpoint(
 
     _spawn_ai_reply_for_post(post_id=post.id, actor_id=current_user.id)
 
-    return _serialize_post_model(post)
+    return _serialize_post_model(post, target_language)
 
 
 @router.patch("/{post_id}", response_model=PostResponse)
@@ -196,6 +202,7 @@ async def update_post_endpoint(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PostResponse:
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None))
     post = await update_post_record(
         db,
         post_id=post_id,
@@ -206,16 +213,22 @@ async def update_post_endpoint(
         file=file,
         remove_media=remove_media,
     )
-    return _serialize_post_model(post)
+    return _serialize_post_model(post, target_language)
 
 
 @router.get("/feed", response_model=PostFeedResponse)
 async def feed_endpoint(
     db: Session = Depends(get_session),
+    hashtag: str | None = Query(None, min_length=1, description="Optional hashtag filter without the #"),
     current_user: User | None = Depends(get_optional_user),
 ) -> PostFeedResponse:
     viewer_id = current_user.id if current_user else None
-    posts = [PostResponse.model_validate(item) for item in list_feed_records(db, viewer_id=viewer_id)]
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None) if current_user else None)
+    normalized_tag = hashtag.strip().lstrip("#") if hashtag else None
+    posts = [
+        PostResponse.model_validate(item)
+        for item in list_feed_records(db, viewer_id=viewer_id, hashtag=normalized_tag, target_language=target_language)
+    ]
     return PostFeedResponse(items=posts)
 
 
@@ -231,9 +244,10 @@ async def posts_by_user_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     viewer_id = current_user.id if current_user else None
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None) if current_user else None)
     posts = [
         PostResponse.model_validate(item)
-        for item in list_feed_records(db, viewer_id=viewer_id, author_id=user.id)
+        for item in list_feed_records(db, viewer_id=viewer_id, author_id=user.id, target_language=target_language)
     ]
     return PostFeedResponse(items=posts)
 
@@ -286,8 +300,10 @@ async def remove_dislike_endpoint(
 async def list_post_comments_endpoint(
     post_id: UUID,
     db: Session = Depends(get_session),
+    current_user: User | None = Depends(get_optional_user),
 ) -> PostCommentListResponse:
-    items = list_post_comments(db, post_id=post_id)
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None) if current_user else None)
+    items = list_post_comments(db, post_id=post_id, target_language=target_language)
     return PostCommentListResponse(items=[PostCommentResponse(**item) for item in items])
 
 
@@ -298,12 +314,14 @@ async def create_post_comment_endpoint(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PostCommentResponse:
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None))
     comment = create_post_comment(
         db,
         post_id=post_id,
         author=current_user,
         content=payload.content,
         parent_id=payload.parent_id,
+        target_language=target_language,
     )
     snapshot = get_post_engagement_snapshot(db, post_id=post_id, viewer_id=current_user.id)
     await _broadcast_comment_created(comment, snapshot)
@@ -320,12 +338,14 @@ async def update_post_comment_endpoint(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PostCommentResponse:
+    target_language = resolve_target_language(getattr(current_user, "language_preference", None))
     comment = update_post_comment(
         db,
         comment_id=comment_id,
         requester_id=current_user.id,
         requester_role=getattr(current_user, "role", None),
         content=payload.content,
+        target_language=target_language,
     )
     if comment.get("post_id") != post_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Comment does not belong to post")
