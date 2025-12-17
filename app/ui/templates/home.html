@@ -113,7 +113,7 @@
                 </div>
             </div>
             <div id="feed-loading" class="mt-6">{{ components.feedback.loading_spinner(label=t("home.feed.loading", "Fetching posts")) | safe }}</div>
-            <div id="feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+            <div id="feed-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-6 text-center text-sm text-slate-400 sm:p-10">
                 {{ t("home.feed.empty", "No posts yet. Be the first to kick off the conversation!") }}
             </div>
             <div id="feed-list" class="mt-6 grid gap-6"></div>

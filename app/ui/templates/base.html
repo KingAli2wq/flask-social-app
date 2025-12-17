@@ -2,7 +2,7 @@
 <html lang="{{ locale }}" class="h-full dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{{ app_name }}{% if page_title %} • {{ page_title }}{% endif %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,6 +21,7 @@
             }
         }
     </script>
+    <link rel="stylesheet" href="/assets/css/app.css">
     <style>
         html { min-height: 100%; }
         body {
@@ -417,6 +418,33 @@
                     return;
                 }
 
+                const backdrop = panel.querySelector('[data-mobile-nav-backdrop]');
+                const drawer = panel.querySelector('[data-mobile-nav-drawer]') || panel;
+
+                const focusableSelector = [
+                    'a[href]',
+                    'button:not([disabled])',
+                    'input:not([disabled])',
+                    'select:not([disabled])',
+                    'textarea:not([disabled])',
+                    '[tabindex]:not([tabindex="-1"])'
+                ].join(',');
+
+                const getFocusable = (root) => {
+                    if (!root) return [];
+                    return Array.from(root.querySelectorAll(focusableSelector)).filter(el => {
+                        if (!(el instanceof HTMLElement)) return false;
+                        if (el.hasAttribute('disabled')) return false;
+                        if (el.getAttribute('aria-hidden') === 'true') return false;
+                        return el.offsetParent !== null;
+                    });
+                };
+
+                let releaseTrap = null;
+                let lastFocused = null;
+                let prevBodyOverflow = '';
+                let prevHtmlOverflow = '';
+
                 // Mirror the primary nav toggle behaviour so mobile users can always navigate.
                 const label = toggle.querySelector('[data-mobile-nav-label]');
                 const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
@@ -442,16 +470,79 @@
                         openIcon.classList.toggle('hidden', next);
                         closeIcon.classList.toggle('hidden', !next);
                     }
+
+                    if (next) {
+                        lastFocused = document.activeElement;
+                        prevBodyOverflow = document.body.style.overflow;
+                        prevHtmlOverflow = document.documentElement.style.overflow;
+                        document.body.style.overflow = 'hidden';
+                        document.documentElement.style.overflow = 'hidden';
+
+                        if (typeof releaseTrap === 'function') {
+                            try { releaseTrap(); } catch (_) {}
+                        }
+
+                        const onKeyDown = (event) => {
+                            if (event.key !== 'Tab') return;
+                            const focusables = getFocusable(drawer);
+                            if (!focusables.length) {
+                                event.preventDefault();
+                                if (drawer && drawer.focus) drawer.focus({ preventScroll: true });
+                                return;
+                            }
+                            const active = document.activeElement;
+                            const idx = focusables.indexOf(active);
+                            const back = event.shiftKey;
+                            let nextIdx;
+                            if (back) {
+                                nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
+                            } else {
+                                nextIdx = idx === -1 || idx >= focusables.length - 1 ? 0 : idx + 1;
+                            }
+                            event.preventDefault();
+                            focusables[nextIdx].focus({ preventScroll: true });
+                        };
+
+                        drawer.addEventListener('keydown', onKeyDown);
+                        releaseTrap = () => drawer.removeEventListener('keydown', onKeyDown);
+
+                        const first = getFocusable(drawer)[0] || drawer;
+                        if (first && first.focus) {
+                            try { first.focus({ preventScroll: true }); } catch (_) {}
+                        }
+                    } else {
+                        if (typeof releaseTrap === 'function') {
+                            try { releaseTrap(); } catch (_) {}
+                        }
+                        releaseTrap = null;
+                        document.body.style.overflow = prevBodyOverflow || '';
+                        document.documentElement.style.overflow = prevHtmlOverflow || '';
+                        prevBodyOverflow = '';
+                        prevHtmlOverflow = '';
+                        if (lastFocused && lastFocused.focus) {
+                            try { lastFocused.focus({ preventScroll: true }); } catch (_) {}
+                        }
+                        lastFocused = null;
+                    }
                 };
 
                 const handleDocumentClick = event => {
                     if (toggle.dataset.open !== 'true') {
                         return;
                     }
-                    if (panel.contains(event.target) || toggle.contains(event.target)) {
+                    if (toggle.contains(event.target)) {
                         return;
                     }
-                    setState(false);
+                    if (backdrop && backdrop.contains(event.target)) {
+                        setState(false);
+                        return;
+                    }
+                    if (drawer && drawer.contains(event.target)) {
+                        return;
+                    }
+                    if (panel.contains(event.target)) {
+                        setState(false);
+                    }
                 };
 
                 const handleKeydown = event => {

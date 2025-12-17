@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="card-surface rounded-3xl bg-slate-900/80 p-8 shadow-xl shadow-black/20">
+<section class="card-surface rounded-3xl bg-slate-900/80 p-5 shadow-xl shadow-black/20 sm:p-8">
     <header class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
             <h1 class="text-lg font-semibold text-white">{{ t("notifications.title", "Notifications") }}</h1>
@@ -14,7 +14,7 @@
     </header>
     <div id="notifications-loading" class="mt-6">{{ components.feedback.loading_spinner(label=t("notifications.loading", "Loading notifications")) | safe }}</div>
     <ul id="notifications-list" class="mt-6 grid gap-4"></ul>
-    <div id="notifications-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-10 text-center text-sm text-slate-400">
+    <div id="notifications-empty" class="mt-6 hidden rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/50 p-6 text-center text-sm text-slate-400 sm:p-10">
         {{ t("notifications.empty", "You're all caught up. Come back later for new updates.") }}
     </div>
 </section>

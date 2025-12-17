@@ -1,0 +1,52 @@
+/* Shared responsive/mobile baseline utilities.
+   Keep this file layout/behavior-only (no new colors/themes). */
+
+:root {
+  --app-max-width: 80rem; /* ~1280px */
+  --app-gutter-mobile: 1rem; /* 16px */
+  --app-gutter-desktop: 1.5rem; /* 24px */
+}
+
+/* Prevent flex/grid children from forcing horizontal overflow. */
+* {
+  min-width: 0;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+/* Ensure media never overflows its container. */
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+/* Utility: aggressive wrapping for long URLs/tokens. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Utility: safe horizontal scrolling for wide content (tables, code, etc.). */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Tap target helper for icon-only controls. */
+.tap-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+@media (max-width: 640px) {
+  /* Avoid iOS zoom-on-focus by ensuring >= 16px inputs. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

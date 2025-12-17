@@ -457,6 +457,62 @@
       .replace(/'/g, '&#039;');
   }
 
+  function getFocusableElements(container) {
+    if (!container) return [];
+    const selector = [
+      'a[href]',
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])'
+    ].join(',');
+    return Array.from(container.querySelectorAll(selector)).filter(el => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el.hasAttribute('disabled')) return false;
+      if (el.getAttribute('aria-hidden') === 'true') return false;
+      return el.offsetParent !== null;
+    });
+  }
+
+  function trapFocus(container, options = {}) {
+    const { initialFocus } = options;
+    if (!container) return () => {};
+    const root = container instanceof HTMLElement ? container : null;
+    if (!root) return () => {};
+
+    const focusTarget = initialFocus || getFocusableElements(root)[0] || root;
+    try {
+      focusTarget.focus({ preventScroll: true });
+    } catch {
+      // ignore
+    }
+
+    const onKeyDown = event => {
+      if (event.key !== 'Tab') return;
+      const focusables = getFocusableElements(root);
+      if (!focusables.length) {
+        event.preventDefault();
+        root.focus({ preventScroll: true });
+        return;
+      }
+      const active = document.activeElement;
+      const currentIndex = focusables.indexOf(active);
+      const goingBack = event.shiftKey;
+      let nextIndex;
+      if (goingBack) {
+        nextIndex = currentIndex <= 0 ? focusables.length - 1 : currentIndex - 1;
+      } else {
+        nextIndex = currentIndex === -1 || currentIndex >= focusables.length - 1 ? 0 : currentIndex + 1;
+      }
+      event.preventDefault();
+      focusables[nextIndex].focus({ preventScroll: true });
+    };
+
+    root.addEventListener('keydown', onKeyDown);
+    return () => root.removeEventListener('keydown', onKeyDown);
+  }
+
   function getAuth() {
     return {
       token: localStorage.getItem(TOKEN_KEY),
@@ -1087,13 +1143,14 @@
     const label = toggle.querySelector('[data-mobile-nav-label]');
     const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
     const closeIcon = toggle.querySelector('[data-mobile-nav-icon="close"]');
+    const backdrop = panel.querySelector('[data-mobile-nav-backdrop]');
+    const drawer = panel.querySelector('[data-mobile-nav-drawer]') || panel;
+
+    let releaseFocusTrap = null;
+    let lastFocused = null;
 
     const setState = next => {
-      if (next) {
-        panel.classList.remove('hidden');
-      } else {
-        panel.classList.add('hidden');
-      }
+      panel.classList.toggle('hidden', !next);
       toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
       if (label) {
         label.textContent = next ? 'Close' : 'Menu';
@@ -1103,11 +1160,45 @@
         closeIcon.classList.toggle('hidden', !next);
       }
       toggle.dataset.open = next ? 'true' : 'false';
+
+      if (next) {
+        lastFocused = document.activeElement;
+        lockBodyScroll();
+        if (typeof releaseFocusTrap === 'function') {
+          try {
+            releaseFocusTrap();
+          } catch {
+            // ignore
+          }
+        }
+        releaseFocusTrap = trapFocus(drawer, {
+          initialFocus: getFocusableElements(drawer)[0] || drawer,
+        });
+      } else {
+        if (typeof releaseFocusTrap === 'function') {
+          try {
+            releaseFocusTrap();
+          } catch {
+            // ignore
+          }
+        }
+        releaseFocusTrap = null;
+        unlockBodyScroll();
+        if (lastFocused && typeof lastFocused.focus === 'function') {
+          try {
+            lastFocused.focus({ preventScroll: true });
+          } catch {
+            // ignore
+          }
+        }
+        lastFocused = null;
+      }
     };
 
     setState(false);
 
-    toggle.addEventListener('click', () => {
+    toggle.addEventListener('click', event => {
+      event.preventDefault();
       const isOpen = toggle.dataset.open === 'true';
       setState(!isOpen);
     });
@@ -1124,10 +1215,19 @@
 
     document.addEventListener('click', event => {
       if (toggle.dataset.open !== 'true') return;
-      if (panel.contains(event.target) || toggle.contains(event.target)) {
+      if (toggle.contains(event.target)) {
         return;
       }
-      setState(false);
+      if (backdrop && backdrop.contains(event.target)) {
+        setState(false);
+        return;
+      }
+      if (drawer && drawer.contains(event.target)) {
+        return;
+      }
+      if (panel.contains(event.target)) {
+        setState(false);
+      }
     });
 
     window.addEventListener('resize', () => {

@@ -103,8 +103,21 @@ def navbar(*, active: str | None = None, t=None) -> Markup:
                 </div>
                 <nav class=\"hidden w-full items-center gap-1 md:flex md:justify-center\">{desktop_links}</nav>
             </div>
-            <div id=\"mobile-nav-panel\" class=\"hidden border-t border-slate-800/60 bg-slate-950/95 px-4 py-4 shadow-xl shadow-black/30 md:hidden\">
-                <nav class=\"flex flex-col gap-2\">{mobile_links}</nav>
+            <div
+                id=\"mobile-nav-panel\"
+                class=\"hidden fixed inset-0 z-50 md:hidden\"
+                role=\"dialog\"
+                aria-modal=\"true\"
+                aria-label=\"Mobile navigation\"
+            >
+                <div data-mobile-nav-backdrop class=\"absolute inset-0 bg-black/60 backdrop-blur-sm\"></div>
+                <div
+                    data-mobile-nav-drawer
+                    tabindex=\"-1\"
+                    class=\"absolute right-0 top-0 h-full w-[min(22rem,88vw)] overflow-y-auto border-l border-slate-800/70 bg-slate-950/95 px-4 py-5 shadow-2xl shadow-black/50\"
+                >
+                    <nav class=\"flex flex-col gap-2\">{mobile_links}</nav>
+                </div>
             </div>
         </header>
         """

@@ -1,7 +1,6 @@
 """Lightweight translation service built on easygoogletranslate with caching."""
 from __future__ import annotations
 
-import hashlib
 import logging
 from functools import lru_cache
 from typing import Any, Literal, cast
@@ -12,6 +11,8 @@ try:
     from easygoogletranslate import EasyGoogleTranslate as _EasyGoogleTranslateImpl
 except ImportError:  # pragma: no cover - optional runtime dependency
     _EasyGoogleTranslateImpl = None
+
+_HAS_EASYGOOGLETRANSLATE = _EasyGoogleTranslateImpl is not None
 
 if _EasyGoogleTranslateImpl is None:
     class _FallbackEasyGoogleTranslate:  # type: ignore[misc]
@@ -27,12 +28,6 @@ logger = logging.getLogger(__name__)
 
 SupportedLang = Literal["zh-CN", "fr-CA", "fa"]
 DEFAULT_LANGUAGE = "en"
-
-_TRANSLATOR: Any = EasyGoogleTranslate(
-    source_language="auto",
-    target_language="en",
-    timeout=10,
-)
 
 _LANGUAGE_NAMES: dict[SupportedLang, str] = {
     "zh-CN": "Chinese (China)",
@@ -69,17 +64,19 @@ def resolve_target_language(preference: str | None) -> SupportedLang | None:
     return cast(SupportedLang, normalized)
 
 
-def _cache_key(text: str, target_language: str) -> str:
-    digest = hashlib.sha256()
-    digest.update(target_language.encode("utf-8", "ignore"))
-    digest.update(b"|")
-    digest.update(text.encode("utf-8", "ignore"))
-    return digest.hexdigest()
+@lru_cache(maxsize=1)
+def _warn_missing_dependency() -> None:
+    logger.warning("Translation disabled: easygoogletranslate is not installed")
+
+
+@lru_cache(maxsize=16)
+def _get_translator(target_language: str) -> Any:
+    return EasyGoogleTranslate(source_language="auto", target_language=target_language, timeout=10)
 
 
 @lru_cache(maxsize=1024)
 def _translate_cached(text: str, target_language: str) -> str:
-    translator: Any = EasyGoogleTranslate(source_language="auto", target_language=target_language, timeout=10)
+    translator: Any = _get_translator(target_language)
     return translator.translate(text)
 
 
@@ -88,6 +85,11 @@ def translate_text(text: str, target_language: SupportedLang) -> str:
         return ""
     if target_language not in _LANGUAGE_NAMES:
         raise ValueError(f"Unsupported language: {target_language}")
+
+    if not _HAS_EASYGOOGLETRANSLATE:
+        _warn_missing_dependency()
+        return text
+
     try:
         return _translate_cached(text, target_language)
     except Exception:  # pragma: no cover - external service
