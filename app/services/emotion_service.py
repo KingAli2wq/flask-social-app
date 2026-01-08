@@ -7,9 +7,18 @@ import threading
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-import torch
-from torch.nn import functional as F
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+try:
+    import torch
+    from torch.nn import functional as F
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+    _EMOTION_DEPS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional heavy deps
+    torch = None  # type: ignore[assignment]
+    F = None  # type: ignore[assignment]
+    AutoModelForSequenceClassification = None  # type: ignore[assignment]
+    AutoTokenizer = None  # type: ignore[assignment]
+    _EMOTION_DEPS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +43,8 @@ class EmotionPrediction:
 
 
 def _resolve_device() -> torch.device:
+    if not _EMOTION_DEPS_AVAILABLE or torch is None:
+        raise EmotionServiceError("Emotion detection is unavailable (missing torch/transformers)")
     if torch.cuda.is_available():
         return torch.device("cuda")
     try:  # pragma: no cover - optional backend
@@ -45,6 +56,9 @@ def _resolve_device() -> torch.device:
 
 
 def _load_artifacts() -> tuple[AutoTokenizer, AutoModelForSequenceClassification, torch.device]:
+    if not _EMOTION_DEPS_AVAILABLE or torch is None or AutoTokenizer is None or AutoModelForSequenceClassification is None:
+        raise EmotionServiceError("Emotion detection is unavailable (missing torch/transformers)")
+
     global _tokenizer, _model, _device
     if _tokenizer is not None and _model is not None and _device is not None:
         return _tokenizer, _model, _device
@@ -70,6 +84,9 @@ def detect_emotions(
     min_score: float | None = None,
 ) -> list[EmotionPrediction]:
     """Return the dominant emotions for the provided text ordered by probability."""
+
+    if not _EMOTION_DEPS_AVAILABLE or torch is None or F is None:
+        raise EmotionServiceError("Emotion detection is unavailable (missing torch/transformers)")
 
     cleaned = (text or "").strip()
     if not cleaned:

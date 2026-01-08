@@ -528,7 +528,16 @@ def delete_old_media(db: Session, *, older_than: timedelta | None = None) -> int
     """Remove media metadata records older than the provided delta (default 2 days)."""
 
     cutoff = datetime.now(timezone.utc) - (older_than or timedelta(days=2))
-    stmt = delete(MediaAsset).where(MediaAsset.created_at < cutoff).returning(MediaAsset.id)
+    # Never delete avatar/profile images as part of generic age-based pruning.
+    # Avatar assets are long-lived and referenced indirectly via User.avatar_url.
+    stmt = (
+        delete(MediaAsset)
+        .where(
+            MediaAsset.created_at < cutoff,
+            or_(MediaAsset.folder.is_(None), MediaAsset.folder != "avatars"),
+        )
+        .returning(MediaAsset.id)
+    )
     try:
         result = db.execute(stmt)
         removed = result.fetchall()

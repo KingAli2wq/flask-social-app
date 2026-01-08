@@ -60,12 +60,12 @@ async def upload_my_avatar(
     db: Session = Depends(get_session),
 ):
     """
-    Uploads a new avatar to Spaces under /media/.
+    Uploads a new avatar to Spaces under /avatars/.
     Returns the URL so the front-end can PATCH /profiles/me with avatar_url.
     """
     upload_result = await upload_file_to_spaces(
         file,
-        folder="media",              # <<<<<<<< FIX: FORCE MEDIA FOLDER
+        folder="avatars",
         db=db,
         user_id=cast(UUID, current_user.id),
     )

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Iterator, cast
 from uuid import UUID, uuid4
@@ -18,7 +19,7 @@ os.environ.setdefault("DISABLE_CLEANUP", "true")
 from app.database import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import MediaAsset, Post, User  # noqa: E402
-from app.services import post_service, spaces_service  # noqa: E402
+from app.services import delete_old_media, post_service, spaces_service  # noqa: E402
 from app.services.spaces_service import SpacesUploadResult  # noqa: E402
 from app.services.media_crypto import reveal_media_value  # noqa: E402
 
@@ -180,3 +181,35 @@ def test_reuse_existing_media_asset(authed_client):
     payload = response.json()
     assert payload["media_asset_id"] == str(asset.id)
     assert payload["media_url"] == reveal_media_value(asset.url)
+
+
+def test_delete_old_media_does_not_remove_avatars():
+    with SessionLocal() as session:
+        old_timestamp = datetime.now(timezone.utc) - timedelta(days=10)
+        avatar_asset = MediaAsset(
+            user_id=None,
+            key="avatars/test-avatar.png",
+            url="https://example.test/avatars/test-avatar.png",
+            bucket="bucket",
+            content_type="image/png",
+            folder="avatars",
+            created_at=old_timestamp,
+        )
+        other_asset = MediaAsset(
+            user_id=None,
+            key="media/test-media.png",
+            url="https://example.test/media/test-media.png",
+            bucket="bucket",
+            content_type="image/png",
+            folder="media",
+            created_at=old_timestamp,
+        )
+        session.add_all([avatar_asset, other_asset])
+        session.commit()
+
+        removed = delete_old_media(session, older_than=timedelta(days=2))
+        assert removed == 1
+
+        remaining_ids = {asset.id for asset in session.query(MediaAsset).all()}
+        assert avatar_asset.id in remaining_ids
+        assert other_asset.id not in remaining_ids
