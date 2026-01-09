@@ -1884,6 +1884,18 @@
       if (controller.elements.form) {
         controller.elements.form.addEventListener('submit', handleSocialAiSubmit);
       }
+      if (controller.elements.root && controller.elements.root.dataset.socialAiKeybound !== 'true') {
+        controller.elements.root.dataset.socialAiKeybound = 'true';
+        controller.elements.root.addEventListener(
+          'keydown',
+          event => {
+            if (!state.socialAi.open) return;
+            // Avoid key events leaking into underlying page handlers/composer.
+            event.stopPropagation();
+          },
+          true
+        );
+      }
       if (controller.elements.root) {
         controller.elements.root.addEventListener('click', event => {
           if (event.target === controller.elements.root) {
@@ -1975,6 +1987,17 @@
     lockBodyScroll();
     toggleSocialAiModeMenu(false);
     showSocialAiError('');
+
+    // If the feed composer (contenteditable) or another control is focused, blur it so
+    // typing doesn't continue to land in the underlying page when opening the overlay.
+    const previouslyFocused = document.activeElement;
+    if (previouslyFocused && previouslyFocused !== controller.elements.input && typeof previouslyFocused.blur === 'function') {
+      try {
+        previouslyFocused.blur();
+      } catch {
+        // ignore
+      }
+    }
     if (!controller.activeSessionId) {
       ensureActiveSocialAiSession().catch(() => {
         /* handled upstream */
@@ -1992,9 +2015,30 @@
       }, controller.keepAliveIntervalMs);
     }
     if (controller.elements.input) {
-      controller.elements.input.focus();
-      const value = controller.elements.input.value;
-      controller.elements.input.setSelectionRange(value.length, value.length);
+      const focusInput = () => {
+        if (!controller.open) return;
+        const input = controller.elements.input;
+        if (!input) return;
+        try {
+          input.focus();
+          const value = input.value || '';
+          if (typeof input.setSelectionRange === 'function') {
+            input.setSelectionRange(value.length, value.length);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      // Defer focus until after the overlay has been painted.
+      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(() => {
+          focusInput();
+          window.setTimeout(focusInput, 0);
+        });
+      } else {
+        window.setTimeout(focusInput, 0);
+      }
     }
     if (!controller.sessionsLoaded) {
       refreshSocialAiSessions();
