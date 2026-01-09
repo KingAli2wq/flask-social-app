@@ -153,8 +153,13 @@
             pointer-events: none;
             user-select: none;
         }
+        body[data-app-locked="true"] {
+            overflow: hidden;
+            overscroll-behavior: none;
+        }
         #app-lock-overlay {
             backdrop-filter: blur(8px);
+            pointer-events: auto;
         }
 
         @media (max-width: 640px) {
@@ -587,8 +592,6 @@
         })();
 
         (() => {
-            const LOCK_KEY = 'socialsphere:app-lock';
-            const REQUIRED_PASSWORD = '[*70bP+pi*X2.Y';
             const overlay = document.getElementById('app-lock-overlay');
             const form = document.getElementById('app-lock-form');
             const input = document.getElementById('app-lock-input');
@@ -598,43 +601,182 @@
                 return;
             }
 
+            let locked = false;
+            const backgroundNodes = () => Array.from(document.body.children).filter(node => node !== overlay);
+
+            const applyBackgroundInert = (isLocked) => {
+                for (const node of backgroundNodes()) {
+                    try {
+                        if (isLocked) {
+                            node.setAttribute('aria-hidden', 'true');
+                            node.inert = true;
+                        } else {
+                            node.removeAttribute('aria-hidden');
+                            node.inert = false;
+                        }
+                    } catch {
+                        // inert is not supported everywhere; pointer-events fallback still applies.
+                    }
+                }
+            };
+
+            const stopIfLocked = (event) => {
+                if (!locked) return;
+                if (overlay.contains(event.target)) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            };
+
+            const trapFocus = (event) => {
+                if (!locked) return;
+                if (overlay.contains(event.target)) return;
+                event.preventDefault();
+                window.setTimeout(() => input.focus(), 0);
+            };
+
+            const handleKeydownCapture = (event) => {
+                if (!locked) return;
+
+                // Keep focus inside the lock dialog.
+                if (event.key === 'Tab') {
+                    const focusables = overlay.querySelectorAll(
+                        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+                    );
+                    const list = Array.from(focusables).filter(el => !el.hasAttribute('disabled'));
+                    if (!list.length) {
+                        event.preventDefault();
+                        input.focus();
+                        return;
+                    }
+                    const current = document.activeElement;
+                    const first = list[0];
+                    const last = list[list.length - 1];
+                    if (event.shiftKey) {
+                        if (current === first || !overlay.contains(current)) {
+                            event.preventDefault();
+                            last.focus();
+                        }
+                    } else {
+                        if (current === last || !overlay.contains(current)) {
+                            event.preventDefault();
+                            first.focus();
+                        }
+                    }
+                    return;
+                }
+
+                // Prevent Enter/Space from triggering background actions.
+                if (!overlay.contains(event.target) && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            };
+
+            // Hard block for any click-through edge cases (capture phase).
+            document.addEventListener('pointerdown', stopIfLocked, true);
+            document.addEventListener('click', stopIfLocked, true);
+            document.addEventListener('mousedown', stopIfLocked, true);
+            document.addEventListener('touchstart', stopIfLocked, true);
+            document.addEventListener('wheel', stopIfLocked, { capture: true, passive: false });
+            document.addEventListener('keydown', handleKeydownCapture, true);
+            document.addEventListener('focusin', trapFocus, true);
+
             const unlock = () => {
+                locked = false;
                 overlay.classList.add('hidden');
                 overlay.classList.remove('flex');
                 document.body.dataset.appLocked = 'false';
+                applyBackgroundInert(false);
             };
 
             const showLock = () => {
+                locked = true;
                 document.body.dataset.appLocked = 'true';
                 overlay.classList.remove('hidden');
                 overlay.classList.add('flex');
+                applyBackgroundInert(true);
                 window.setTimeout(() => input.focus(), 50);
             };
 
-            const alreadyUnlocked = sessionStorage.getItem(LOCK_KEY) === 'true';
-            if (alreadyUnlocked) {
-                unlock();
-                return;
-            }
+            const setErrorVisible = (visible) => {
+                if (!errorNode) return;
+                errorNode.classList.toggle('opacity-0', !visible);
+            };
 
-            showLock();
+            const fetchLockStatus = async () => {
+                try {
+                    const response = await fetch('/system/app-lock/status', {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        headers: { 'Accept': 'application/json' },
+                    });
+                    if (!response.ok) {
+                        return { enabled: true, unlocked: false };
+                    }
+                    const data = await response.json();
+                    return {
+                        enabled: Boolean(data && data.enabled),
+                        unlocked: Boolean(data && data.unlocked),
+                    };
+                } catch {
+                    return { enabled: true, unlocked: false };
+                }
+            };
+
+            (async () => {
+                const status = await fetchLockStatus();
+                // If the feature is disabled on the backend, don't block the UI.
+                if (!status.enabled) {
+                    unlock();
+                    return;
+                }
+                if (status.unlocked) {
+                    unlock();
+                    return;
+                }
+                showLock();
+            })();
 
             form.addEventListener('submit', event => {
                 event.preventDefault();
                 const provided = (input.value || '').trim();
-                if (provided === REQUIRED_PASSWORD) {
-                    sessionStorage.setItem(LOCK_KEY, 'true');
-                    if (errorNode) {
-                        errorNode.classList.add('opacity-0');
-                    }
-                    unlock();
+                if (!provided) {
+                    setErrorVisible(true);
+                    input.focus();
                     return;
                 }
-                input.value = '';
-                if (errorNode) {
-                    errorNode.classList.remove('opacity-0');
-                }
-                input.focus();
+
+                setErrorVisible(false);
+
+                fetch('/system/app-lock/unlock', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ password: provided }),
+                })
+                    .then(async (response) => {
+                        if (!response.ok) {
+                            throw new Error('unlock failed');
+                        }
+                        return response.json().catch(() => ({}));
+                    })
+                    .then((data) => {
+                        if (data && data.enabled === false) {
+                            // Backend has the feature disabled; treat as unlocked.
+                            unlock();
+                            return;
+                        }
+                        if (data && data.unlocked) {
+                            unlock();
+                            return;
+                        }
+                        throw new Error('unlock failed');
+                    })
+                    .catch(() => {
+                        input.value = '';
+                        setErrorVisible(true);
+                        input.focus();
+                    });
             });
         })();
     </script>

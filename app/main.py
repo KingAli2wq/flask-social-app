@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .database import create_session, init_db
-from .middleware import TermsAcceptanceMiddleware
+from .middleware import AppLockMiddleware, TermsAcceptanceMiddleware
 from .routers import (
     ai_router,
     ai_posts_router,
@@ -64,6 +64,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+app.add_middleware(
+    AppLockMiddleware,
+    exempt_paths=(
+        "/api",
+        "/health",
+        "/docs",
+        "/redoc",
+        "/openapi",
+        "/assets",
+        "/system/app-lock",
+    ),
 )
 
 app.add_middleware(

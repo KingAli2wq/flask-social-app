@@ -2660,7 +2660,7 @@
     initHashtagFilterFromUrl();
     bindHashtagSearchUI();
     bindHashtagLinks();
-    await Promise.allSettled([loadStories(), loadFeed(), loadTrendingTags()]);
+    await Promise.allSettled([loadStories(), loadFeed()]);
     await applyPendingNotificationTarget();
     setupComposer();
     initRealtimeUpdates();
@@ -4127,63 +4127,6 @@
       node.dataset.bound = 'true';
       node.addEventListener('click', () => navigateToHashtag(node.dataset.hashtagLink || node.textContent));
     });
-  }
-
-  function formatTrendCount(count) {
-    const value = Number(count) || 0;
-    if (value >= 1_000_000) {
-      const rounded = (value / 1_000_000).toFixed(1).replace(/\.0$/, '');
-      return `${rounded}M`;
-    }
-    if (value >= 1_000) {
-      const rounded = (value / 1_000).toFixed(1).replace(/\.0$/, '');
-      return `${rounded}K`;
-    }
-    return String(value);
-  }
-
-  async function loadTrendingTags() {
-    const list = document.getElementById('trends');
-    if (!list) return;
-    try {
-      const response = await apiFetch('/posts/trending-tags?limit=6&window_days=30');
-      const items = Array.isArray(response?.items) ? response.items : [];
-      list.textContent = '';
-
-      if (items.length === 0) {
-        const empty = document.createElement('li');
-        empty.className = 'text-slate-500';
-        empty.textContent = 'No tags yet';
-        list.appendChild(empty);
-        return;
-      }
-
-      items.forEach(item => {
-        const tag = sanitizeHashtag(item?.tag || '');
-        if (!tag) return;
-
-        const row = document.createElement('li');
-        row.className = 'flex items-center justify-between';
-
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.dataset.hashtagLink = `#${tag}`;
-        button.className = 'text-left text-indigo-200 transition hover:text-white';
-        button.textContent = `#${tag}`;
-
-        const count = document.createElement('span');
-        count.className = 'text-slate-500';
-        count.textContent = formatTrendCount(item?.count);
-
-        row.appendChild(button);
-        row.appendChild(count);
-        list.appendChild(row);
-      });
-
-      bindHashtagLinks();
-    } catch (error) {
-      console.warn('[trending] unable to load trending tags', error);
-    }
   }
 
   function computeFeedSignature(items) {
