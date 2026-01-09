@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="mx-auto w-full max-w-4xl">
+    <div class="card-surface rounded-[28px] border border-slate-800/70 bg-slate-950/80 p-8 shadow-2xl shadow-black/30">
+        <div class="space-y-2">
+            <p class="text-[11px] uppercase tracking-[0.35em] text-indigo-200/70">Rules</p>
+            <h1 class="text-3xl font-semibold text-white">Community Guidelines</h1>
+            <p class="text-sm text-slate-400">Last updated: {{ policy_last_updated }}</p>
+        </div>
+
+        <div class="prose prose-invert mt-8 max-w-none prose-headings:text-white prose-a:text-indigo-300">
+            <h2>Be respectful</h2>
+            <ul>
+                <li>No harassment, bullying, threats, or targeted abuse.</li>
+                <li>No hateful content or attacks based on protected characteristics.</li>
+                <li>Do not encourage self-harm or violence.</li>
+            </ul>
+
+            <h2>Keep it safe</h2>
+            <ul>
+                <li>No sexual exploitation or content involving minors.</li>
+                <li>No sharing private or identifying information about someone without permission (doxxing).</li>
+                <li>No explicit sexual content where it is not allowed by the product settings and local laws.</li>
+            </ul>
+
+            <h2>Be honest</h2>
+            <ul>
+                <li>No impersonation intended to mislead or defraud.</li>
+                <li>No scams, phishing, or attempts to steal accounts or money.</li>
+                <li>No spam or manipulation (mass posting, fake engagement, or coordinated abuse).</li>
+            </ul>
+
+            <h2>Content and moderation</h2>
+            <p>
+                We may remove content or restrict accounts that violate these rules.
+                Repeated or severe violations may result in suspension or permanent removal.
+            </p>
+
+            <h2>Reporting</h2>
+            <p>
+                If you see something that violates these guidelines, report it using the in-app tools where available.
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}

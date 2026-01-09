@@ -226,6 +226,16 @@
     <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
         {% block content %}{% endblock %}
     </main>
+    <footer class="border-t border-slate-800/60 bg-slate-950/70 backdrop-blur">
+        <div class="mx-auto flex w-full max-w-7xl flex-col gap-3 px-6 py-6 text-sm text-slate-400 md:flex-row md:items-center md:justify-between md:px-10">
+            <p class="text-xs">© {{ app_name }}. {# minimal footer #}</p>
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-semibold">
+                <a href="/terms" target="_blank" rel="noopener" class="text-indigo-300 hover:text-indigo-200">{{ t("footer.terms", "Terms") }}</a>
+                <a href="/privacy" class="text-indigo-300 hover:text-indigo-200">{{ t("footer.privacy", "Privacy") }}</a>
+                <a href="/community-guidelines" class="text-indigo-300 hover:text-indigo-200">{{ t("footer.guidelines", "Guidelines") }}</a>
+            </div>
+        </div>
+    </footer>
     <div
         id="terms-overlay"
         class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/85 px-4 py-6 backdrop-blur"

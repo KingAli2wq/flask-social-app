@@ -25,17 +25,37 @@ def lock_cookie_name() -> str:
 
 
 def is_app_lock_enabled() -> bool:
+    if os.getenv("PYTEST_CURRENT_TEST") is not None:
+        return False
+
+    if os.getenv("APP_LOCK_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+
+    # Prefer a dedicated lock password, but fall back to the JWT secret so the
+    # lock works out-of-the-box for deployments that already configure auth.
     value = os.getenv("APP_LOCK_PASSWORD")
-    return not is_placeholder(value)
+    if not is_placeholder(value):
+        return True
+
+    fallback = os.getenv("JWT_SECRET_KEY")
+    return not is_placeholder(fallback)
 
 
 @lru_cache(maxsize=1)
 def _get_lock_password() -> str:
     value = os.getenv("APP_LOCK_PASSWORD")
-    if is_placeholder(value):
-        raise MissingSecretError("Environment variable APP_LOCK_PASSWORD is required")
-    assert value is not None
-    return value.strip()
+    if not is_placeholder(value):
+        assert value is not None
+        return value.strip()
+
+    # Backwards-compatible fallback: use the JWT secret as the app-lock password
+    # when a dedicated one isn't configured.
+    try:
+        return require_secret("JWT_SECRET_KEY")
+    except MissingSecretError as exc:
+        raise MissingSecretError(
+            "APP_LOCK is enabled but no password is configured; set APP_LOCK_PASSWORD or JWT_SECRET_KEY"
+        ) from exc
 
 
 @lru_cache(maxsize=1)

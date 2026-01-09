@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="mx-auto w-full max-w-4xl">
+    <div class="card-surface rounded-[28px] border border-slate-800/70 bg-slate-950/80 p-8 shadow-2xl shadow-black/30">
+        <div class="space-y-2">
+            <p class="text-[11px] uppercase tracking-[0.35em] text-indigo-200/70">Policy</p>
+            <h1 class="text-3xl font-semibold text-white">Privacy Policy</h1>
+            <p class="text-sm text-slate-400">Last updated: {{ policy_last_updated }}</p>
+        </div>
+
+        <div class="prose prose-invert mt-8 max-w-none prose-headings:text-white prose-a:text-indigo-300">
+            <h2>What this covers</h2>
+            <p>
+                This Privacy Policy explains what information we collect, how we use it, and the choices you have when using SocialSphere.
+                This policy applies to the web app, our APIs, and any related services.
+            </p>
+
+            <h2>Information we collect</h2>
+            <ul>
+                <li><strong>Account information</strong> (such as username, email, and profile details you provide).</li>
+                <li><strong>Content you create</strong> (posts, captions, messages, uploads, and other submissions).</li>
+                <li><strong>Usage and device data</strong> (basic logs like timestamps, request metadata, and diagnostics to keep the service reliable).</li>
+            </ul>
+
+            <h2>How we use information</h2>
+            <ul>
+                <li>Provide and operate the app (authentication, delivering content, and maintaining features).</li>
+                <li>Protect safety and integrity (abuse prevention, moderation, and enforcing rules).</li>
+                <li>Improve reliability (debugging, performance monitoring, and quality improvements).</li>
+            </ul>
+
+            <h2>Sharing</h2>
+            <p>
+                We do not sell your personal information.
+                We may share information when required to operate the service (for example, infrastructure providers),
+                to comply with legal obligations, or to protect users and the platform.
+            </p>
+
+            <h2>Retention</h2>
+            <p>
+                We keep data for as long as needed to provide the service and for legitimate operational, security, and legal purposes.
+                You may delete content where the app provides that ability, and we may retain limited records for security and audit needs.
+            </p>
+
+            <h2>Your choices</h2>
+            <ul>
+                <li>Update your profile information in settings.</li>
+                <li>Control what you post and who can see it based on in-app visibility options (where available).</li>
+                <li>Contact us to request access, correction, or deletion when applicable.</li>
+            </ul>
+
+            <h2>Security</h2>
+            <p>
+                We use reasonable safeguards designed to protect information.
+                No system is perfectly secure, so please use a strong password and keep your credentials private.
+            </p>
+
+            <h2>Contact</h2>
+            <p>
+                Questions about privacy? Contact the operator of this deployment.
+            </p>
+        </div>
+    </div>
+</section>
+{% endblock %}
