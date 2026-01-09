@@ -59,6 +59,7 @@ _LEETSPEAK_TABLE = str.maketrans(
     }
 )
 _COMPACT_RE = re.compile(r"[^a-z0-9]+")
+_JOIN_SEPARATORS_BETWEEN_LETTERS_RE = re.compile(r"(?<=[a-z])[^a-z0-9\s]+(?=[a-z])")
 
 
 # TODO: Replace keyword heuristics with an ML-based moderation model when available.
@@ -173,6 +174,8 @@ def _strip_non_alnum(value: str) -> str:
 
 def _normalize_variants(text: str) -> tuple[str, str]:
     collapsed = text.translate(_LEETSPEAK_TABLE)
+    # Remove punctuation inserted between letters (e.g., "f.u.c.k" -> "fuck").
+    collapsed = _JOIN_SEPARATORS_BETWEEN_LETTERS_RE.sub("", collapsed)
     squashed = _strip_non_alnum(collapsed)
     return collapsed, squashed
 

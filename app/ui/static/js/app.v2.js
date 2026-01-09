@@ -3502,6 +3502,7 @@
     const selection = window.getSelection();
     if (!root || !selection || selection.rangeCount === 0) return 0;
     const range = selection.getRangeAt(0);
+    if (!root.contains(range.endContainer)) return 0;
     const pre = range.cloneRange();
     pre.selectNodeContents(root);
     pre.setEnd(range.endContainer, range.endOffset);
@@ -3539,6 +3540,15 @@
       selection.removeAllRanges();
       selection.addRange(fallback);
     }
+  }
+
+  function shouldScheduleSpellcheck(text, caretOffset) {
+    if (!text) return true;
+    const offset = Math.max(0, Math.min(Number(caretOffset) || 0, text.length));
+    if (offset === 0) return true;
+    const charBefore = text[offset - 1] || '';
+    // Be less strict while typing: only check after a word boundary.
+    return /[\s\n\r\t\u00a0]|[\.!\?,;:\)\]"']/.test(charBefore);
   }
 
   function updateSpellcheckStatus(message) {
@@ -3658,18 +3668,16 @@
     state.spellcheck.activeSpan = target;
   }
 
-  async function performSpellcheck(text, immediateId) {
+  async function performSpellcheck(text, requestId) {
     const store = state.spellcheck;
     if (!store.editor || !store.hiddenInput) return;
+    if (!requestId) return;
     if (!text.trim()) {
       store.misspellings = [];
       renderSpellcheckHighlights(text, []);
       updateSpellcheckStatus('');
       return;
     }
-
-    const requestId = immediateId ?? store.requestId + 1;
-    store.requestId = requestId;
     store.inFlight = true;
     updateSpellcheckStatus('Checking…');
 
@@ -3679,6 +3687,11 @@
         body: JSON.stringify({ text }),
       });
       if (store.requestId !== requestId) return;
+
+      // If the user kept typing while the request was in flight, do not overwrite the editor.
+      const currentText = normalizeEditorText(store.editor);
+      if (currentText !== text) return;
+
       const misspellings = Array.isArray(result?.misspellings) ? result.misspellings : [];
       store.misspellings = misspellings;
       renderSpellcheckHighlights(text, misspellings);
@@ -3697,16 +3710,38 @@
   function scheduleSpellcheck(immediate = false) {
     const store = state.spellcheck;
     if (!store.editor || !store.hiddenInput) return;
+
+     // IME / composition input should not be interrupted by DOM rewrites.
+    if (store.composing) return;
+
     const text = syncSpellcheckHidden();
+
+    if (!immediate) {
+      const caretOffset = getCaretOffset(store.editor);
+      if (!shouldScheduleSpellcheck(text, caretOffset)) {
+        // Still invalidate in-flight requests (handled below), but don't spam checks mid-word.
+        if (store.debounceHandle) {
+          window.clearTimeout(store.debounceHandle);
+          store.debounceHandle = null;
+        }
+        store.requestId = store.requestId + 1;
+        return;
+      }
+    }
+
+    // Invalidate any in-flight request as soon as the text changes.
+    const requestId = store.requestId + 1;
+    store.requestId = requestId;
+
     if (store.debounceHandle) {
       window.clearTimeout(store.debounceHandle);
       store.debounceHandle = null;
     }
     if (immediate) {
-      performSpellcheck(text);
+      performSpellcheck(text, requestId);
       return;
     }
-    store.debounceHandle = window.setTimeout(() => performSpellcheck(text), 500);
+    store.debounceHandle = window.setTimeout(() => performSpellcheck(text, requestId), 600);
   }
 
   function initComposerSpellcheck() {
@@ -3721,12 +3756,23 @@
     syncSpellcheckHidden();
     renderSpellcheckHighlights(state.spellcheck.hiddenInput.value, []);
 
+    state.spellcheck.composing = false;
+    editor.addEventListener('compositionstart', () => {
+      state.spellcheck.composing = true;
+      hideSpellTooltip();
+    });
+    editor.addEventListener('compositionend', () => {
+      state.spellcheck.composing = false;
+      scheduleSpellcheck();
+    });
+
     editor.addEventListener('input', () => {
       hideSpellTooltip();
       scheduleSpellcheck();
     });
     editor.addEventListener('blur', () => {
       syncSpellcheckHidden();
+      scheduleSpellcheck(true);
     });
     editor.addEventListener('click', event => {
       const span = event.target.closest('.spell-error');
