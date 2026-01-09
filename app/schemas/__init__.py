@@ -33,6 +33,8 @@ from .messages import (
 )
 from .notifications import NotificationListResponse, NotificationResponse, NotificationSummaryResponse
 from .posts import (
+    HashtagTrendItem,
+    HashtagTrendsResponse,
     PostCommentCreate,
     PostCommentListResponse,
     PostCommentUpdate,
@@ -135,6 +137,8 @@ __all__ = [
     "PostEngagementResponse",
     "PostFeedResponse",
     "PostResponse",
+    "HashtagTrendItem",
+    "HashtagTrendsResponse",
     "ProfileResponse",
     "ProfileUpdateRequest",
     "StoryCreate",

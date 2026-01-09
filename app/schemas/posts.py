@@ -48,6 +48,15 @@ class PostFeedResponse(BaseModel):
     items: list[PostResponse]
 
 
+class HashtagTrendItem(BaseModel):
+    tag: str = Field(..., min_length=1, max_length=60, description="Hashtag without leading #")
+    count: int = Field(..., ge=0, description="Number of posts containing the hashtag")
+
+
+class HashtagTrendsResponse(BaseModel):
+    items: list[HashtagTrendItem] = Field(default_factory=list)
+
+
 class PostEngagementResponse(BaseModel):
     """Like/comment counters used by interactive UI."""
 
@@ -94,6 +103,8 @@ __all__ = [
     "PostCreate",
     "PostResponse",
     "PostFeedResponse",
+    "HashtagTrendItem",
+    "HashtagTrendsResponse",
     "PostEngagementResponse",
     "PostCommentCreate",
     "PostCommentUpdate",

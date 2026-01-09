@@ -24,6 +24,51 @@ from .safety import enforce_safe_text
 logger = logging.getLogger(__name__)
 
 
+_HASHTAG_RE = re.compile(r"(?<!\w)#([a-zA-Z0-9_]{1,60})")
+
+
+def _extract_hashtags(text: str) -> set[str]:
+    if not text:
+        return set()
+    matches = _HASHTAG_RE.findall(text)
+    return {match.strip().lower() for match in matches if match and match.strip()}
+
+
+def list_trending_hashtags(
+    db: Session,
+    *,
+    limit: int = 5,
+    window_days: int = 30,
+    sample_size: int = 750,
+) -> list[dict[str, Any]]:
+    """Return the most-used hashtags in recent posts.
+
+    This is intentionally lightweight and database-agnostic: we pull recent captions
+    and count hashtag usage in Python. Each hashtag is counted at most once per post.
+    """
+
+    resolved_limit = max(1, min(int(limit) if limit else 5, 20))
+    resolved_window = max(1, min(int(window_days) if window_days else 30, 365))
+    resolved_sample = max(resolved_limit * 10, min(int(sample_size) if sample_size else 750, 3000))
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=resolved_window)
+
+    stmt = (
+        select(Post.caption)
+        .where(Post.created_at >= cutoff)
+        .order_by(Post.created_at.desc())
+        .limit(resolved_sample)
+    )
+    rows = db.execute(stmt).all()
+    counts: dict[str, int] = {}
+    for (caption,) in rows:
+        for tag in _extract_hashtags(cast(str | None, caption) or ""):
+            counts[tag] = counts.get(tag, 0) + 1
+
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return [{"tag": tag, "count": count} for tag, count in ranked[:resolved_limit]]
+
+
 def _normalize_avatar_url(raw: str | None) -> str | None:
     url = reveal_media_value(cast(str | None, raw))
     if not url:

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..database import create_session, get_session
 from ..models import Post, PostComment, User
 from ..schemas import (
+    HashtagTrendsResponse,
     PostCommentCreate,
     PostCommentUpdate,
     PostCommentListResponse,
@@ -34,6 +35,7 @@ from ..services import (
     respond_to_ai_mention_in_post,
     list_post_comments,
     list_feed_records,
+    list_trending_hashtags,
     set_post_dislike_state,
     set_post_like_state,
     update_post_record,
@@ -230,6 +232,16 @@ async def feed_endpoint(
         for item in list_feed_records(db, viewer_id=viewer_id, hashtag=normalized_tag, target_language=target_language)
     ]
     return PostFeedResponse(items=posts)
+
+
+@router.get("/trending-tags", response_model=HashtagTrendsResponse)
+async def trending_tags_endpoint(
+    db: Session = Depends(get_session),
+    limit: int = Query(6, ge=1, le=20, description="Number of tags to return"),
+    window_days: int = Query(30, ge=1, le=365, description="Lookback window in days"),
+) -> HashtagTrendsResponse:
+    items = list_trending_hashtags(db, limit=limit, window_days=window_days)
+    return HashtagTrendsResponse(items=items)
 
 
 @router.get("/by-user/{username}", response_model=PostFeedResponse)
