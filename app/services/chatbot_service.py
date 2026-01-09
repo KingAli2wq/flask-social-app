@@ -212,7 +212,10 @@ class SocialAIChatClient(LLMClient):
         self._warned_missing_token = False
 
     def _build_headers(self, allow_policy_override: bool) -> dict[str, str] | None:
-        if allow_policy_override and self._internal_token:
+        # Always attach the internal token header when configured.
+        # This is used both for privileged policy overrides and to authorize internal calls
+        # that must bypass the app lock middleware.
+        if self._internal_token:
             return {_INTERNAL_OVERRIDE_HEADER: self._internal_token}
         if allow_policy_override and not self._internal_token and not self._warned_missing_token:
             logger.warning(
@@ -255,12 +258,22 @@ class SocialAIChatClient(LLMClient):
             if status_code == status.HTTP_400_BAD_REQUEST:
                 detail = _policy_violation_detail(exc.response)
                 raise ChatbotPolicyError(detail=detail) from exc
+
+            body_preview = ""
+            try:
+                body_preview = ((exc.response.text if exc.response is not None else "") or "")[:200]
+            except Exception:
+                body_preview = ""
+
             logger.error(
-                "SocialAIChatClient HTTP status error | endpoint=%s status=%s timeout=%s",
+                "SocialAIChatClient HTTP status error | endpoint=%s status=%s timeout=%s body=%s",
                 self._endpoint,
                 status_code or "unknown",
                 OLLAMA_TIMEOUT,
+                body_preview,
             )
+            if status_code == status.HTTP_423_LOCKED:
+                raise ChatbotServiceError("Social AI is unavailable while the app lock is active") from exc
             raise ChatbotServiceError("Social AI request failed") from exc
         except httpx.HTTPError as exc:  # pragma: no cover - network failure path
             logger.error(

@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from time import perf_counter
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..database import get_session
@@ -20,6 +21,7 @@ from ..schemas.chatbot import (
     ChatbotSessionSummary,
 )
 from ..services import (
+    ChatbotServiceError,
     ChatbotTranscript,
     create_chatbot_session,
     delete_chatbot_session,
@@ -84,7 +86,21 @@ def create_chat_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
-    return _handle_prompt(payload, current_user=current_user, db=db)
+    try:
+        return _handle_prompt(payload, current_user=current_user, db=db)
+    except ChatbotServiceError as exc:
+        logger.exception(
+            "Social AI message create failed | user=%s session=%s persona=%s",
+            current_user.id,
+            payload.session_id,
+            payload.persona,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "Social AI is temporarily unavailable. Please try again in a moment.",
+            },
+        ) from exc
 
 
 @router.post("/messages/stream")
@@ -156,7 +172,21 @@ def run_test_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ) -> ChatbotSessionResponse:
-    return _handle_prompt(payload, current_user=current_user, db=db)
+    try:
+        return _handle_prompt(payload, current_user=current_user, db=db)
+    except ChatbotServiceError as exc:
+        logger.exception(
+            "Social AI test chat failed | user=%s session=%s persona=%s",
+            current_user.id,
+            payload.session_id,
+            payload.persona,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "message": "Social AI is temporarily unavailable. Please try again in a moment.",
+            },
+        ) from exc
 
 
 @router.get("/sessions", response_model=list[ChatbotSessionSummary])

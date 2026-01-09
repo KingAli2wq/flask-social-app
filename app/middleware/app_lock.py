@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import hmac
+import os
 
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -56,6 +58,34 @@ class AppLockMiddleware(BaseHTTPMiddleware):
             )
         )
 
+    def _should_allow_internal_ai_call(self, request: Request) -> bool:
+        """Allow internal server-to-server calls to /ai/* without requiring the app lock cookie.
+
+        This is needed because chatbot features call the /ai/chat proxy via HTTP from within
+        the same process, which does not carry browser cookies.
+        """
+
+        path = request.url.path
+        if not path.startswith("/ai"):
+            return False
+
+        client_host = getattr(request.client, "host", None)
+        if client_host in {"127.0.0.1", "::1"}:
+            return True
+
+        token = os.getenv("SOCIAL_AI_INTERNAL_TOKEN") or ""
+        if not token:
+            return False
+
+        header_value = request.headers.get("x-social-ai-internal") or ""
+        if not header_value:
+            return False
+
+        try:
+            return hmac.compare_digest(header_value, token)
+        except Exception:
+            return False
+
     async def dispatch(self, request: Request, call_next) -> Response:
         if not is_app_lock_enabled():
             return await call_next(request)
@@ -66,6 +96,10 @@ class AppLockMiddleware(BaseHTTPMiddleware):
 
         # Only gate API-style paths; UI can still render to show the lock overlay.
         if not self._is_api_path(path):
+            return await call_next(request)
+
+        # Allow internal /ai/* calls (chatbot services proxy through /ai/chat).
+        if self._should_allow_internal_ai_call(request):
             return await call_next(request)
 
         # Allow the unlock endpoints themselves.
