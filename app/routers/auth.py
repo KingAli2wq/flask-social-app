@@ -51,6 +51,21 @@ async def login_endpoint(
     user = authenticate_user(db, payload.username, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    banned_at = getattr(user, "banned_at", None)
+    banned_until = getattr(user, "banned_until", None)
+    if banned_at is not None:
+        now = datetime.now(timezone.utc)
+        if isinstance(banned_until, datetime) and banned_until.tzinfo is None:
+            banned_until = banned_until.replace(tzinfo=timezone.utc)
+        if banned_until is None or banned_until > now:
+            if banned_until is None:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is banned")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account is banned until {banned_until.isoformat()}",
+            )
+
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user_id=user.id, bio=user.bio, role=getattr(user, "role", None))
 

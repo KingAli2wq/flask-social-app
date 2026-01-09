@@ -70,6 +70,7 @@ from .message_service import (
     update_group_chat,
 )
 from .moderation_service import (
+    ban_moderation_user,
     delete_moderation_user,
     get_moderation_media_asset,
     get_moderation_post,
@@ -78,6 +79,7 @@ from .moderation_service import (
     list_moderation_posts,
     list_moderation_users,
     load_moderation_dashboard,
+    unban_moderation_user,
     update_moderation_user,
     update_user_role,
 )

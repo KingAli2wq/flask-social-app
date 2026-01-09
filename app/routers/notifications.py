@@ -1,6 +1,7 @@
 """Notification API routes."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
@@ -69,12 +70,26 @@ async def notification_summary_endpoint(
 async def notifications_socket(
     websocket: WebSocket,
     token: str = Query(..., alias="token"),
+    db: Session = Depends(get_session),
 ) -> None:
     try:
         user_id = decode_access_token(token)
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
+
+    user = db.get(User, user_id)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    banned_at = getattr(user, "banned_at", None)
+    banned_until = getattr(user, "banned_until", None)
+    if banned_at is not None:
+        now = datetime.now(timezone.utc)
+        if banned_until is None or banned_until > now:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     await notification_stream_manager.connect(str(user_id), websocket)
     await websocket.send_text(json.dumps({"type": "ready"}))

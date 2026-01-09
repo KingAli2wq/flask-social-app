@@ -17,6 +17,7 @@ from ..schemas import (
     ModerationPostList,
     ModerationPostUpdateRequest,
     ModerationRoleUpdateRequest,
+    ModerationUserBanRequest,
     ModerationUserDetail,
     ModerationUserList,
     ModerationUserSummary,
@@ -25,6 +26,7 @@ from ..schemas import (
     PostCommentUpdate,
 )
 from ..services import (
+    ban_moderation_user,
     delete_media_asset,
     delete_post_comment,
     delete_moderation_user,
@@ -38,6 +40,7 @@ from ..services import (
     load_moderation_dashboard,
     require_owner,
     require_roles,
+    unban_moderation_user,
     update_moderation_user,
     update_post_comment,
     update_post_record,
@@ -104,6 +107,25 @@ async def moderation_update_role_endpoint(
     current_user: User = Depends(require_owner()),
 ) -> ModerationUserSummary:
     return update_user_role(db, actor=current_user, target_user_id=user_id, new_role=payload.role)
+
+
+@router.post("/users/{user_id}/ban", response_model=ModerationUserDetail)
+async def moderation_user_ban_endpoint(
+    user_id: UUID,
+    payload: ModerationUserBanRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> ModerationUserDetail:
+    return ban_moderation_user(db, actor=current_user, user_id=user_id, payload=payload)
+
+
+@router.post("/users/{user_id}/unban", response_model=ModerationUserDetail)
+async def moderation_user_unban_endpoint(
+    user_id: UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> ModerationUserDetail:
+    return unban_moderation_user(db, actor=current_user, user_id=user_id)
 
 
 @router.get("/posts", response_model=ModerationPostList)

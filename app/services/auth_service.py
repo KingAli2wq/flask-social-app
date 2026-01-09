@@ -130,6 +130,37 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
     return user
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _ban_status(user: User) -> tuple[bool, datetime | None]:
+    banned_at = _as_utc(getattr(user, "banned_at", None))
+    if not banned_at:
+        return False, None
+    banned_until = _as_utc(getattr(user, "banned_until", None))
+    now = datetime.now(timezone.utc)
+    if banned_until is not None and banned_until <= now:
+        return False, banned_until
+    return True, banned_until
+
+
+def _raise_if_banned(user: User) -> None:
+    is_banned, banned_until = _ban_status(user)
+    if not is_banned:
+        return
+    if banned_until is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is banned")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Account is banned until {banned_until.isoformat()}",
+    )
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(_security),
     db: Session = Depends(get_session),
@@ -144,6 +175,8 @@ async def get_current_user(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    _raise_if_banned(user)
 
     try:
         setattr(user, "last_active_at", datetime.now(timezone.utc))
@@ -169,7 +202,14 @@ async def get_optional_user(
     except HTTPException:
         return None
 
-    return db.get(User, user_id)
+    user = db.get(User, user_id)
+    if not user:
+        return None
+    try:
+        _raise_if_banned(user)
+    except HTTPException:
+        return None
+    return user
 
 
 def require_roles(*allowed_roles: str):

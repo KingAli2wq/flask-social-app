@@ -38,6 +38,7 @@ from ..schemas import (
     ModerationPostSummary,
     ModerationStats,
     ModerationUserDetail,
+    ModerationUserBanRequest,
     ModerationUserList,
     ModerationUserSummary,
 )
@@ -442,6 +443,100 @@ def delete_moderation_user(db: Session, *, actor: User, user_id: UUID) -> None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete user") from exc
 
 
+def ban_moderation_user(db: Session, *, actor: User, user_id: UUID, payload: ModerationUserBanRequest) -> ModerationUserDetail:
+    actor_id = cast(UUID, actor.id)
+    if actor_id == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot ban your own account")
+
+    actor_role = (getattr(actor, "role", None) or "user").lower()
+    if actor_role not in {"owner", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    target_role = (getattr(user, "role", None) or "user").lower()
+    if target_role == "owner":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot ban an owner account")
+    if target_role == "admin" and actor_role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owners can ban admins")
+
+    unit = (payload.unit or "").lower()
+    value = payload.value
+    now = datetime.now(timezone.utc)
+    banned_until: datetime | None
+
+    if unit == "permanent":
+        banned_until = None
+    else:
+        if value is None:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Ban duration value is required")
+        if int(value) <= 0:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Ban duration must be positive")
+        safe_value = int(value)
+        if unit == "minutes":
+            banned_until = now + timedelta(minutes=safe_value)
+        elif unit == "hours":
+            banned_until = now + timedelta(hours=safe_value)
+        elif unit == "days":
+            banned_until = now + timedelta(days=safe_value)
+        elif unit == "months":
+            banned_until = now + timedelta(days=30 * safe_value)
+        elif unit == "years":
+            banned_until = now + timedelta(days=365 * safe_value)
+        else:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unknown ban unit")
+
+    setattr(user, "banned_at", now)
+    setattr(user, "banned_until", banned_until)
+    setattr(user, "ban_reason", (payload.reason or "").strip() or None)
+    setattr(user, "banned_by", actor_id)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to ban user") from exc
+
+    db.refresh(user)
+    return get_moderation_user(db, user_id=cast(UUID, user.id))
+
+
+def unban_moderation_user(db: Session, *, actor: User, user_id: UUID) -> ModerationUserDetail:
+    actor_id = cast(UUID, actor.id)
+    if actor_id == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot unban your own account")
+
+    actor_role = (getattr(actor, "role", None) or "user").lower()
+    if actor_role not in {"owner", "admin"}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    target_role = (getattr(user, "role", None) or "user").lower()
+    if target_role == "owner":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot modify owner ban state")
+    if target_role == "admin" and actor_role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owners can unban admins")
+
+    setattr(user, "banned_at", None)
+    setattr(user, "banned_until", None)
+    setattr(user, "ban_reason", None)
+    setattr(user, "banned_by", None)
+
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to unban user") from exc
+
+    db.refresh(user)
+    return get_moderation_user(db, user_id=cast(UUID, user.id))
+
+
 def list_moderation_posts(
     db: Session,
     *,
@@ -597,6 +692,15 @@ def _summarize_user(user: User, post_count: int, *, media_count: int = 0) -> Mod
     avatar_url = cast(str | None, user.avatar_url)
     created_at = cast(datetime, user.created_at)
     last_active = cast(datetime | None, user.last_active_at)
+    banned_at = cast(datetime | None, getattr(user, "banned_at", None))
+    banned_until = cast(datetime | None, getattr(user, "banned_until", None))
+    ban_reason = cast(str | None, getattr(user, "ban_reason", None))
+    if banned_at is not None and banned_at.tzinfo is None:
+        banned_at = banned_at.replace(tzinfo=timezone.utc)
+    if banned_until is not None and banned_until.tzinfo is None:
+        banned_until = banned_until.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    is_banned = bool(banned_at) and (banned_until is None or banned_until > now)
     return ModerationUserSummary(
         id=user_id,
         username=username,
@@ -609,6 +713,10 @@ def _summarize_user(user: User, post_count: int, *, media_count: int = 0) -> Mod
         created_at=created_at,
         last_active_at=last_active,
         email_verified=bool(user.email_verified_at),
+        banned_at=banned_at,
+        banned_until=banned_until,
+        ban_reason=ban_reason,
+        is_banned=is_banned,
     )
 
 

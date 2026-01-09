@@ -1,6 +1,7 @@
 """Messaging API routes."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from typing import Any, cast
 from uuid import UUID
@@ -305,6 +306,19 @@ async def message_thread_socket(
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
+
+    user = db.get(User, user_id)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    banned_at = getattr(user, "banned_at", None)
+    banned_until = getattr(user, "banned_until", None)
+    if banned_at is not None:
+        now = datetime.now(timezone.utc)
+        if banned_until is None or banned_until > now:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
 
     if not _user_can_access_chat(db, chat_id, user_id):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

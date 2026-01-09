@@ -2653,6 +2653,72 @@
   // Feed
   // -----------------------------------------------------------------------
 
+  function formatTrendCount(count) {
+    const value = Number(count) || 0;
+    if (value >= 1_000_000) {
+      const fixed = value >= 10_000_000 ? 0 : 1;
+      return `${(value / 1_000_000).toFixed(fixed)}M`;
+    }
+    if (value >= 1_000) {
+      const fixed = value >= 10_000 ? 0 : 1;
+      return `${(value / 1_000).toFixed(fixed)}K`;
+    }
+    return String(value);
+  }
+
+  async function loadTrendingTags() {
+    const list = document.getElementById('trends');
+    if (!list) return;
+
+    const setSingleMessage = message => {
+      list.innerHTML = '';
+      const li = document.createElement('li');
+      li.className = 'text-slate-500';
+      li.textContent = message;
+      list.appendChild(li);
+    };
+
+    try {
+      const data = await apiFetch('/posts/trending-tags?limit=6&window_days=30');
+      const items = Array.isArray(data?.items) ? data.items : [];
+      list.innerHTML = '';
+
+      if (!items.length) {
+        setSingleMessage('No tags yet.');
+        return;
+      }
+
+      items.forEach(item => {
+        const tag = String(item?.tag || '').trim().replace(/^#/, '');
+        if (!tag) return;
+        const count = Number(item?.count) || 0;
+
+        const li = document.createElement('li');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className =
+          'flex w-full items-center justify-between rounded-2xl border border-slate-800/60 bg-slate-950/40 px-4 py-3 text-left text-indigo-200 transition hover:border-indigo-500/50 hover:bg-indigo-500/10';
+
+        const label = document.createElement('span');
+        label.className = 'font-semibold';
+        label.textContent = `#${tag}`;
+
+        const meta = document.createElement('span');
+        meta.className = 'text-xs font-semibold text-slate-400';
+        meta.textContent = `${formatTrendCount(count)}`;
+
+        button.appendChild(label);
+        button.appendChild(meta);
+        button.addEventListener('click', () => navigateToHashtag(tag));
+        li.appendChild(button);
+        list.appendChild(li);
+      });
+    } catch (error) {
+      console.warn('[trending-tags] failed', error);
+      setSingleMessage('Trending tags unavailable');
+    }
+  }
+
   async function initFeedPage() {
     initThemeToggle();
     setupStoriesUI();
@@ -2660,7 +2726,7 @@
     initHashtagFilterFromUrl();
     bindHashtagSearchUI();
     bindHashtagLinks();
-    await Promise.allSettled([loadStories(), loadFeed()]);
+    await Promise.allSettled([loadStories(), loadFeed(), loadTrendingTags()]);
     await applyPendingNotificationTarget();
     setupComposer();
     initRealtimeUpdates();
@@ -9982,9 +10048,6 @@
       case 'view-user':
         openModerationUserDetail(trigger.dataset.userId);
         break;
-      case 'delete-user':
-        handleModerationUserDelete(trigger.dataset.userId, trigger);
-        break;
       case 'view-post':
         openModerationPostDetail(trigger.dataset.postId);
         break;
@@ -10109,7 +10172,6 @@
         <td class="px-4 py-3 text-right">
           <div class="flex flex-wrap items-center justify-end gap-2">
             <button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-user" data-user-id="${user.id}">View</button>
-            ${state.moderation.viewerRole === 'owner' && state.moderation.viewerId !== user.id ? `<button type="button" class="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-user" data-user-id="${user.id}">Delete</button>` : ''}
           </div>
         </td>
       `;
@@ -10502,6 +10564,8 @@
     const isOwner = state.moderation.viewerRole === 'owner';
     const disabledAttr = isOwner ? '' : 'disabled';
     const canEditRole = isOwner && state.moderation.viewerId !== detail.id;
+    const isBanned = Boolean(detail && detail.is_banned);
+    const bannedUntilLabel = detail && detail.banned_until ? formatDate(detail.banned_until) : 'Permanent';
     modal.body.innerHTML = `
       <div class="flex flex-col gap-4 md:flex-row md:items-start">
         <img src="${escapeHtml(detail.avatar_url || DEFAULT_AVATAR)}" alt="avatar" class="h-24 w-24 rounded-3xl border border-slate-800/70 object-cover" />
@@ -10509,6 +10573,40 @@
           <p class="text-lg font-semibold text-white">${escapeHtml(detail.username ? `@${detail.username}` : 'Unknown user')}</p>
           <p class="text-sm text-slate-400">${escapeHtml(detail.display_name || 'No display name')}</p>
           <div class="text-xs text-slate-400">${renderRoleBadgeHtml(detail.role, { includeUser: true })}</div>
+          ${isOwner ? `
+            <div class="rounded-2xl border ${isBanned ? 'border-rose-500/40 bg-rose-500/10' : 'border-slate-800/60 bg-slate-950/60'} px-4 py-3">
+              <p class="text-sm font-semibold ${isBanned ? 'text-rose-100' : 'text-slate-100'}">Account ban</p>
+              ${isBanned ? `
+                <p class="mt-1 text-xs text-rose-100">Banned until: ${escapeHtml(bannedUntilLabel)}</p>
+                ${detail.ban_reason ? `<p class="mt-1 text-xs text-rose-100">Reason: ${escapeHtml(detail.ban_reason)}</p>` : ''}
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                  <button type="button" class="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20" data-user-unban>Unban</button>
+                </div>
+              ` : `
+                <div class="mt-3 grid gap-3 md:grid-cols-3">
+                  <label class="block text-sm font-semibold text-slate-200">Duration
+                    <select class="mt-1 w-full rounded-2xl border border-slate-700/70 bg-slate-950/70 px-3 py-2 text-sm font-medium text-slate-100 focus:border-indigo-500/60 focus:outline-none" data-user-ban-unit>
+                      <option value="minutes">Minutes</option>
+                      <option value="hours">Hours</option>
+                      <option value="days" selected>Days</option>
+                      <option value="months">Months</option>
+                      <option value="years">Years</option>
+                      <option value="permanent">Permanent</option>
+                    </select>
+                  </label>
+                  <label class="block text-sm font-semibold text-slate-200">Value
+                    <input type="number" min="1" step="1" value="7" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" data-user-ban-value />
+                  </label>
+                  <label class="block text-sm font-semibold text-slate-200">Reason
+                    <input type="text" maxlength="500" class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-indigo-500/60 focus:outline-none" placeholder="Optional" data-user-ban-reason />
+                  </label>
+                </div>
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                  <button type="button" class="rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20" data-user-ban>Ban account</button>
+                </div>
+              `}
+            </div>
+          ` : ''}
           ${isOwner ? `
             <div class="flex flex-wrap items-center gap-3 text-sm text-slate-200">
               <button type="button" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 font-semibold transition hover:bg-indigo-500/20" data-user-avatar-upload>Upload avatar</button>
@@ -10557,7 +10655,6 @@
         </div>
         ${isOwner ? `
           <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" class="rounded-2xl border border-rose-500/40 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/10" data-user-delete>Delete account</button>
             <button type="submit" class="rounded-2xl border border-indigo-500/40 bg-indigo-500/10 px-6 py-2 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/20">${tUI('common.saveChanges', 'Save changes')}</button>
           </div>
         ` : '<p class="rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-center text-sm text-slate-400">Only owners can edit profiles.</p>'}
@@ -10598,13 +10695,106 @@
       uploadButton.addEventListener('click', () => uploadInput.click());
       uploadInput.addEventListener('change', () => handleModerationAvatarUpload(detail.id, uploadInput, uploadButton));
     }
-    const deleteBtn = modal.body.querySelector('[data-user-delete]');
-    if (deleteBtn) {
-      deleteBtn.addEventListener('click', () => handleModerationUserDelete(detail.id, deleteBtn));
+    const banUnit = modal.body.querySelector('[data-user-ban-unit]');
+    const banValue = modal.body.querySelector('[data-user-ban-value]');
+    if (banUnit && banValue) {
+      banUnit.addEventListener('change', () => {
+        const unit = (banUnit.value || '').toLowerCase();
+        const isPermanent = unit === 'permanent';
+        banValue.disabled = isPermanent;
+        banValue.classList.toggle('opacity-50', isPermanent);
+      });
+    }
+    const banBtn = modal.body.querySelector('[data-user-ban]');
+    if (banBtn) {
+      banBtn.addEventListener('click', () => handleModerationUserBan(detail.id, banBtn));
+    }
+    const unbanBtn = modal.body.querySelector('[data-user-unban]');
+    if (unbanBtn) {
+      unbanBtn.addEventListener('click', () => handleModerationUserUnban(detail.id, unbanBtn));
     }
     const roleSelect = modal.body.querySelector('[data-mod-role-select]');
     if (roleSelect && state.moderation.viewerRole === 'owner') {
       roleSelect.addEventListener('change', () => handleModerationRoleChange(roleSelect));
+    }
+  }
+
+  async function handleModerationUserBan(userId, button) {
+    if (state.moderation.viewerRole !== 'owner') {
+      showToast('Only owners can ban accounts.', 'warning');
+      return;
+    }
+    if (state.moderation.viewerId === userId) {
+      showToast('You cannot ban your own account.', 'warning');
+      return;
+    }
+    const modalBody = state.moderation.modal.body;
+    const unitNode = modalBody?.querySelector('[data-user-ban-unit]');
+    const valueNode = modalBody?.querySelector('[data-user-ban-value]');
+    const reasonNode = modalBody?.querySelector('[data-user-ban-reason]');
+    const unit = (unitNode?.value || 'days').toLowerCase();
+    const reason = (reasonNode?.value || '').trim() || null;
+    let value = null;
+    if (unit !== 'permanent') {
+      const parsed = Number(valueNode?.value || 0);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        showToast('Please enter a positive duration value.', 'warning');
+        return;
+      }
+      value = Math.floor(parsed);
+    }
+    const label = unit === 'permanent' ? 'permanent' : `${value} ${unit}`;
+    const confirmed = await showModerationConfirm({
+      title: 'Ban account?',
+      message: `This will ban the account (${label}).`,
+      confirmLabel: 'Ban account',
+    });
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      const updated = await apiFetch(`/moderation/users/${encodeURIComponent(userId)}/ban`, {
+        method: 'POST',
+        body: JSON.stringify({ unit, value, reason }),
+      });
+      showToast('Account banned.', 'success');
+      populateModerationUserDetail(updated);
+      await loadModerationDashboard({ silent: true });
+      if (state.moderation.activeDataset === 'users') {
+        await loadModerationDataset('users');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to ban account.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
+  }
+
+  async function handleModerationUserUnban(userId, button) {
+    if (state.moderation.viewerRole !== 'owner') {
+      showToast('Only owners can unban accounts.', 'warning');
+      return;
+    }
+    const confirmed = await showModerationConfirm({
+      title: 'Unban account?',
+      message: 'This will restore access for the account immediately.',
+      confirmLabel: 'Unban',
+    });
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      const updated = await apiFetch(`/moderation/users/${encodeURIComponent(userId)}/unban`, {
+        method: 'POST',
+      });
+      showToast('Account unbanned.', 'success');
+      populateModerationUserDetail(updated);
+      await loadModerationDashboard({ silent: true });
+      if (state.moderation.activeDataset === 'users') {
+        await loadModerationDataset('users');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to unban account.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
     }
   }
 

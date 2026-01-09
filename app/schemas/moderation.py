@@ -29,6 +29,10 @@ class ModerationUserSummary(BaseModel):
     created_at: datetime
     last_active_at: datetime | None = None
     email_verified: bool = False
+    banned_at: datetime | None = None
+    banned_until: datetime | None = None
+    ban_reason: str | None = None
+    is_banned: bool = False
 
 
 class ModerationUserList(BaseModel):
@@ -44,6 +48,12 @@ class ModerationUserDetail(ModerationUserSummary):
     following_count: int = 0
     allow_friend_requests: bool | None = None
     dm_followers_only: bool | None = None
+
+
+class ModerationUserBanRequest(BaseModel):
+    unit: Literal["minutes", "hours", "days", "months", "years", "permanent"]
+    value: int | None = None
+    reason: str | None = None
 
 
 class ModerationUserUpdateRequest(BaseModel):
@@ -132,6 +142,7 @@ __all__ = [
     "ModerationUserList",
     "ModerationUserDetail",
     "ModerationUserUpdateRequest",
+    "ModerationUserBanRequest",
     "ModerationPostSummary",
     "ModerationPostList",
     "ModerationPostDetail",

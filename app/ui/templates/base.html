@@ -44,13 +44,53 @@
         }
         body.light-theme {
             color: #0f172a;
+            background-color: #f8fafc;
         }
         body.light-theme::before {
             background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
         }
-        body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.92) !important; color: #0f172a; box-shadow: 0 20px 45px -15px rgba(15, 23, 42, 0.35); border-color: rgba(148, 163, 184, 0.25) !important; }
+        body.light-theme .card-surface { background-color: rgba(255, 255, 255, 0.96) !important; color: #0f172a; box-shadow: 0 12px 28px -18px rgba(15, 23, 42, 0.22); border-color: rgba(148, 163, 184, 0.35) !important; }
+        body.light-theme .text-slate-100 { color: #0f172a !important; }
+        body.light-theme .text-slate-200 { color: #0f172a !important; }
+        body.light-theme .text-slate-300 { color: #475569 !important; }
         body.light-theme .text-slate-400 { color: #475569 !important; }
         body.light-theme .text-slate-500 { color: #64748b !important; }
+
+        /* Light theme: convert commonly hard-coded dark surfaces to light surfaces. */
+        body.light-theme [class*="bg-slate-950/"] { background-color: rgba(255, 255, 255, 0.92) !important; }
+        body.light-theme [class*="bg-slate-900/"] { background-color: rgba(255, 255, 255, 0.86) !important; }
+        body.light-theme [class*="border-slate-800/"] { border-color: rgba(148, 163, 184, 0.55) !important; }
+        body.light-theme [class*="border-slate-700/"] { border-color: rgba(148, 163, 184, 0.55) !important; }
+
+        /* Navbar + footer need explicit light-mode polish. */
+        body.light-theme header.sticky { background: rgba(248, 250, 252, 0.88) !important; border-bottom-color: rgba(148, 163, 184, 0.35) !important; }
+        body.light-theme header.sticky a { color: #0f172a !important; }
+        body.light-theme header.sticky nav a { color: #475569 !important; }
+        body.light-theme header.sticky nav a:hover { color: #0f172a !important; }
+        body.light-theme header.sticky nav a.text-white { color: #0f172a !important; }
+        body.light-theme header.sticky #theme-toggle,
+        body.light-theme header.sticky #mobile-nav-toggle { color: #0f172a !important; border-color: rgba(148, 163, 184, 0.55) !important; }
+        body.light-theme header.sticky #theme-toggle:hover,
+        body.light-theme header.sticky #mobile-nav-toggle:hover { border-color: rgba(99, 102, 241, 0.45) !important; }
+        body.light-theme header.sticky #nav-auth-btn { color: rgb(99, 102, 241) !important; border-color: rgba(99, 102, 241, 0.35) !important; }
+        body.light-theme header.sticky #nav-auth-btn:hover { background: rgba(99, 102, 241, 0.08) !important; }
+
+        body.light-theme footer { background: rgba(248, 250, 252, 0.86) !important; border-top-color: rgba(148, 163, 184, 0.35) !important; }
+        body.light-theme footer a { color: rgb(99, 102, 241) !important; }
+        body.light-theme footer a:hover { color: #0f172a !important; }
+
+        body.light-theme #mobile-nav-panel [data-mobile-nav-drawer] {
+            background: rgba(248, 250, 252, 0.96) !important;
+            border-left-color: rgba(148, 163, 184, 0.4) !important;
+            box-shadow: 0 24px 50px rgba(15, 23, 42, 0.18) !important;
+        }
+        body.light-theme #mobile-nav-panel nav a.text-white { color: #0f172a !important; }
+
+        /* Keep the app-lock overlay readable even in light mode. */
+        body.light-theme #app-lock-overlay { background-color: rgba(2, 6, 23, 0.9) !important; }
+        body.light-theme #app-lock-overlay .text-slate-200,
+        body.light-theme #app-lock-overlay .text-slate-300,
+        body.light-theme #app-lock-overlay .text-white { color: #ffffff !important; }
         body { padding-bottom: env(safe-area-inset-bottom, 0px); }
         main { width: 100%; }
         .input-field {
