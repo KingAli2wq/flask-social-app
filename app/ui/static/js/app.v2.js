@@ -2734,6 +2734,36 @@
     }
   }
 
+  function bindFeedComposerBlurOnOutsideClick() {
+    if (typeof document === 'undefined') return;
+    if (state.feedComposerBlurBound) return;
+    state.feedComposerBlurBound = true;
+
+    const shouldKeepComposerFocus = target => {
+      if (!target) return false;
+      const el = target instanceof Element ? target : null;
+      if (!el) return false;
+      if (el.id === 'caption-editor') return true;
+      if (el.closest && el.closest('#composer-form')) return true;
+      return false;
+    };
+
+    // Use pointerdown so we blur before focus is reassigned to the clicked control.
+    document.addEventListener('pointerdown', event => {
+      const editor = document.getElementById('caption-editor');
+      if (!editor) return;
+      if (document.activeElement !== editor) return;
+      if (shouldKeepComposerFocus(event.target)) return;
+      blurFeedComposer();
+    });
+
+    // Escape is a handy "defocus" shortcut.
+    document.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      blurFeedComposer();
+    });
+  }
+
   function formatTrendCount(count) {
     const value = Number(count) || 0;
     if (value >= 1_000_000) {
@@ -2810,6 +2840,7 @@
     await Promise.allSettled([loadStories(), loadFeed(), loadTrendingTags()]);
     await applyPendingNotificationTarget();
     setupComposer();
+    bindFeedComposerBlurOnOutsideClick();
     initRealtimeUpdates();
     startFeedAutoRefresh(15000);
   }

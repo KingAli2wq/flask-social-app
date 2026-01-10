@@ -57,6 +57,8 @@ def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> Gro
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create group chat") from exc
 
     # Ensure the group owner is always marked as leader.
+    # Note: If the DB hasn't been migrated yet (missing group_chat_members.role),
+    # we skip the update so group creation still succeeds.
     try:
         db.execute(
             update(group_chat_members)
@@ -69,10 +71,11 @@ def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> Gro
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to finalize group chat membership",
-        ) from exc
+        if not _is_missing_group_chat_role_column(exc):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to finalize group chat membership",
+            ) from exc
 
     db.refresh(chat)
     return chat
@@ -411,13 +414,35 @@ def delete_group_chat(db: Session, *, chat_id: UUID, requester: User) -> None:
 
 
 def get_group_member_roles(db: Session, *, chat_id: UUID) -> dict[str, str]:
+    roles: dict[str, str] = {}
+
     stmt = (
         select(User.username, group_chat_members.c.role)
         .join(User, User.id == group_chat_members.c.user_id)
         .where(group_chat_members.c.group_chat_id == chat_id)
     )
-    roles: dict[str, str] = {}
-    for username, role in db.execute(stmt).all():
+    try:
+        rows = db.execute(stmt).all()
+    except SQLAlchemyError as exc:
+        if not _is_missing_group_chat_role_column(exc):
+            raise
+
+        # Backwards-compatible fallback: treat everyone as member, owner as leader.
+        fallback_stmt = (
+            select(User.username)
+            .join(User, User.id == group_chat_members.c.user_id)
+            .where(group_chat_members.c.group_chat_id == chat_id)
+        )
+        for (username,) in db.execute(fallback_stmt).all():
+            if username:
+                roles[str(username)] = "member"
+
+        chat = db.get(GroupChat, chat_id)
+        if chat is not None and chat.owner is not None and chat.owner.username:
+            roles[str(chat.owner.username)] = "leader"
+        return roles
+
+    for username, role in rows:
         if username:
             roles[str(username)] = str(role or "member")
     return roles
@@ -481,10 +506,20 @@ def set_group_member_role(
         raise
     except SQLAlchemyError as exc:
         db.rollback()
+        if _is_missing_group_chat_role_column(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Group member roles are not available until database migrations are applied",
+            ) from exc
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update role") from exc
 
     db.refresh(chat)
     return chat
+
+
+def _is_missing_group_chat_role_column(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return "group_chat_members.role" in message and "does not exist" in message
 
 
 def remove_group_members(
