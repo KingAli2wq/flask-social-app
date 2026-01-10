@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -119,10 +119,16 @@ class GroupChatResponse(BaseModel):
     owner: str
     owner_id: UUID | None = None
     members: List[str]
+    member_roles: Dict[str, str] = Field(default_factory=dict)
     avatar_url: str | None = None
     lock_code: str
     created_at: datetime
     updated_at: datetime
+
+
+class GroupChatMemberRoleUpdateRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=60)
+    role: Literal["member", "moderator", "admin", "leader"]
 
 
 __all__ = [
@@ -136,4 +142,5 @@ __all__ = [
     "GroupChatInviteRequest",
     "GroupChatUpdateRequest",
     "GroupChatMemberRemoveRequest",
+    "GroupChatMemberRoleUpdateRequest",
 ]

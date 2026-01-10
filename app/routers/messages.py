@@ -6,7 +6,7 @@ import json
 from typing import Any, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +18,7 @@ from ..schemas import (
     GroupChatCreate,
     GroupChatInviteRequest,
     GroupChatMemberRemoveRequest,
+    GroupChatMemberRoleUpdateRequest,
     GroupChatResponse,
     GroupChatUpdateRequest,
     MessageResponse,
@@ -29,13 +30,16 @@ from ..services import (
     add_group_members,
     create_group_chat,
     decode_access_token,
+    delete_group_chat,
     delete_message,
+    get_group_member_roles,
     get_current_user,
     get_group_chat,
     list_group_chats,
     list_messages,
     remove_group_members,
     require_friendship,
+    set_group_member_role,
     send_message,
     update_group_chat,
 )
@@ -140,7 +144,7 @@ def _to_message_response(message: Message) -> MessageResponse:
     )
 
 
-def _to_group_response(chat: GroupChat) -> GroupChatResponse:
+def _to_group_response(db: Session, chat: GroupChat) -> GroupChatResponse:
     owner_username = chat.owner.username if chat.owner else ""
     members: list[str] = []
     for member in chat.members:
@@ -157,6 +161,7 @@ def _to_group_response(chat: GroupChat) -> GroupChatResponse:
         owner=owner_username,
         owner_id=chat.owner_id,
         members=members,
+        member_roles=get_group_member_roles(db, chat_id=cast(UUID, chat.id)),
         avatar_url=chat.avatar_url,
         lock_code=chat.lock_code,
         created_at=chat.created_at,
@@ -223,7 +228,7 @@ async def create_group_endpoint(
     db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = create_group_chat(db, current_user, payload)
-    return _to_group_response(chat)
+    return _to_group_response(db, chat)
 
 
 @router.get("/groups", response_model=list[GroupChatResponse])
@@ -232,7 +237,7 @@ async def list_groups_endpoint(
     db: Session = Depends(get_session),
 ) -> list[GroupChatResponse]:
     chats = list_group_chats(db, user=current_user)
-    return [_to_group_response(chat) for chat in chats]
+    return [_to_group_response(db, chat) for chat in chats]
 
 
 @router.get("/groups/{group_id}", response_model=GroupChatResponse)
@@ -242,7 +247,7 @@ async def group_detail_endpoint(
     db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = get_group_chat(db, chat_id=group_id, requester=current_user)
-    return _to_group_response(chat)
+    return _to_group_response(db, chat)
 
 
 @router.post("/groups/{group_id}/members", response_model=GroupChatResponse)
@@ -253,7 +258,7 @@ async def invite_group_members_endpoint(
     db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = add_group_members(db, chat_id=group_id, requester=current_user, usernames=payload.members)
-    return _to_group_response(chat)
+    return _to_group_response(db, chat)
 
 
 @router.patch("/groups/{group_id}", response_model=GroupChatResponse)
@@ -270,7 +275,34 @@ async def update_group_endpoint(
         name=payload.name,
         avatar_url=payload.avatar_url,
     )
-    return _to_group_response(chat)
+    return _to_group_response(db, chat)
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group_endpoint(
+    group_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> Response:
+    delete_group_chat(db, chat_id=group_id, requester=current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/groups/{group_id}/members/role", response_model=GroupChatResponse)
+async def update_group_member_role_endpoint(
+    group_id: UUID,
+    payload: GroupChatMemberRoleUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+) -> GroupChatResponse:
+    chat = set_group_member_role(
+        db,
+        chat_id=group_id,
+        requester=current_user,
+        username=payload.username,
+        role=payload.role,
+    )
+    return _to_group_response(db, chat)
 
 
 @router.post("/groups/{group_id}/members/remove", response_model=GroupChatResponse)
@@ -281,7 +313,7 @@ async def remove_group_members_endpoint(
     db: Session = Depends(get_session),
 ) -> GroupChatResponse:
     chat = remove_group_members(db, chat_id=group_id, requester=current_user, usernames=payload.members)
-    return _to_group_response(chat)
+    return _to_group_response(db, chat)
 
 
 @router.get("/{chat_id}", response_model=MessageThreadResponse)

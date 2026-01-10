@@ -293,6 +293,17 @@
         title: null,
         membersInput: null,
       },
+      settings: {
+        root: null,
+        form: null,
+        feedback: null,
+        title: null,
+        nameInput: null,
+        avatarInput: null,
+        avatarPreview: null,
+        rolesContainer: null,
+        deleteButton: null,
+      },
     },
     notifications: {
       unread: 0,
@@ -1884,6 +1895,19 @@
       if (controller.elements.form) {
         controller.elements.form.addEventListener('submit', handleSocialAiSubmit);
       }
+      if (controller.elements.input) {
+        if (controller.elements.input.dataset.socialAiKeydownBound !== 'true') {
+          controller.elements.input.dataset.socialAiKeydownBound = 'true';
+          controller.elements.input.addEventListener('focus', () => blurFeedComposer());
+          controller.elements.input.addEventListener('pointerdown', () => blurFeedComposer());
+          controller.elements.input.addEventListener('keydown', event => {
+            // Don't let key events bubble into underlying page handlers (feed composer shortcuts, etc).
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key !== 'Escape' && event.key !== 'Tab') {
+              event.stopPropagation();
+            }
+          });
+        }
+      }
       if (controller.elements.root && controller.elements.root.dataset.socialAiKeybound !== 'true') {
         controller.elements.root.dataset.socialAiKeybound = 'true';
         controller.elements.root.addEventListener(
@@ -1891,6 +1915,7 @@
           event => {
             if (!state.socialAi.open) return;
             // Avoid key events leaking into underlying page handlers/composer.
+            if (event.key === 'Escape') return;
             event.stopPropagation();
           },
           true
@@ -2696,6 +2721,18 @@
   // -----------------------------------------------------------------------
   // Feed
   // -----------------------------------------------------------------------
+
+  function blurFeedComposer() {
+    const editor = document.getElementById('caption-editor');
+    if (!editor) return;
+    if (document.activeElement !== editor) return;
+    if (typeof editor.blur !== 'function') return;
+    try {
+      editor.blur();
+    } catch {
+      // ignore
+    }
+  }
 
   function formatTrendCount(count) {
     const value = Number(count) || 0;
@@ -4207,7 +4244,15 @@
     const submit = document.getElementById('feed-hashtag-submit');
     const clear = document.getElementById('feed-hashtag-clear');
     if (input) {
+      // Ensure the post composer doesn't stay focused when interacting with hashtag search.
+      input.addEventListener('focus', () => blurFeedComposer());
+      input.addEventListener('mousedown', () => blurFeedComposer());
+      input.addEventListener('pointerdown', () => blurFeedComposer());
       input.addEventListener('keydown', event => {
+        // Prevent global handlers (e.g., "type to compose") from stealing input.
+        if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key !== 'Escape' && event.key !== 'Tab') {
+          event.stopPropagation();
+        }
         if (event.key === 'Enter') {
           event.preventDefault();
           applyHashtagFilter(input.value || '');
@@ -6684,6 +6729,7 @@
         members: detail.members || [],
         avatar_url: detail.avatar_url || null,
         owner_id: detail.owner_id || null,
+        member_roles: detail.member_roles || {},
       };
       state.activeGroupLock = detail.lock_code;
       state.activeGroupId = detail.id;
@@ -6711,6 +6757,7 @@
       const { name, avatar_url, members } = state.activeGroupMeta;
       const lockSnippet = shortenLock(state.activeGroupLock);
       const memberText = (members || []).slice(0, 4).join(', ') || 'No members yet';
+      const isLeader = String(state.activeGroupMeta.owner_id || '') === String(getAuth().userId || '');
       header.innerHTML = `
         <div class="flex items-center gap-3">
           <div class="h-12 w-12 overflow-hidden rounded-2xl border border-slate-800/70 bg-slate-900/60">
@@ -6725,6 +6772,11 @@
           <button id="group-invite-trigger" type="button" class="rounded-full border border-emerald-400/40 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-300">
             Invite
           </button>
+          ${isLeader ? `
+            <button id="group-settings-trigger" type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500 hover:text-indigo-200">
+              Settings
+            </button>
+          ` : ''}
           <span id="lock-indicator" class="rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">Lock ${lockSnippet}</span>
         </div>
       `;
@@ -6734,6 +6786,11 @@
       if (inviteTrigger && inviteTrigger.dataset.bound !== 'true') {
         inviteTrigger.dataset.bound = 'true';
         inviteTrigger.addEventListener('click', openGroupInviteModal);
+      }
+      const settingsTrigger = document.getElementById('group-settings-trigger');
+      if (settingsTrigger && settingsTrigger.dataset.bound !== 'true') {
+        settingsTrigger.dataset.bound = 'true';
+        settingsTrigger.addEventListener('click', openGroupSettingsModal);
       }
       return;
     }
@@ -7039,6 +7096,43 @@
       invite.form.dataset.bound = 'true';
       invite.form.addEventListener('submit', handleGroupInviteSubmit);
     }
+
+    const settings = state.groupModals.settings;
+    if (settings.root && settings.root.dataset.bound !== 'true') {
+      settings.root.dataset.bound = 'true';
+      settings.root.addEventListener('click', event => {
+        if (event.target === settings.root) {
+          toggleGroupSettingsModal(false);
+        }
+      });
+    }
+    settings.root?.querySelectorAll('[data-group-settings-close]').forEach(node => {
+      if (node.dataset.bound === 'true') return;
+      node.dataset.bound = 'true';
+      node.addEventListener('click', () => toggleGroupSettingsModal(false));
+    });
+    if (settings.form && settings.form.dataset.bound !== 'true') {
+      settings.form.dataset.bound = 'true';
+      settings.form.addEventListener('submit', handleGroupSettingsSubmit);
+    }
+    const settingsAvatarTrigger = document.getElementById('group-settings-avatar-trigger');
+    if (settingsAvatarTrigger && settingsAvatarTrigger.dataset.bound !== 'true') {
+      settingsAvatarTrigger.dataset.bound = 'true';
+      settingsAvatarTrigger.addEventListener('click', () => settings.avatarInput?.click());
+    }
+    const settingsAvatarClear = document.getElementById('group-settings-avatar-clear');
+    if (settingsAvatarClear && settingsAvatarClear.dataset.bound !== 'true') {
+      settingsAvatarClear.dataset.bound = 'true';
+      settingsAvatarClear.addEventListener('click', () => clearGroupSettingsAvatar());
+    }
+    if (settings.avatarInput && settings.avatarInput.dataset.bound !== 'true') {
+      settings.avatarInput.dataset.bound = 'true';
+      settings.avatarInput.addEventListener('change', () => updateGroupSettingsAvatarPreview());
+    }
+    if (settings.deleteButton && settings.deleteButton.dataset.bound !== 'true') {
+      settings.deleteButton.dataset.bound = 'true';
+      settings.deleteButton.addEventListener('click', handleGroupDelete);
+    }
   }
 
   function cacheGroupModals() {
@@ -7058,6 +7152,19 @@
       invite.feedback = document.getElementById('group-invite-feedback');
       invite.title = document.getElementById('group-invite-title');
       invite.membersInput = document.getElementById('group-invite-members');
+    }
+
+    const settings = state.groupModals.settings;
+    if (!settings.root) {
+      settings.root = document.getElementById('group-settings-modal');
+      settings.form = document.getElementById('group-settings-form');
+      settings.feedback = document.getElementById('group-settings-feedback');
+      settings.title = document.getElementById('group-settings-title');
+      settings.nameInput = document.getElementById('group-settings-name');
+      settings.avatarInput = document.getElementById('group-settings-avatar-input');
+      settings.avatarPreview = document.getElementById('group-settings-avatar-preview');
+      settings.rolesContainer = document.getElementById('group-settings-roles');
+      settings.deleteButton = document.getElementById('group-settings-delete');
     }
   }
 
@@ -7095,6 +7202,256 @@
       if (wasVisible) {
         unlockBodyScroll();
       }
+    }
+  }
+
+  function toggleGroupSettingsModal(show) {
+    cacheGroupModals();
+    const modal = state.groupModals.settings.root;
+    if (!modal) return;
+    if (show) {
+      populateGroupSettingsForm();
+      modal.classList.remove('hidden');
+      lockBodyScroll();
+    } else {
+      const wasVisible = !modal.classList.contains('hidden');
+      modal.classList.add('hidden');
+      if (wasVisible) {
+        unlockBodyScroll();
+      }
+    }
+  }
+
+  function openGroupSettingsModal() {
+    if (!state.activeGroupId || !state.activeGroupMeta) {
+      showToast('Select a group first.', 'warning');
+      return;
+    }
+    const currentUserId = getAuth().userId;
+    if (!currentUserId || String(state.activeGroupMeta.owner_id || '') !== String(currentUserId)) {
+      showToast('Only the group leader can edit settings.', 'warning');
+      return;
+    }
+    toggleGroupSettingsModal(true);
+  }
+
+  function populateGroupSettingsForm() {
+    cacheGroupModals();
+    const settings = state.groupModals.settings;
+    const meta = state.activeGroupMeta;
+    if (!settings || !meta) return;
+
+    if (settings.title) {
+      settings.title.textContent = meta.name || 'Group';
+    }
+    if (settings.nameInput) {
+      settings.nameInput.value = meta.name || '';
+    }
+    if (settings.feedback) {
+      settings.feedback.classList.add('hidden');
+      settings.feedback.textContent = '';
+    }
+    if (settings.avatarPreview) {
+      applyAvatarToImg(settings.avatarPreview, meta.avatar_url);
+    }
+    if (settings.avatarInput) {
+      settings.avatarInput.value = '';
+    }
+    renderGroupRoleEditor();
+  }
+
+  function updateGroupSettingsAvatarPreview() {
+    const settings = state.groupModals.settings;
+    const file = settings.avatarInput?.files && settings.avatarInput.files[0];
+    if (!file) {
+      clearGroupSettingsAvatar();
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = event => {
+      if (settings.avatarPreview) {
+        settings.avatarPreview.src = event.target?.result || DEFAULT_AVATAR;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function clearGroupSettingsAvatar() {
+    const settings = state.groupModals.settings;
+    if (settings.avatarPreview) {
+      applyAvatarToImg(settings.avatarPreview, state.activeGroupMeta?.avatar_url);
+    }
+    if (settings.avatarInput) {
+      settings.avatarInput.value = '';
+    }
+  }
+
+  function renderGroupRoleEditor() {
+    const settings = state.groupModals.settings;
+    const meta = state.activeGroupMeta;
+    const container = settings.rolesContainer;
+    if (!container || !meta) return;
+
+    const currentUserId = getAuth().userId;
+    const isLeader = currentUserId && String(meta.owner_id || '') === String(currentUserId);
+    const members = Array.isArray(meta.members) ? meta.members : [];
+    const roles = meta.member_roles || {};
+
+    const ownerUsername = members.length ? members[0] : null;
+    container.innerHTML = '';
+
+    if (!members.length) {
+      container.innerHTML = '<p class="text-xs text-slate-500">No members yet.</p>';
+      return;
+    }
+
+    members.forEach(username => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between gap-3 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-3 py-2';
+
+      const name = document.createElement('div');
+      name.className = 'text-sm text-slate-200';
+      name.textContent = username ? `@${username}` : 'member';
+
+      const select = document.createElement('select');
+      select.className = 'rounded-xl border border-slate-800/70 bg-slate-900/70 px-3 py-1 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none';
+
+      const currentRole = roles[username] || (username === ownerUsername ? 'leader' : 'member');
+      const options = username === ownerUsername
+        ? ['leader']
+        : ['member', 'moderator', 'admin'];
+      options.forEach(value => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        if (value === currentRole) opt.selected = true;
+        select.appendChild(opt);
+      });
+
+      select.disabled = !isLeader || username === ownerUsername;
+      if (!select.disabled) {
+        select.addEventListener('change', async () => {
+          try {
+            await updateGroupMemberRole(username, select.value);
+          } catch (error) {
+            showToast(error.message || 'Unable to update role.', 'error');
+            select.value = currentRole;
+          }
+        });
+      }
+
+      row.appendChild(name);
+      row.appendChild(select);
+      container.appendChild(row);
+    });
+  }
+
+  async function updateGroupMemberRole(username, role) {
+    const groupId = state.activeGroupId;
+    if (!groupId) throw new Error('Select a group first.');
+    const response = await apiFetch(`/messages/groups/${encodeURIComponent(groupId)}/members/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ username, role }),
+    });
+    if (response?.id) {
+      state.activeGroupMeta = {
+        id: response.id,
+        name: response.name,
+        members: response.members || [],
+        avatar_url: response.avatar_url || null,
+        owner_id: response.owner_id || null,
+        member_roles: response.member_roles || {},
+      };
+      state.activeGroupLock = response.lock_code;
+      state.groupChats = state.groupChats.map(chat => (String(chat.id) === String(response.id) ? response : chat));
+      renderGroupList();
+      updateChatHeader();
+      showToast('Role updated.', 'success');
+    }
+  }
+
+  async function handleGroupSettingsSubmit(event) {
+    event.preventDefault();
+    const settings = state.groupModals.settings;
+    if (!settings.form || !state.activeGroupId || !state.activeGroupMeta) return;
+
+    if (settings.feedback) {
+      settings.feedback.classList.add('hidden');
+      settings.feedback.textContent = '';
+    }
+
+    const nextName = String(settings.nameInput?.value || '').trim();
+    const avatarFile = settings.avatarInput?.files && settings.avatarInput.files[0];
+    const payload = {};
+
+    if (nextName && nextName !== state.activeGroupMeta.name) {
+      payload.name = nextName;
+    }
+
+    settings.form.classList.add('opacity-70');
+    const submitButton = settings.form.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+
+    try {
+      if (avatarFile) {
+        const avatarUrl = await uploadMessageAsset(avatarFile, 'avatars');
+        payload.avatar_url = avatarUrl;
+      }
+
+      if (!Object.keys(payload).length) {
+        throw new Error('No changes provided.');
+      }
+
+      const response = await apiFetch(`/messages/groups/${encodeURIComponent(state.activeGroupId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+
+      showToast('Group updated.', 'success');
+      if (response?.id) {
+        state.activeGroupMeta = {
+          id: response.id,
+          name: response.name,
+          members: response.members || [],
+          avatar_url: response.avatar_url || null,
+          owner_id: response.owner_id || null,
+          member_roles: response.member_roles || {},
+        };
+        state.activeGroupLock = response.lock_code;
+        state.groupChats = state.groupChats.map(chat => (String(chat.id) === String(response.id) ? response : chat));
+        renderGroupList();
+        updateChatHeader();
+      }
+      toggleGroupSettingsModal(false);
+    } catch (error) {
+      const message = error.message || 'Unable to save changes.';
+      if (settings.feedback) {
+        settings.feedback.textContent = message;
+        settings.feedback.classList.remove('hidden');
+      }
+      showToast(message, 'error');
+    } finally {
+      settings.form.classList.remove('opacity-70');
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  async function handleGroupDelete() {
+    if (!state.activeGroupId || !state.activeGroupMeta) {
+      showToast('Select a group first.', 'warning');
+      return;
+    }
+    const confirmed = window.confirm(`Delete "${state.activeGroupMeta.name}" for everyone? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await apiFetch(`/messages/groups/${encodeURIComponent(state.activeGroupId)}`, { method: 'DELETE' });
+      showToast('Group deleted.', 'success');
+      toggleGroupSettingsModal(false);
+      await refreshGroupDirectory();
+      clearThreadView();
+    } catch (error) {
+      showToast(error.message || 'Unable to delete group.', 'error');
     }
   }
 
@@ -7258,6 +7615,7 @@
           members: response.members || [],
           avatar_url: response.avatar_url || null,
           owner_id: response.owner_id || null,
+          member_roles: response.member_roles || {},
         };
         state.activeGroupLock = response.lock_code;
         state.groupChats = state.groupChats.map(chat => (String(chat.id) === String(response.id) ? response : chat));
@@ -11372,6 +11730,10 @@
 
     aiChatElements.send.addEventListener('click', handleInlineAiSend);
     aiChatElements.input.addEventListener('keydown', event => {
+      // Prevent the feed composer/global handlers from hijacking keystrokes.
+      if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key !== 'Escape' && event.key !== 'Tab') {
+        event.stopPropagation();
+      }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         handleInlineAiSend();

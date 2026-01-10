@@ -134,3 +134,56 @@ def test_group_invite_flow(authed_client, user_factory):
     detail_response = member_client.get(f"/messages/groups/{group_id}")
     assert detail_response.status_code == 200
     assert detail_response.json()["name"] == "Lumen Lab"
+
+
+def test_group_leader_can_assign_roles(authed_client, user_factory):
+    owner = user_factory("role-owner")
+    teammate = user_factory("role-teammate")
+    client = authed_client(owner)
+
+    create_response = client.post(
+        "/messages/groups",
+        json={"name": "Roles Room", "members": [teammate.username]},
+    )
+    assert create_response.status_code == 201
+    group_id = create_response.json()["id"]
+
+    promote_response = client.patch(
+        f"/messages/groups/{group_id}/members/role",
+        json={"username": teammate.username, "role": "admin"},
+    )
+    assert promote_response.status_code == 200
+    body = promote_response.json()
+    assert body["member_roles"].get(owner.username) == "leader"
+    assert body["member_roles"].get(teammate.username) == "admin"
+
+    teammate_client = authed_client(teammate)
+    forbidden = teammate_client.patch(
+        f"/messages/groups/{group_id}/members/role",
+        json={"username": owner.username, "role": "leader"},
+    )
+    assert forbidden.status_code == 403
+
+
+def test_group_leader_can_delete_group(authed_client, user_factory):
+    owner = user_factory("delete-owner")
+    teammate = user_factory("delete-teammate")
+    client = authed_client(owner)
+
+    create_response = client.post(
+        "/messages/groups",
+        json={"name": "Temp Group", "members": [teammate.username]},
+    )
+    assert create_response.status_code == 201
+    group_id = create_response.json()["id"]
+
+    teammate_client = authed_client(teammate)
+    forbidden = teammate_client.delete(f"/messages/groups/{group_id}")
+    assert forbidden.status_code == 403
+
+    client = authed_client(owner)
+    deleted = client.delete(f"/messages/groups/{group_id}")
+    assert deleted.status_code == 204
+
+    missing = client.get(f"/messages/groups/{group_id}")
+    assert missing.status_code == 404

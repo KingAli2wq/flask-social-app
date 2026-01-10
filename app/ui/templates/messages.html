@@ -231,6 +231,63 @@
         </form>
     </div>
 </div>
+
+<div id="group-settings-modal" class="fixed inset-0 z-50 hidden flex items-start justify-center overflow-y-auto bg-slate-950/60 px-4 py-8 backdrop-blur sm:items-center">
+    <div class="w-full max-w-lg rounded-3xl border border-slate-800/60 bg-slate-950 p-6 shadow-2xl shadow-black/40">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs uppercase tracking-wide text-slate-500">Group settings</p>
+                <h3 id="group-settings-title" class="text-xl font-semibold text-white">Group</h3>
+            </div>
+            <button type="button" data-group-settings-close class="mobile-tap-target rounded-full bg-slate-900/70 p-2 text-slate-400 transition hover:text-white">✕</button>
+        </div>
+        <p class="mt-2 text-sm text-slate-400">Rename the group, update the avatar, manage roles, or delete the chat.</p>
+
+        <form id="group-settings-form" class="mt-5 space-y-5">
+            <div>
+                <label for="group-settings-name" class="text-xs font-semibold uppercase tracking-wide text-slate-400">Group name</label>
+                <input
+                    id="group-settings-name"
+                    name="group-settings-name"
+                    type="text"
+                    minlength="3"
+                    maxlength="60"
+                    class="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-900/70 px-4 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="Group name"
+                />
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="h-16 w-16 overflow-hidden rounded-full border border-slate-800/70 bg-slate-900/70">
+                    <img id="group-settings-avatar-preview" src="/assets/default-avatar.png" alt="Group avatar" class="h-full w-full object-cover" />
+                </div>
+                <div class="flex flex-col gap-2 text-[11px] text-slate-400">
+                    <input id="group-settings-avatar-input" name="group-settings-avatar" type="file" accept="image/*" class="hidden" />
+                    <button id="group-settings-avatar-trigger" type="button" class="mobile-tap-target rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-100 transition hover:border-indigo-500 hover:text-indigo-200">Upload avatar</button>
+                    <button id="group-settings-avatar-clear" type="button" class="mobile-tap-target text-left text-[11px] text-slate-500 transition hover:text-slate-200">Remove avatar</button>
+                </div>
+            </div>
+
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Member roles</p>
+                <div id="group-settings-roles" class="mt-2 space-y-2 rounded-2xl border border-slate-900/60 bg-slate-950/40 p-3">
+                    <p class="text-xs text-slate-500">Loading members…</p>
+                </div>
+                <p class="mt-2 text-[11px] text-slate-500">Only the group leader can edit roles.</p>
+            </div>
+
+            <div id="group-settings-feedback" class="hidden rounded-2xl border border-rose-500/40 bg-rose-500/10 px-4 py-2 text-sm text-rose-100"></div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <button id="group-settings-delete" type="button" class="mobile-tap-target rounded-full border border-rose-500/50 px-4 py-1.5 text-sm font-semibold text-rose-200 transition hover:border-rose-400 hover:text-rose-100">Delete group</button>
+                <div class="flex items-center gap-3">
+                    <button type="button" data-group-settings-close class="mobile-tap-target rounded-full border border-slate-700/70 px-4 py-1.5 text-sm text-slate-300 transition hover:border-slate-500">Cancel</button>
+                    <button type="submit" class="mobile-tap-target rounded-full bg-emerald-500 px-4 py-1.5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400">Save changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}

@@ -7,11 +7,12 @@ from typing import Any, Iterable, Sequence, cast
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from ..models import GroupChat, Message, User
+from ..models.associations import group_chat_members
 from ..schemas import GroupChatCreate, MessageSendRequest
 from ..security.data_vault import (
     DataVaultError,
@@ -54,6 +55,24 @@ def create_group_chat(db: Session, owner: User, payload: GroupChatCreate) -> Gro
     except SQLAlchemyError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create group chat") from exc
+
+    # Ensure the group owner is always marked as leader.
+    try:
+        db.execute(
+            update(group_chat_members)
+            .where(
+                group_chat_members.c.group_chat_id == chat.id,
+                group_chat_members.c.user_id == owner_id,
+            )
+            .values(role="leader")
+        )
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to finalize group chat membership",
+        ) from exc
 
     db.refresh(chat)
     return chat
@@ -374,6 +393,100 @@ def update_group_chat(
     return chat
 
 
+def delete_group_chat(db: Session, *, chat_id: UUID, requester: User) -> None:
+    chat = db.get(GroupChat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+
+    requester_id = cast(UUID | None, getattr(requester, "id", None))
+    _ensure_group_membership(chat, requester_id)
+    _ensure_group_owner(chat, requester_id)
+
+    try:
+        db.delete(chat)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to delete group chat") from exc
+
+
+def get_group_member_roles(db: Session, *, chat_id: UUID) -> dict[str, str]:
+    stmt = (
+        select(User.username, group_chat_members.c.role)
+        .join(User, User.id == group_chat_members.c.user_id)
+        .where(group_chat_members.c.group_chat_id == chat_id)
+    )
+    roles: dict[str, str] = {}
+    for username, role in db.execute(stmt).all():
+        if username:
+            roles[str(username)] = str(role or "member")
+    return roles
+
+
+def set_group_member_role(
+    db: Session,
+    *,
+    chat_id: UUID,
+    requester: User,
+    username: str,
+    role: str,
+) -> GroupChat:
+    normalized_username = (username or "").strip().lstrip("@").strip()
+    normalized_role = (role or "").strip().lower()
+    if not normalized_username:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username is required")
+
+    allowed_roles = {"member", "moderator", "admin", "leader"}
+    if normalized_role not in allowed_roles:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+
+    chat = db.get(GroupChat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group chat not found")
+
+    requester_id = cast(UUID | None, getattr(requester, "id", None))
+    _ensure_group_membership(chat, requester_id)
+    _ensure_group_owner(chat, requester_id)
+
+    target_user = db.scalar(select(User).where(User.username == normalized_username))
+    if target_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User '{normalized_username}' not found")
+
+    target_user_id = _cast_uuid(cast(UUID | None, getattr(target_user, "id", None)))
+    owner_id = _cast_uuid(cast(UUID | None, getattr(chat, "owner_id", None)))
+    if target_user_id == owner_id:
+        if normalized_role != "leader":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group owner must remain leader")
+    elif normalized_role == "leader":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only the group owner can be leader")
+
+    # Ensure the target is part of the group.
+    member_ids = {_cast_uuid(member.id) for member in chat.members}
+    if target_user_id not in member_ids:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not a member of this group")
+
+    try:
+        result = db.execute(
+            update(group_chat_members)
+            .where(
+                group_chat_members.c.group_chat_id == chat_id,
+                group_chat_members.c.user_id == target_user_id,
+            )
+            .values(role=normalized_role)
+        )
+        if result.rowcount == 0:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group membership not found")
+        db.commit()
+    except HTTPException:
+        raise
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update role") from exc
+
+    db.refresh(chat)
+    return chat
+
+
 def remove_group_members(
     db: Session,
     *,
@@ -429,6 +542,9 @@ __all__ = [
     "get_group_chat",
     "add_group_members",
     "update_group_chat",
+    "delete_group_chat",
+    "get_group_member_roles",
+    "set_group_member_role",
     "remove_group_members",
 ]
 
