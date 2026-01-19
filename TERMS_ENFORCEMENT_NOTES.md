@@ -10,7 +10,10 @@
 - Canonical contract lives in `TERMS_AND_CONDITIONS.md`. It is exposed publicly at `GET /terms` for the UI download link.
 - Constant `CURRENT_TERMS_VERSION = "1.0.0"` resides in `app/constants.py`. Bump this when the markdown changes and re-run migrations if needed.
 - New endpoint `POST /auth/accept-terms` accepts `{"version": "1.0.0"}` and updates the authenticated user.
-- `TermsAcceptanceMiddleware` blocks every authenticated request (401+ routes) until the stored version matches `CURRENT_TERMS_VERSION`. Exemptions: `/auth/login`, `/auth/register`, `/auth/accept-terms`, `/auth/me`, `/health`, `/api`, `/docs`, `/redoc`, `/openapi`, and static mounts.
+- `TermsAcceptanceMiddleware` blocks authenticated requests (Bearer token present) until the stored version matches `CURRENT_TERMS_VERSION`.
+  - Returns HTTP **451** with `{"detail": ..., "current_terms_version": ...}` when blocked.
+  - Skips `OPTIONS` preflight requests.
+  - Exempt paths (configured in `app/main.py`): `/auth/login`, `/auth/register`, `/auth/accept-terms`, `/auth/me`, `/health`, `/api`, `/docs`, `/redoc`, `/openapi`, `/assets`, `/media`, `/videos`.
 
 ## Frontend Behaviour
 - `base.html` now renders a full-screen modal overlay (`#terms-overlay`) that is controlled entirely by `app/ui/static/js/app.v2.js`.

@@ -2,6 +2,8 @@
 
 Scope: inventory current server-rendered UI (templates + shared components + JS) before any responsive refactors.
 
+> Last updated: **January 19, 2026**
+
 ## UI Entry Points
 
 ### Templates
@@ -9,8 +11,10 @@ Location: `app/ui/templates/`
 
 Templates found:
 - `base.html` (global shell)
+- `community_guidelines.html`
 - `home.html`
 - `login.html`
+- `privacy.html`
 - `register.html`
 - `profile.html`
 - `public_profile.html`
@@ -26,6 +30,7 @@ Location: `app/ui/static/`
 
 Assets found:
 - `app/ui/static/js/app.v2.js` (primary UI behaviors)
+- `app/ui/static/css/app.css`
 - `app/ui/static/img/social-sphere-logo.png`
 - `app/ui/static/img/favicon.ico`
 - `app/ui/static/default-avatar.png`
@@ -43,8 +48,13 @@ Pages found:
 - `media.py`
 - `settings.py`
 - `moderation.py`
+- `policy.py` (privacy + community guidelines)
 
 Router: `app/ui/router.py`
+
+## Localization / i18n
+
+The server injects locale + string tables into the UI via helpers under `app/ui/i18n/` and `app/ui/template_helpers.py`.
 
 ## Shared Layout / Component Patterns
 

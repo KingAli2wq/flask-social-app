@@ -1,3 +1,53 @@
+# SocialSphere Backend Development Snapshot
+
+> Last updated: **January 19, 2026**
+
+This repository is a **FastAPI** backend (see `run_server.py` → `app.main:app`) with a server-rendered UI under `app/ui/`.
+
+## Current capabilities (high level)
+
+Based on routers wired in `app/main.py`, the backend currently supports:
+
+- Auth + profiles
+- Posts + stories
+- Uploads + media serving (`/assets`, `/media`, `/videos`)
+- Messaging (DMs + group chats)
+- Notifications
+- Friends + follows
+- Settings (including language preference)
+- Moderation (including user bans)
+- Realtime updates
+- AI features (mentions/posts) + chatbot
+- System utilities (health/api/terms, spellcheck, mailgun webhooks)
+
+## Recent schema milestones (from Alembic migrations)
+
+- **2026-01**: user bans; group chat member roles
+- **2025-12**: support tickets; language preference; AI chat session status
+- **2025-12**: AI chatbot tables; group chat security
+- **2024-12**: roles, follows/friendships, engagement/replies, dislikes, email verification, media engagement
+- **2024-11**: terms acceptance fields; bio + media asset linkage; notification payload email
+
+## Test map (what we currently validate)
+
+There are focused tests under `tests/` covering areas like:
+
+- AI mentions + AI posts
+- Chatbot service
+- Avatar/media upload + retention
+- Group chats
+- Safety + translation + emotion service
+- Data vault
+- User bans
+
+## Quick run / dev commands
+
+- Run server: `python run_server.py` (env: `SOCIAL_SERVER_PORT`, `UVICORN_RELOAD`)
+- Apply migrations: `alembic upgrade head` (or use `apply_migrations.ps1`)
+- Run tests: `pytest`
+
+---
+
 # 🗓️ **December 8, 2025 - Chatbot Harness & Security Prep**
 
 ### ✅ **Completed Today:**
