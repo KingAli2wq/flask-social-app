@@ -197,11 +197,6 @@
             overflow: hidden;
             overscroll-behavior: none;
         }
-        #app-lock-overlay {
-            backdrop-filter: blur(8px);
-            pointer-events: auto;
-        }
-
         @media (max-width: 640px) {
             body { background-attachment: scroll; }
             main { max-width: 100%; padding: 1.25rem 1rem !important; gap: 1.75rem; }
@@ -227,40 +222,6 @@
     </style>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900 transition-colors duration-300 dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 dark:text-slate-100">
-    <div
-        id="app-lock-overlay"
-        class="fixed inset-0 z-[70] hidden items-center justify-center bg-slate-950/90 px-4 py-6"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="app-lock-title"
-    >
-        <div class="w-full max-w-md space-y-6 rounded-3xl border border-indigo-500/40 bg-slate-900/95 p-8 shadow-2xl shadow-indigo-900/40">
-            <div class="space-y-2 text-center">
-                <p class="text-[11px] uppercase tracking-[0.35em] text-indigo-200/80">Access Required</p>
-                <h1 id="app-lock-title" class="text-2xl font-semibold text-white">Enter Access Password</h1>
-                <p class="text-sm text-slate-300">This app is locked. Enter the provided password to continue.</p>
-            </div>
-            <form id="app-lock-form" class="space-y-3">
-                <label class="block text-sm font-semibold text-slate-200" for="app-lock-input">Password</label>
-                <input
-                    id="app-lock-input"
-                    name="password"
-                    type="password"
-                    class="w-full rounded-2xl border border-slate-700/70 bg-slate-950/90 px-4 py-3 text-sm text-white shadow-inner focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-                    autocomplete="off"
-                    spellcheck="false"
-                    required
-                />
-                <p id="app-lock-error" class="text-sm font-semibold text-rose-300 opacity-0">Incorrect password. Try again.</p>
-                <button
-                    type="submit"
-                    class="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-700/30 transition hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-slate-900"
-                >
-                    Unlock
-                </button>
-            </form>
-        </div>
-    </div>
     {{ components.feedback.toast_container() | safe }}
     {{ components.layout.navbar(active=active_nav, t=t) | safe }}
     <main class="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10 md:px-10">
@@ -301,6 +262,17 @@
             </div>
             <div class="space-y-4 border-t border-white/5 bg-slate-950/90 px-8 py-6">
                 <p class="hidden text-sm font-semibold text-slate-300" data-terms-status></p>
+                <label class="grid gap-2 rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-sm text-slate-200">
+                    <span class="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">Confirm your birthday (17+)</span>
+                    <input
+                        id="terms-dob"
+                        data-terms-dob
+                        type="date"
+                        class="input-field"
+                        required
+                    />
+                    <span class="text-xs text-slate-500">We use this to confirm you meet the minimum age requirement.</span>
+                </label>
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <button
                         type="button"
@@ -467,164 +439,6 @@
     <script>
         (() => {
             function bindMobileNavFallback() {
-                const toggle = document.getElementById('mobile-nav-toggle');
-                const panel = document.getElementById('mobile-nav-panel');
-                if (!toggle || !panel || toggle.dataset.bound === 'true') {
-                    return;
-                }
-
-                const backdrop = panel.querySelector('[data-mobile-nav-backdrop]');
-                const drawer = panel.querySelector('[data-mobile-nav-drawer]') || panel;
-
-                const focusableSelector = [
-                    'a[href]',
-                    'button:not([disabled])',
-                    'input:not([disabled])',
-                    'select:not([disabled])',
-                    'textarea:not([disabled])',
-                    '[tabindex]:not([tabindex="-1"])'
-                ].join(',');
-
-                const getFocusable = (root) => {
-                    if (!root) return [];
-                    return Array.from(root.querySelectorAll(focusableSelector)).filter(el => {
-                        if (!(el instanceof HTMLElement)) return false;
-                        if (el.hasAttribute('disabled')) return false;
-                        if (el.getAttribute('aria-hidden') === 'true') return false;
-                        return el.offsetParent !== null;
-                    });
-                };
-
-                let releaseTrap = null;
-                let lastFocused = null;
-                let prevBodyOverflow = '';
-                let prevHtmlOverflow = '';
-
-                // Mirror the primary nav toggle behaviour so mobile users can always navigate.
-                const label = toggle.querySelector('[data-mobile-nav-label]');
-                const openIcon = toggle.querySelector('[data-mobile-nav-icon="open"]');
-                const closeIcon = toggle.querySelector('[data-mobile-nav-icon="close"]');
-                const messages = window.__I18N__ || {};
-                const fallbackMessages = window.__I18N_DEFAULT__ || {};
-                const translate = (key, fallback) => {
-                    if (Object.prototype.hasOwnProperty.call(messages, key)) return messages[key];
-                    if (Object.prototype.hasOwnProperty.call(fallbackMessages, key)) return fallbackMessages[key];
-                    return fallback || key;
-                };
-                const menuLabel = translate('nav.menu', 'Menu');
-                const closeLabel = translate('nav.menu.close', 'Close');
-
-                const setState = next => {
-                    panel.classList.toggle('hidden', !next);
-                    toggle.setAttribute('aria-expanded', next ? 'true' : 'false');
-                    toggle.dataset.open = next ? 'true' : 'false';
-                    if (label) {
-                        label.textContent = next ? closeLabel : menuLabel;
-                    }
-                    if (openIcon && closeIcon) {
-                        openIcon.classList.toggle('hidden', next);
-                        closeIcon.classList.toggle('hidden', !next);
-                    }
-
-                    if (next) {
-                        lastFocused = document.activeElement;
-                        prevBodyOverflow = document.body.style.overflow;
-                        prevHtmlOverflow = document.documentElement.style.overflow;
-                        document.body.style.overflow = 'hidden';
-                        document.documentElement.style.overflow = 'hidden';
-
-                        if (typeof releaseTrap === 'function') {
-                            try { releaseTrap(); } catch (_) {}
-                        }
-
-                        const onKeyDown = (event) => {
-                            if (event.key !== 'Tab') return;
-                            const focusables = getFocusable(drawer);
-                            if (!focusables.length) {
-                                event.preventDefault();
-                                if (drawer && drawer.focus) drawer.focus({ preventScroll: true });
-                                return;
-                            }
-                            const active = document.activeElement;
-                            const idx = focusables.indexOf(active);
-                            const back = event.shiftKey;
-                            let nextIdx;
-                            if (back) {
-                                nextIdx = idx <= 0 ? focusables.length - 1 : idx - 1;
-                            } else {
-                                nextIdx = idx === -1 || idx >= focusables.length - 1 ? 0 : idx + 1;
-                            }
-                            event.preventDefault();
-                            focusables[nextIdx].focus({ preventScroll: true });
-                        };
-
-                        drawer.addEventListener('keydown', onKeyDown);
-                        releaseTrap = () => drawer.removeEventListener('keydown', onKeyDown);
-
-                        const first = getFocusable(drawer)[0] || drawer;
-                        if (first && first.focus) {
-                            try { first.focus({ preventScroll: true }); } catch (_) {}
-                        }
-                    } else {
-                        if (typeof releaseTrap === 'function') {
-                            try { releaseTrap(); } catch (_) {}
-                        }
-                        releaseTrap = null;
-                        document.body.style.overflow = prevBodyOverflow || '';
-                        document.documentElement.style.overflow = prevHtmlOverflow || '';
-                        prevBodyOverflow = '';
-                        prevHtmlOverflow = '';
-                        if (lastFocused && lastFocused.focus) {
-                            try { lastFocused.focus({ preventScroll: true }); } catch (_) {}
-                        }
-                        lastFocused = null;
-                    }
-                };
-
-                const handleDocumentClick = event => {
-                    if (toggle.dataset.open !== 'true') {
-                        return;
-                    }
-                    if (toggle.contains(event.target)) {
-                        return;
-                    }
-                    if (backdrop && backdrop.contains(event.target)) {
-                        setState(false);
-                        return;
-                    }
-                    if (drawer && drawer.contains(event.target)) {
-                        return;
-                    }
-                    if (panel.contains(event.target)) {
-                        setState(false);
-                    }
-                };
-
-                const handleKeydown = event => {
-                    if (event.key === 'Escape' && toggle.dataset.open === 'true') {
-                        setState(false);
-                    }
-                };
-
-                const handleResize = () => {
-                    if (window.innerWidth >= 768 && toggle.dataset.open === 'true') {
-                        setState(false);
-                    }
-                };
-
-                panel.querySelectorAll('a[href]').forEach(link => {
-                    link.addEventListener('click', () => setState(false));
-                });
-
-                toggle.addEventListener('click', event => {
-                    event.preventDefault();
-                    const next = toggle.dataset.open !== 'true';
-                    setState(next);
-                });
-
-                document.addEventListener('click', handleDocumentClick);
-                document.addEventListener('keydown', handleKeydown);
-                window.addEventListener('resize', handleResize);
 
                 setState(false);
                 toggle.dataset.bound = 'true';

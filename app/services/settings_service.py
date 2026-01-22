@@ -50,6 +50,7 @@ def build_settings_response(user: User) -> SettingsResponse:
     return SettingsResponse(
         id=cast(UUID, user.id),
         username=cast(str, user.username),
+        role=str(getattr(user, "role", None) or "user"),
         display_name=cast(str | None, user.display_name),
         email=cast(str | None, user.email),
         email_verified=bool(cast(datetime | None, user.email_verified_at)),

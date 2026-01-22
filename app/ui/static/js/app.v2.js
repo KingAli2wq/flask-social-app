@@ -942,9 +942,15 @@
     setTermsButtonState(true);
     setTermsStatus(tUI('terms.status.saving', 'Saving your acceptance…'), 'info');
     try {
+      const dobInput = document.getElementById('terms-dob');
+      const dobValue = dobInput && dobInput.value ? String(dobInput.value).trim() : '';
+      if (!dobValue) {
+        setTermsStatus('Please enter your birthday to confirm you are 17 or older.', 'error');
+        return;
+      }
       await apiFetch('/auth/accept-terms', {
         method: 'POST',
-        body: JSON.stringify({ version: TERMS_VERSION })
+        body: JSON.stringify({ version: TERMS_VERSION, date_of_birth: dobValue })
       });
       recordTermsAcceptance(TERMS_VERSION);
       setTermsStatus(tUI('terms.status.thanks', 'Thanks! You can continue using SocialSphere.'), 'success');
@@ -9828,9 +9834,88 @@
     try {
       const settings = await apiFetch('/settings/me');
       hydrateSettings(settings);
-      setAuth({ username: settings.username });
+      setAuth({
+        username: settings.username,
+        userId: settings.id,
+        role: settings.role || null
+      });
     } catch (error) {
       showToast(error.message || 'Failed to load settings.', 'error');
+    }
+  }
+
+  function canManagePlatformSafety() {
+    const role = String(getAuth().role || '').toLowerCase();
+    return role === 'owner' || role === 'admin';
+  }
+
+  async function loadAdminAiModerationSetting() {
+    const section = document.getElementById('settings-admin-ai-moderation');
+    const toggle = document.getElementById('settings-admin-ai-moderation-toggle');
+    const meta = document.getElementById('settings-admin-ai-moderation-meta');
+    if (!section || !toggle) return;
+
+    if (!canManagePlatformSafety()) {
+      section.classList.add('hidden');
+      return;
+    }
+
+    try {
+      const result = await apiFetch('/settings/admin/ai-moderation');
+      toggle.checked = Boolean(result && result.enabled);
+      if (meta) {
+        const source = result && result.source ? String(result.source) : 'unknown';
+        const model = result && result.model ? String(result.model) : 'unknown';
+        const baseUrl = result && result.base_url ? String(result.base_url) : 'unknown';
+        const cloud = Boolean(result && result.cloud);
+        const authConfigured = result && result.auth_configured !== undefined ? result.auth_configured : null;
+        const authLabel = cloud
+          ? (authConfigured ? 'auth: configured' : 'auth: missing')
+          : 'auth: n/a';
+        meta.textContent = `Model: ${model} • Host: ${baseUrl} • ${authLabel} • Source: ${source}`;
+      }
+      section.classList.remove('hidden');
+    } catch (error) {
+      // Don't block the page if admin controls fail to load.
+      section.classList.remove('hidden');
+      if (meta) meta.textContent = 'AI moderation setting unavailable.';
+    }
+  }
+
+  async function handleAdminAiModerationToggle(checkbox) {
+    if (!checkbox) return;
+    if (!canManagePlatformSafety()) {
+      showToast('Only owners or admins can change this setting.', 'warning');
+      checkbox.checked = !checkbox.checked;
+      return;
+    }
+
+    const desired = checkbox.checked;
+    checkbox.disabled = true;
+    try {
+      const updated = await apiFetch('/settings/admin/ai-moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: desired })
+      });
+      checkbox.checked = Boolean(updated && updated.enabled);
+      const meta = document.getElementById('settings-admin-ai-moderation-meta');
+      if (meta) {
+        const source = updated && updated.source ? String(updated.source) : 'unknown';
+        const model = updated && updated.model ? String(updated.model) : 'unknown';
+        const baseUrl = updated && updated.base_url ? String(updated.base_url) : 'unknown';
+        const cloud = Boolean(updated && updated.cloud);
+        const authConfigured = updated && updated.auth_configured !== undefined ? updated.auth_configured : null;
+        const authLabel = cloud
+          ? (authConfigured ? 'auth: configured' : 'auth: missing')
+          : 'auth: n/a';
+        meta.textContent = `Model: ${model} • Host: ${baseUrl} • ${authLabel} • Source: ${source}`;
+      }
+      showToast('AI moderation setting updated.', 'success');
+    } catch (error) {
+      checkbox.checked = !desired;
+      showToast(error.message || 'Unable to update AI moderation.', 'error');
+    } finally {
+      checkbox.disabled = false;
     }
   }
 
@@ -9973,6 +10058,12 @@
         await handleSettingsAvatarUpload(file);
         avatarInput.value = '';
       });
+    }
+
+    const adminAiModeration = document.getElementById('settings-admin-ai-moderation-toggle');
+    if (adminAiModeration && adminAiModeration.dataset.bound !== 'true') {
+      adminAiModeration.dataset.bound = 'true';
+      adminAiModeration.addEventListener('change', () => handleAdminAiModerationToggle(adminAiModeration));
     }
   }
 
@@ -10146,6 +10237,7 @@
       console.warn('[settings] failed to hydrate avatar', error);
     }
     await loadSettingsData();
+    await loadAdminAiModerationSetting();
   }
 
   // -----------------------------------------------------------------------

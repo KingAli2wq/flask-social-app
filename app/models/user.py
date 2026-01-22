@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, String
+from sqlalchemy import Boolean, Column, Date, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func, expression
@@ -35,6 +35,7 @@ class User(Base):
     allow_friend_requests = Column(Boolean, nullable=False, server_default=expression.true(), default=True)
     dm_followers_only = Column(Boolean, nullable=False, server_default=expression.false(), default=False)
     language_preference = Column(String(16), nullable=True, server_default="en", default="en")
+    date_of_birth = Column(Date, nullable=True)
     accepted_terms_version = Column(String(32), nullable=True)
     terms_accepted_at = Column(DateTime(timezone=True), nullable=True)
     banned_at = Column(DateTime(timezone=True), nullable=True)

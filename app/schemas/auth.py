@@ -1,6 +1,7 @@
 """Pydantic schemas for authentication endpoints."""
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
@@ -36,3 +37,4 @@ class UserPublicProfile(BaseModel):
 
 class AcceptTermsRequest(BaseModel):
     version: str = Field(..., min_length=1, max_length=32)
+    date_of_birth: date | None = None

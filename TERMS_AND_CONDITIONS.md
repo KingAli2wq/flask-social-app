@@ -1,15 +1,19 @@
 # SocialSphere Terms and Conditions
 
-**Version:** 1.0.0 
-**Effective Date:** November 24, 2024  
+**Version:** 1.1.1
+**Effective Date:** January 22, 2026  
 **Governing Law:** Province of Saskatchewan, Canada
 
 ## 1. Introduction
 These Terms and Conditions (the "Terms") constitute a legally binding agreement between you ("you" or the "User") and SocialSphere Technologies Inc. ("SocialSphere," "we," "us," or "our") regarding your access to and use of the SocialSphere mobile and web applications, APIs, and related services (collectively, the "Services"). By creating an account, accessing, or using any part of the Services, you agree to be bound by these Terms and all incorporated policies. If you do not agree, you must immediately discontinue use of the Services.
 
 ## 2. Eligibility and Jurisdiction
-1. You must be at least 16 years of age to use the Services. Users under 16 are not permitted to access the Services, even with parental or guardian consent. If you are 16 or 17 and under the age of majority in your jurisdiction, your legal guardian must review and accept these Terms on your behalf.  
+1. **You must be at least 17 years of age to use the Services.** Users under 17 are not permitted to access or use the Services **under any circumstances**, including with parental or legal guardian consent, assistance, supervision, or when a parent/legal guardian creates an account on the user's behalf. If you are 17 and under the age of majority in your jurisdiction, your legal guardian should review these Terms with you.  
 2. The Services are controlled and operated from Saskatchewan, Canada. We make no representation that the Services are appropriate or available in other jurisdictions. You are responsible for complying with all applicable local laws.
+
+## 2A. Mature Content Notice
+1. The Services may include user-generated content that some people may consider **mature**, including strong language, suggestive themes, and other material intended for a mature audience.
+2. By using the Services, you acknowledge and accept that you may be exposed to mature content and that you are legally permitted to access such content in your jurisdiction.
 
 ## 3. Accounts and Security
 1. You must provide accurate, current, and complete information when registering an account and keep that information up to date.  

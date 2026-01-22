@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from enum import Enum
 from typing import Any, List, Tuple
@@ -21,6 +22,18 @@ except ImportError:  # pragma: no cover - optional dependency
 
 
 logger = logging.getLogger(__name__)
+
+
+def _ai_moderation_enabled() -> bool:
+    # Keep tests hermetic and avoid unexpected outbound calls unless explicitly enabled.
+    if os.getenv("PYTEST_CURRENT_TEST") is not None and (os.getenv("AI_TEXT_MODERATION_ALLOW_IN_TESTS") or "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+    return (os.getenv("AI_TEXT_MODERATION_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class SafetyViolation(str, Enum):
@@ -327,6 +340,23 @@ def enforce_safe_text(
     field_name: str = "content",
 ) -> None:
     """Raise an HTTPException when the supplied text violates community guidelines."""
+
+    if _ai_moderation_enabled():
+        try:
+            from . import ai_moderation
+
+            decision = ai_moderation.moderate_text(text, field_name=field_name, allow_adult_nsfw=allow_adult_nsfw)
+        except Exception:  # pragma: no cover - defensive
+            decision = None
+
+        if decision is not None and not decision.allowed:
+            detail = {
+                "message": f"{field_name.capitalize()} violates our community guidelines.",
+                "violations": list(decision.violations),
+                "reason": decision.reason,
+                "source": "ai",
+            }
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
     result = check_content_policy(text, allow_adult_nsfw=allow_adult_nsfw)
     if result.allowed:

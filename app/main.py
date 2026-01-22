@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .database import create_session, init_db
-from .middleware import AppLockMiddleware, TermsAcceptanceMiddleware
+from .middleware import TermsAcceptanceMiddleware
 from .routers import (
     ai_router,
     ai_posts_router,
@@ -38,6 +38,7 @@ from .routers import (
     uploads_router,
 )
 from .services import CleanupError, run_cleanup
+from .services.feature_flags import load_feature_flags
 from .ui import router as ui_router
 
 logger = logging.getLogger(__name__)
@@ -67,19 +68,6 @@ app.add_middleware(
 )
 
 app.add_middleware(
-    AppLockMiddleware,
-    exempt_paths=(
-        "/api",
-        "/health",
-        "/docs",
-        "/redoc",
-        "/openapi",
-        "/assets",
-        "/system/app-lock",
-    ),
-)
-
-app.add_middleware(
     TermsAcceptanceMiddleware,
     exempt_paths=(
         "/auth/login",
@@ -92,6 +80,9 @@ app.add_middleware(
         "/redoc",
         "/openapi",
         "/assets",
+        "/terms",
+        "/privacy",
+        "/community-guidelines",
         "/media",
         "/videos",
     ),
@@ -170,6 +161,16 @@ async def _startup() -> None:
     except Exception:  # pragma: no cover - best effort logging
         logger.exception("Database initialisation failed")
         raise
+
+    # Load persisted feature flags into memory (best-effort).
+    try:
+        db = create_session()
+        try:
+            load_feature_flags(db)
+        finally:
+            db.close()
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Failed to load feature flags")
 
     # Surface the resolved droplet IPv4 so operators can verify connectivity.
     logger.info("Connected to droplet (IPv4): %s", DROPLET_HOST)

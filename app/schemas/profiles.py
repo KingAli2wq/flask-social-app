@@ -18,6 +18,7 @@ class ProfileResponse(BaseModel):
     website: HttpUrl | None = None
     avatar_url: HttpUrl | str | None = None
     role: str | None = None
+    age_verified: bool = False
     accepted_terms_version: str | None = None
     terms_accepted_at: datetime | None = None
     created_at: datetime

@@ -1,7 +1,7 @@
 """Authentication related API routes backed by PostgreSQL."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,11 +27,19 @@ def _to_profile_response(user: User) -> ProfileResponse:
         website=user.website,
         avatar_url=user.avatar_url,
         role=getattr(user, "role", None),
+        age_verified=bool(getattr(user, "date_of_birth", None)),
         accepted_terms_version=getattr(user, "accepted_terms_version", None),
         terms_accepted_at=getattr(user, "terms_accepted_at", None),
         created_at=user.created_at,
         last_active_at=user.last_active_at,
     )
+
+
+def _age_on(dob: date, today: date) -> int:
+    years = today.year - dob.year
+    if (today.month, today.day) < (dob.month, dob.day):
+        years -= 1
+    return years
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -86,6 +94,22 @@ async def accept_terms_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Submitted terms version is out of date",
         )
+
+    # Require birth date to enforce 17+ eligibility.
+    existing_dob = getattr(current_user, "date_of_birth", None)
+    submitted_dob = payload.date_of_birth
+    if existing_dob is None:
+        if submitted_dob is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Birth date is required to confirm you are 17 or older",
+            )
+        today = datetime.now(timezone.utc).date()
+        if submitted_dob > today:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Birth date cannot be in the future")
+        if _age_on(submitted_dob, today) < 17:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must be 17 or older to use SocialSphere")
+        current_user.date_of_birth = submitted_dob
 
     current_user.accepted_terms_version = CURRENT_TERMS_VERSION
     current_user.terms_accepted_at = datetime.now(timezone.utc)

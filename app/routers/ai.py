@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from app.services.safety import SafetyViolation, check_content_policy
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("LOCAL_LLM_MODEL", "huihui_ai/qwen3-abliterated:0.6b-q4_K_M"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("LOCAL_LLM_MODEL", "gpt-oss:120b-cloud"))
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY")
 OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
 OLLAMA_STREAM_TIMEOUT = float(os.getenv("OLLAMA_STREAM_TIMEOUT", os.getenv("OLLAMA_TIMEOUT", "120")))

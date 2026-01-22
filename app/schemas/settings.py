@@ -12,6 +12,7 @@ class SettingsResponse(BaseModel):
 
     id: UUID
     username: str
+    role: str = "user"
     display_name: str | None = None
     email: EmailStr | None = None
     email_verified: bool
@@ -25,6 +26,19 @@ class SettingsResponse(BaseModel):
     dm_followers_only: bool = False
     language_preference: str = "en"
     language_options: dict[str, str] = Field(default_factory=dict)
+
+
+class AdminAiModerationSettingsResponse(BaseModel):
+    enabled: bool
+    source: str
+    model: str
+    base_url: str
+    cloud: bool
+    auth_configured: bool | None = None
+
+
+class AdminAiModerationSettingsUpdate(BaseModel):
+    enabled: bool
 
 
 class SettingsProfileUpdate(BaseModel):
@@ -69,4 +83,6 @@ __all__ = [
     "SettingsPasswordUpdate",
     "EmailVerificationConfirmRequest",
     "EmailVerificationResponse",
+    "AdminAiModerationSettingsResponse",
+    "AdminAiModerationSettingsUpdate",
 ]

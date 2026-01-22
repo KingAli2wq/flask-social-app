@@ -10,6 +10,7 @@ from .message import Message
 from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
 from .story import Story
+from .app_setting import AppSetting
 from .user import User
 from .support import SupportTicket
 
@@ -30,6 +31,7 @@ __all__ = [
     "PostDislike",
     "PostComment",
     "Story",
+    "AppSetting",
     "User",
     "AiChatSession",
     "AiChatMessage",

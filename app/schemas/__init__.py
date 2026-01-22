@@ -47,6 +47,8 @@ from .posts import (
 )
 from .profiles import ProfileResponse, ProfileUpdateRequest
 from .settings import (
+    AdminAiModerationSettingsResponse,
+    AdminAiModerationSettingsUpdate,
     EmailVerificationConfirmRequest,
     EmailVerificationResponse,
     SettingsContactUpdate,
@@ -118,6 +120,8 @@ __all__ = [
     "SettingsPreferencesUpdate",
     "SettingsProfileUpdate",
     "SettingsResponse",
+    "AdminAiModerationSettingsResponse",
+    "AdminAiModerationSettingsUpdate",
     "ModerationStats",
     "ModerationUserSummary",
     "ModerationUserList",
