@@ -100,4 +100,5 @@ if (-not (Test-Path $versionsDir)) {
 }
 
 # Run the database migrations using Alembic.
-alembic upgrade head
+# Note: this repo can have multiple Alembic heads; use `heads` to upgrade all branches.
+alembic upgrade heads

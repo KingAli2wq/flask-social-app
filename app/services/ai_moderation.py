@@ -121,7 +121,7 @@ def moderate_text(
         "Given user-supplied text, determine if it should be allowed. "
         "Return ONLY valid JSON with this schema: "
         "{\"allowed\": boolean, \"violations\": string[], \"reason\": string, \"confidence\": number}. "
-        "Violations should be short category tokens like: minors, harassment, violence, self_harm, illegal, doxxing, spam. "
+        "Violations should be short category tokens like: minors, harassment, self_harm, illegal, doxxing, spam. "
         "If the text is allowed, return allowed=true and an empty violations array. "
         "Be strict about minors and exploitation content. "
         "If allow_adult_nsfw is true, adult sexual content may be allowed, but minors content is never allowed."

@@ -70,4 +70,5 @@ foreach ($migrationName in $migrationNames) {
 }
 
 # Apply the latest migrations.
-alembic upgrade head
+# Note: this repo can have multiple Alembic heads; use `heads` to upgrade all branches.
+alembic upgrade heads

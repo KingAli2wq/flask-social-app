@@ -61,7 +61,7 @@ Recent milestone migrations include:
 - 2024-12: roles, follows, friendships, engagement tables, dislikes, email verification, replies
 
 Operationally:
-- Apply migrations with `alembic upgrade head` (or the repo scripts, if preferred).
+- Apply migrations with `alembic upgrade heads` (or the repo scripts, if preferred).
 
 ## Server-Rendered UI (`app/ui/`)
 

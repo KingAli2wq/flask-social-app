@@ -4,7 +4,7 @@
 - Alembic revision `20241124_add_terms_acceptance_fields.py` adds two nullable columns on `users`:
   - `accepted_terms_version` (VARCHAR 32)
   - `terms_accepted_at` (TIMESTAMP with timezone)
-- Run `alembic upgrade head` (or `python run_server.py --migrate`) after pulling to ensure the schema is up to date.
+- Run `alembic upgrade heads` after pulling to ensure the schema is up to date.
 
 ## Backend Contracts
 - Canonical contract lives in `TERMS_AND_CONDITIONS.md`. It is exposed publicly at `GET /terms` for the UI download link.

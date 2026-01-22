@@ -286,7 +286,7 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
     violations: list[SafetyViolation] = []
     reasons: list[str] = []
 
-    if _detect_with_profanity_filter(text):
+    if not allow_adult_nsfw and _detect_with_profanity_filter(text):
         violations.append(SafetyViolation.PROFANITY)
         reasons.append("Profanity detected by lexical filter")
 

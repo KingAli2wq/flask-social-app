@@ -43,7 +43,7 @@ There are focused tests under `tests/` covering areas like:
 ## Quick run / dev commands
 
 - Run server: `python run_server.py` (env: `SOCIAL_SERVER_PORT`, `UVICORN_RELOAD`)
-- Apply migrations: `alembic upgrade head` (or use `apply_migrations.ps1`)
+- Apply migrations: `alembic upgrade heads` (or use `apply_migrations.ps1`)
 - Run tests: `pytest`
 
 ---
