@@ -198,7 +198,7 @@ def send_message(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Group chat is missing an encryption key")
     plaintext_content = (payload.content or "").strip()
     if plaintext_content:
-        enforce_safe_text(plaintext_content, field_name="message")
+        enforce_safe_text(plaintext_content, field_name="message", allow_adult_nsfw=True)
     try:
         message_content = _encrypt_message_body(plaintext_content, group_key=group_encryption_key)
     except (GroupEncryptionError, DataVaultError) as exc:

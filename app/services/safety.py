@@ -65,7 +65,6 @@ _JOIN_SEPARATORS_BETWEEN_LETTERS_RE = re.compile(r"(?<=[a-z])[^a-z0-9\s]+(?=[a-z
 
 # TODO: Replace keyword heuristics with an ML-based moderation model when available.
 _MINOR_KEYWORDS = [
-    "minor",
     "underage",
     "child",
     "children",
@@ -81,6 +80,10 @@ _MINOR_KEYWORDS = [
     "middle school",
     "elementary",
 ]
+
+_UNDERAGE_AGE_RAW_RE = re.compile(
+    r"\b(?:1[0-6])\s*(?:yo|y/o|yr|yrs|year|years)\b|\b(?:1[0-6])\s*years?\s*old\b|\b(?:age|i\s*(?:'|’)?\s*m|i\s+am)\s*(?:1[0-6])\b"
+)
 
 
 # Partial strings avoid keeping the exact hateful term in source while still detecting usage.
@@ -155,12 +158,13 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
     if not normalized.strip():
         return SafetyResult(allowed=True, violations=[], reason="")
 
+    underage_detected = bool(_UNDERAGE_AGE_RAW_RE.search(normalized))
     collapsed, squashed = _normalize_variants(normalized)
 
     violations: list[SafetyViolation] = []
     reasons: list[str] = []
 
-    if _contains_keyword_variants(collapsed, squashed, _MINOR_KEYWORDS):
+    if underage_detected or _contains_keyword_variants(collapsed, squashed, _MINOR_KEYWORDS):
         violations.append(SafetyViolation.MINORS)
         reasons.append("Content references minors")
 
@@ -188,6 +192,17 @@ def enforce_safe_text(
     field_name: str = "content",
 ) -> None:
     """Raise an HTTPException when the supplied text violates community guidelines."""
+
+    # Never allow minors/underage content, even if AI moderation is disabled/unavailable.
+    local = check_content_policy(text, allow_adult_nsfw=allow_adult_nsfw)
+    if SafetyViolation.MINORS in local.violations:
+        detail = {
+            "message": f"{field_name.capitalize()} violates our community guidelines.",
+            "violations": [SafetyViolation.MINORS.value],
+            "reason": local.reason or "Content references minors",
+            "source": "local",
+        }
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
     if _ai_moderation_enabled():
         try:

@@ -122,9 +122,13 @@ def moderate_text(
         "Return ONLY valid JSON with this schema: "
         "{\"allowed\": boolean, \"violations\": string[], \"reason\": string, \"confidence\": number}. "
         "Violations should be short category tokens like: minors, harassment, self_harm, illegal, doxxing, spam. "
+        "Profanity/swearing/vulgar language by itself is allowed; do NOT block content just for profanity. "
+        "Only use 'harassment' when the text targets a person or group with abusive, threatening, or degrading language. "
         "If the text is allowed, return allowed=true and an empty violations array. "
         "Be strict about minors and exploitation content. "
-        "If allow_adult_nsfw is true, adult sexual content may be allowed, but minors content is never allowed."
+        "Minors content is NEVER allowed. If the text sexualizes or involves minors/underage people, set allowed=false and include violation 'minors'. "
+        "If allow_adult_nsfw is true, adult sexual content (including explicit NSFW and sexual propositions directed at another person) may be allowed, "
+        "as long as it does not involve minors, underage themes, or anything indicating an age below 18."
     )
 
     user = {

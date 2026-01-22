@@ -178,7 +178,7 @@ async def create_post_record(
 
     normalized_caption = (caption or "").strip()
     if normalized_caption:
-        enforce_safe_text(normalized_caption, field_name="caption")
+        enforce_safe_text(normalized_caption, field_name="caption", allow_adult_nsfw=True)
 
     post = Post(
         user_id=user_id,
@@ -231,7 +231,7 @@ async def update_post_record(
         text = caption.strip()
         if not text:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Caption cannot be empty")
-        enforce_safe_text(text, field_name="caption")
+        enforce_safe_text(text, field_name="caption", allow_adult_nsfw=True)
         current_caption = cast(str | None, post.caption)
         if text != current_caption:
             setattr(post, "caption", text)
@@ -694,7 +694,7 @@ def create_post_comment(
     text = (content or "").strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
-    enforce_safe_text(text, field_name="comment")
+    enforce_safe_text(text, field_name="comment", allow_adult_nsfw=True)
 
     parent: PostComment | None = None
     if parent_id is not None:
@@ -802,7 +802,7 @@ def update_post_comment(
     text = (content or "").strip()
     if not text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Comment cannot be empty")
-    enforce_safe_text(text, field_name="comment")
+    enforce_safe_text(text, field_name="comment", allow_adult_nsfw=True)
 
     if text == comment.content:
         payload = _serialize_comment(comment, user)
