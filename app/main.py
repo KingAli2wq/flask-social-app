@@ -39,6 +39,7 @@ from .routers import (
 )
 from .services import CleanupError, run_cleanup
 from .services.feature_flags import load_feature_flags
+from .services.migrations import run_migrations_if_needed
 from .ui import router as ui_router
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,14 @@ async def _cleanup_loop() -> None:
 @app.on_event("startup")
 async def _startup() -> None:
     """Ensure database schema and background tasks are ready before serving."""
+
+    # Some PaaS platforms don't run Procfile `release` steps reliably.
+    # As a fallback, attempt to apply Alembic migrations at startup.
+    try:
+        await asyncio.to_thread(run_migrations_if_needed, database_url=settings.database_url)
+    except Exception:  # pragma: no cover - fail fast in prod when schema is incompatible
+        logger.exception("Database migrations failed")
+        raise
 
     try:
         init_db()
