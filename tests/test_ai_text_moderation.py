@@ -30,9 +30,9 @@ def test_enforce_safe_text_blocks_when_ai_flags(monkeypatch):
     assert "harassment" in exc.value.detail.get("violations", [])
 
 
-def test_enforce_safe_text_falls_back_when_ai_disabled(monkeypatch):
+def test_enforce_safe_text_allows_when_ai_disabled(monkeypatch):
     monkeypatch.delenv("AI_TEXT_MODERATION_ENABLED", raising=False)
     monkeypatch.delenv("AI_TEXT_MODERATION_ALLOW_IN_TESTS", raising=False)
 
-    with pytest.raises(HTTPException):
-        enforce_safe_text("Go die you idiot", field_name="message")
+    # AI-only moderation: with AI disabled, we fail open (no legacy rules fallback).
+    enforce_safe_text("Go die you idiot", field_name="message")

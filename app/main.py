@@ -31,6 +31,7 @@ from .routers import (
     posts_router,
     profiles_router,
     realtime_router,
+    reports_router,
     settings_router,
     spellcheck_router,
     system_router,
@@ -104,6 +105,7 @@ app.include_router(messages_router)
 app.include_router(notifications_router)
 app.include_router(profiles_router)
 app.include_router(realtime_router)
+app.include_router(reports_router)
 app.include_router(settings_router)
 app.include_router(spellcheck_router)
 app.include_router(system_router)

@@ -13,6 +13,7 @@ from .moderation import router as moderation_router
 from .posts import router as posts_router
 from .profiles import router as profiles_router
 from .realtime import router as realtime_router
+from .reports import router as reports_router
 from .settings import router as settings_router
 from .spellcheck import router as spellcheck_router
 from .system import router as system_router
@@ -34,6 +35,7 @@ __all__ = [
     "posts_router",
     "profiles_router",
     "realtime_router",
+    "reports_router",
     "settings_router",
     "spellcheck_router",
     "system_router",

@@ -1,25 +1,18 @@
-"""Lightweight, rule-based moderation helpers for Social AI prompts."""
+"""Lightweight, rule-based moderation helpers.
+
+Note: The app primarily uses AI moderation for enforcement. The keyword checks here
+are intentionally minimal.
+"""
 from __future__ import annotations
 
 import logging
 import os
 import re
 from enum import Enum
-from typing import Any, List, Tuple
+from typing import List
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel
-
-try:  # pragma: no cover - optional dependency
-    from better_profanity import profanity as better_profanity
-except ImportError:  # pragma: no cover - optional dependency
-    better_profanity = None  # type: ignore[misc, assignment]
-
-try:  # pragma: no cover - optional dependency
-    from hatesonar import Sonar
-except ImportError:  # pragma: no cover - optional dependency
-    Sonar = None  # type: ignore[misc, assignment]
-
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +31,8 @@ def _ai_moderation_enabled() -> bool:
 
 class SafetyViolation(str, Enum):
     MINORS = "minors"
-    SEXUAL = "sexual"
-    NSFW = "nsfw"
     HATE = "hate"
-    HARASSMENT = "harassment"
     VIOLENCE = "violence"
-    PROFANITY = "profanity"
-    TOXICITY = "toxicity"
 
 
 class SafetyResult(BaseModel):
@@ -94,28 +82,6 @@ _MINOR_KEYWORDS = [
     "elementary",
 ]
 
-_SEXUAL_KEYWORDS = [
-    "sex",
-    "sexual",
-    "fuck",
-    "fucking",
-    "blowjob",
-    "handjob",
-    "oral",
-    "anal",
-    "nsfw",
-    "nude",
-    "nudes",
-    "porn",
-]
-
-_NSFW_KEYWORDS = [
-    "xxx",
-    "camgirl",
-    "onlyfans",
-    "hardcore",
-    "explicit",
-]
 
 # Partial strings avoid keeping the exact hateful term in source while still detecting usage.
 _HATE_PARTIALS = [
@@ -125,35 +91,7 @@ _HATE_PARTIALS = [
     "gas chamber",
     "inferior race",
     "supremacy",
-    "slur",
 ]
-
-_HARASSMENT_PATTERNS = [
-    "kill yourself",
-    "go die",
-    "you should die",
-    "nobody likes you",
-    "worthless",
-    "loser",
-    "idiot",
-    "stupid",
-    "hate you",
-    "bitch",
-    "trash",
-    "moron",
-    "dumb",
-    "jerk",
-]
-
-_HARASSMENT_REGEX = re.compile(
-    r"\b(?:kill\s+yourself|go\s+die|you\s+should\s+die|nobody\s+likes\s+you|worthless|loser|idiot|stupid|hate\s+you|bitch|trash|moron|dumb|jerk)\b",
-    re.IGNORECASE,
-)
-
-
-_sonar_instance: Any | None = None
-_HATESONAR_CONFIDENCE_THRESHOLD = 0.6
-_PROFANITY_FILTER_INIT: bool = False
 
 _VIOLENCE_KEYWORDS = [
     "murder",
@@ -207,75 +145,11 @@ def _contains_keyword_variants(collapsed: str, squashed: str, keywords: list[str
     return False
 
 
-def _contains_harassment(text: str, collapsed: str) -> bool:
-    """Stricter harassment detection: require whole words/phrases."""
-
-    if _HARASSMENT_REGEX.search(text):
-        return True
-    return any(keyword for keyword in _HARASSMENT_PATTERNS if f" {keyword} " in f" {collapsed} ")
-
-
-def _get_hatesonar() -> Any | None:
-    global _sonar_instance
-    if _sonar_instance is not None:
-        return _sonar_instance
-    if Sonar is None:
-        return None
-    try:
-        _sonar_instance = Sonar()
-    except Exception:  # pragma: no cover - defensive guard
-        logger.exception("Failed to initialize HateSonar classifier")
-        _sonar_instance = None
-    return _sonar_instance
-
-
-def _detect_with_profanity_filter(text: str) -> bool:
-    global _PROFANITY_FILTER_INIT
-    if better_profanity is None or not text.strip():
-        return False
-    if not _PROFANITY_FILTER_INIT:
-        try:
-            better_profanity.load_censor_words()
-        except Exception:  # pragma: no cover - defensive guard
-            logger.exception("better_profanity failed to load word list")
-            return False
-        _PROFANITY_FILTER_INIT = True
-    try:
-        return bool(better_profanity.contains_profanity(text))
-    except Exception:  # pragma: no cover - defensive guard
-        logger.exception("better_profanity failed to evaluate input")
-        return False
-
-
-def _detect_with_hatesonar(text: str) -> Tuple[str, float] | None:
-    classifier = _get_hatesonar()
-    if classifier is None or not text.strip():
-        return None
-    try:
-        result = classifier.ping(text=text)
-    except Exception:  # pragma: no cover - defensive guard
-        logger.exception("HateSonar failed to evaluate input")
-        return None
-    top_class = result.get("top_class")
-    if not isinstance(top_class, str):
-        return None
-    confidence = 0.0
-    for entry in result.get("classes", []):
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("class_name") == top_class:
-            try:
-                confidence = float(entry.get("confidence", 0.0))
-            except (TypeError, ValueError):
-                confidence = 0.0
-            break
-    if confidence < _HATESONAR_CONFIDENCE_THRESHOLD:
-        return None
-    return top_class, confidence
-
-
 def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyResult:
-    """Basic keyword-based moderation for all user-supplied text."""
+    """Minimal keyword-based moderation.
+
+    Only checks for: minors, hate, violence.
+    """
 
     normalized = (text or "").lower()
     if not normalized.strip():
@@ -286,21 +160,9 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
     violations: list[SafetyViolation] = []
     reasons: list[str] = []
 
-    if not allow_adult_nsfw and _detect_with_profanity_filter(text):
-        violations.append(SafetyViolation.PROFANITY)
-        reasons.append("Profanity detected by lexical filter")
-
     if _contains_keyword_variants(collapsed, squashed, _MINOR_KEYWORDS):
         violations.append(SafetyViolation.MINORS)
         reasons.append("Content references minors")
-
-    if not allow_adult_nsfw and _contains_keyword_variants(collapsed, squashed, _SEXUAL_KEYWORDS):
-        violations.append(SafetyViolation.SEXUAL)
-        reasons.append("Sexual content is not allowed")
-
-    if not allow_adult_nsfw and _contains_keyword_variants(collapsed, squashed, _NSFW_KEYWORDS):
-        violations.append(SafetyViolation.NSFW)
-        reasons.append("NSFW content is blocked")
 
     hate_detected = _contains_keyword_variants(collapsed, squashed, _HATE_PARTIALS)
     if not hate_detected:
@@ -309,23 +171,9 @@ def check_content_policy(text: str, allow_adult_nsfw: bool = False) -> SafetyRes
         violations.append(SafetyViolation.HATE)
         reasons.append("Hateful or targeting language detected")
 
-    if _contains_harassment(normalized, collapsed):
-        violations.append(SafetyViolation.HARASSMENT)
-        reasons.append("Harassing or bullying language detected")
-
     if _contains_keyword_variants(collapsed, squashed, _VIOLENCE_KEYWORDS):
         violations.append(SafetyViolation.VIOLENCE)
         reasons.append("Graphic violence references detected")
-
-    sonar_signal = _detect_with_hatesonar(text)
-    if sonar_signal:
-        label, _confidence = sonar_signal
-        if label == "hate_speech" and SafetyViolation.HATE not in violations:
-            violations.append(SafetyViolation.HATE)
-            reasons.append("HateSonar classified the text as hate speech")
-        elif label == "offensive_language" and SafetyViolation.TOXICITY not in violations:
-            violations.append(SafetyViolation.TOXICITY)
-            reasons.append("HateSonar detected offensive language")
 
     allowed = len(violations) == 0
 
@@ -358,15 +206,8 @@ def enforce_safe_text(
             }
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
-    result = check_content_policy(text, allow_adult_nsfw=allow_adult_nsfw)
-    if result.allowed:
-        return
-    detail = {
-        "message": f"{field_name.capitalize()} violates our community guidelines.",
-        "violations": [violation.value for violation in result.violations],
-        "reason": result.reason,
-    }
-    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+    # AI-only moderation: if AI moderation is disabled or unavailable, fail open.
+    return
 
 
 __all__ = [

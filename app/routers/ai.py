@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.services.safety import SafetyViolation, check_content_policy
+from app.services import ai_moderation
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("LOCAL_LLM_MODEL", "gpt-oss:120b-cloud"))
@@ -99,8 +99,8 @@ def build_system_prompt(mode: str) -> str:
             "You are Social AI, a kind and concise assistant embedded inside a social media app. "
             "Offer clear, upbeat responses and gently guide users toward positive interactions."
         ),
-        "freaky": (
-            "You are Social AI in Freaky mode. Respond with playful, quirky energy and surprising metaphors, "
+        "Unhinged": (
+            "You are Social AI in Unhinged mode. Respond with playful, quirky energy and surprising metaphors, "
             "yet remain respectful, safe, and genuinely helpful."
         ),
         "deep": (
@@ -139,20 +139,20 @@ async def chat_with_local_model(payload: ChatRequest, request: Request) -> ChatR
     if allow_override:
         allow_adult = True
     else:
-        safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
-        if not safety.allowed:
+        decision = ai_moderation.moderate_text(full_text_to_moderate, field_name="prompt", allow_adult_nsfw=allow_adult)
+        if decision is not None and not decision.allowed:
             logger.warning(
-                "AI prompt blocked by app policy | mode=%s allow_adult=%s violations=%s reason=%s",
+                "AI prompt blocked by AI moderation | mode=%s allow_adult=%s violations=%s reason=%s",
                 payload.mode,
                 allow_adult,
-                [v.value for v in safety.violations],
-                getattr(safety, "reason", None),
+                list(decision.violations),
+                getattr(decision, "reason", None),
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "message": "Your request violates our content policy.",
-                    "violations": [v.value for v in safety.violations],
+                    "violations": list(decision.violations),
                 },
             )
 
@@ -211,17 +211,17 @@ async def chat_with_local_model_stream(payload: ChatRequest, request: Request) -
     if allow_override:
         allow_adult = True
     else:
-        safety = check_content_policy(full_text_to_moderate, allow_adult_nsfw=allow_adult)
-        if not safety.allowed:
+        decision = ai_moderation.moderate_text(full_text_to_moderate, field_name="prompt", allow_adult_nsfw=allow_adult)
+        if decision is not None and not decision.allowed:
             logger.warning(
-                "Blocked AI prompt due to safety violations (stream): %s",
-                ", ".join(v.value for v in safety.violations),
+                "Blocked AI prompt by AI moderation (stream): %s",
+                ", ".join(decision.violations),
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "message": "Your request violates our content policy.",
-                    "violations": [v.value for v in safety.violations],
+                    "violations": list(decision.violations),
                 },
             )
 

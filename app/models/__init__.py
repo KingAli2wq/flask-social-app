@@ -9,6 +9,7 @@ from .media import MediaAsset, MediaComment, MediaDislike, MediaLike
 from .message import Message
 from .notification import Notification
 from .post import Post, PostComment, PostDislike, PostLike
+from .report import Report
 from .story import Story
 from .app_setting import AppSetting
 from .user import User
@@ -30,6 +31,7 @@ __all__ = [
     "PostLike",
     "PostDislike",
     "PostComment",
+    "Report",
     "Story",
     "AppSetting",
     "User",

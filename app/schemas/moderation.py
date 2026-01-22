@@ -13,6 +13,7 @@ class ModerationStats(BaseModel):
     active_last_24h: int
     total_posts: int
     total_media_assets: int
+    open_reports: int = 0
 
 
 class ModerationUserSummary(BaseModel):

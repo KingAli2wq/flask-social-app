@@ -352,6 +352,7 @@
         users: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
         posts: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
         media: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: null },
+        reports: { items: [], total: 0, skip: 0, limit: 25, search: '', filter: 'open' },
       },
       panel: {
         root: null,
@@ -5609,6 +5610,16 @@
           <span>${tUI('common.delete', 'Delete')}</span>
         </button>`
       : '';
+    const reportButtonMarkup = hasAuthToken && !isCurrentUser
+      ? `<button
+          data-role="report-post"
+          data-post-id="${post.id}"
+          class="inline-flex items-center gap-2 rounded-full border border-slate-700/60 bg-slate-800/60 px-4 py-2 text-xs font-semibold text-slate-100 transition hover:border-rose-500/40 hover:bg-rose-500/10"
+        >
+          <span aria-hidden="true">🚩</span>
+          <span>${tUI('common.report', 'Report')}</span>
+        </button>`
+      : '';
     const editButtonMarkup = isCurrentUser
       ? `<button
           data-role="edit-post"
@@ -5732,6 +5743,7 @@
           >${commentCount}</span>
         </button>
         <button class="share-btn inline-flex items-center gap-2 rounded-full bg-slate-800/90 px-4 py-2 transition hover:bg-indigo-600 hover:text-white"><span>↗</span><span>${tUI('common.share', 'Share')}</span></button>
+        ${reportButtonMarkup}
         ${editButtonMarkup}
         ${deleteButtonMarkup}
       </footer>
@@ -5869,7 +5881,41 @@
     if (shareButton) {
       shareButton.addEventListener('click', () => showToast(tUI('share.toast.copied', 'Link copied! Share coming soon.'), 'info'));
     }
+    const reportButton = el.querySelector('[data-role="report-post"]');
+    if (reportButton) {
+      reportButton.addEventListener('click', event => {
+        event.preventDefault();
+        promptAndSubmitReport('post', post.id);
+      });
+    }
     return el;
+  }
+
+  async function promptAndSubmitReport(targetType, targetId) {
+    try {
+      ensureAuthenticated();
+    } catch {
+      return;
+    }
+    if (!targetType || !targetId) return;
+    const reason = (window.prompt('Reason for report (e.g., spam, harassment, hate, violence, minors, impersonation):') || '').trim();
+    if (!reason) return;
+    const descriptionRaw = window.prompt('Brief description (optional):') || '';
+    const description = descriptionRaw.trim() || null;
+    try {
+      await apiFetch('/reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_type: targetType,
+          target_id: targetId,
+          reason,
+          description,
+        }),
+      });
+      showToast('Report submitted. Thanks for helping keep Social Sphere safe.', 'success');
+    } catch (error) {
+      showToast(error.message || 'Unable to submit report.', 'error');
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -6326,6 +6372,7 @@
       }
 
       const followButton = resetButtonListeners('public-profile-follow-button');
+      const reportButton = resetButtonListeners('public-profile-report-button');
       const authMeta = getAuth();
       const isSelf = authMeta?.userId && String(authMeta.userId) === String(profile.id);
       if (followButton) {
@@ -6366,6 +6413,18 @@
               followButton.disabled = false;
               followButton.classList.remove('opacity-70');
             }
+          });
+        }
+      }
+
+      if (reportButton) {
+        if (isSelf || !authMeta?.token) {
+          reportButton.classList.add('hidden');
+        } else {
+          reportButton.classList.remove('hidden');
+          reportButton.addEventListener('click', event => {
+            event.preventDefault();
+            promptAndSubmitReport('user', profile.id);
           });
         }
       }
@@ -7787,6 +7846,11 @@
           </button>
           ${
             outbound
+              ? ''
+              : '<button type="button" data-role="message-report" class="font-semibold hover:text-white">Report</button>'
+          }
+          ${
+            outbound
               ? '<button type="button" data-role="message-delete" class="font-semibold hover:text-white">Delete</button>'
               : ''
           }
@@ -7799,6 +7863,14 @@
       const replyButton = bubble.querySelector('[data-role="message-reply-trigger"]');
       if (replyButton) {
         replyButton.addEventListener('click', () => setMessageReplyTarget(message));
+      }
+      if (!outbound) {
+        const reportButton = bubble.querySelector('[data-role="message-report"]');
+        if (reportButton) {
+          reportButton.addEventListener('click', () => {
+            promptAndSubmitReport('message', message.id);
+          });
+        }
       }
       if (outbound) {
         const deleteButton = bubble.querySelector('[data-role="message-delete"]');
@@ -9849,6 +9921,18 @@
     return role === 'owner' || role === 'admin';
   }
 
+  function formatAiModerationMeta(result) {
+    const source = result && result.source ? String(result.source) : 'unknown';
+    const model = result && result.model ? String(result.model) : 'unknown';
+    const baseUrl = result && result.base_url ? String(result.base_url) : 'unknown';
+    const cloud = Boolean(result && result.cloud);
+    const authConfigured = result && result.auth_configured !== undefined ? result.auth_configured : null;
+    const authLabel = cloud
+      ? (authConfigured ? 'auth: configured' : 'auth: missing')
+      : 'auth: n/a';
+    return `Model: ${model} • Host: ${baseUrl} • ${authLabel} • Source: ${source}`;
+  }
+
   async function loadAdminAiModerationSetting() {
     const section = document.getElementById('settings-admin-ai-moderation');
     const toggle = document.getElementById('settings-admin-ai-moderation-toggle');
@@ -9864,15 +9948,7 @@
       const result = await apiFetch('/settings/admin/ai-moderation');
       toggle.checked = Boolean(result && result.enabled);
       if (meta) {
-        const source = result && result.source ? String(result.source) : 'unknown';
-        const model = result && result.model ? String(result.model) : 'unknown';
-        const baseUrl = result && result.base_url ? String(result.base_url) : 'unknown';
-        const cloud = Boolean(result && result.cloud);
-        const authConfigured = result && result.auth_configured !== undefined ? result.auth_configured : null;
-        const authLabel = cloud
-          ? (authConfigured ? 'auth: configured' : 'auth: missing')
-          : 'auth: n/a';
-        meta.textContent = `Model: ${model} • Host: ${baseUrl} • ${authLabel} • Source: ${source}`;
+        meta.textContent = formatAiModerationMeta(result);
       }
       section.classList.remove('hidden');
     } catch (error) {
@@ -9900,16 +9976,57 @@
       checkbox.checked = Boolean(updated && updated.enabled);
       const meta = document.getElementById('settings-admin-ai-moderation-meta');
       if (meta) {
-        const source = updated && updated.source ? String(updated.source) : 'unknown';
-        const model = updated && updated.model ? String(updated.model) : 'unknown';
-        const baseUrl = updated && updated.base_url ? String(updated.base_url) : 'unknown';
-        const cloud = Boolean(updated && updated.cloud);
-        const authConfigured = updated && updated.auth_configured !== undefined ? updated.auth_configured : null;
-        const authLabel = cloud
-          ? (authConfigured ? 'auth: configured' : 'auth: missing')
-          : 'auth: n/a';
-        meta.textContent = `Model: ${model} • Host: ${baseUrl} • ${authLabel} • Source: ${source}`;
+        meta.textContent = formatAiModerationMeta(updated);
       }
+      showToast('AI moderation setting updated.', 'success');
+    } catch (error) {
+      checkbox.checked = !desired;
+      showToast(error.message || 'Unable to update AI moderation.', 'error');
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  async function loadModerationAiModerationSetting() {
+    const section = document.getElementById('moderation-admin-ai-moderation');
+    const toggle = document.getElementById('moderation-admin-ai-moderation-toggle');
+    const meta = document.getElementById('moderation-admin-ai-moderation-meta');
+    if (!section || !toggle) return;
+
+    if (!canManagePlatformSafety()) {
+      section.classList.add('hidden');
+      return;
+    }
+
+    try {
+      const result = await apiFetch('/settings/admin/ai-moderation');
+      toggle.checked = Boolean(result && result.enabled);
+      if (meta) meta.textContent = formatAiModerationMeta(result);
+      section.classList.remove('hidden');
+    } catch (error) {
+      section.classList.remove('hidden');
+      if (meta) meta.textContent = 'AI moderation setting unavailable.';
+    }
+  }
+
+  async function handleModerationAiModerationToggle(checkbox) {
+    if (!checkbox) return;
+    if (!canManagePlatformSafety()) {
+      showToast('Only owners or admins can change this setting.', 'warning');
+      checkbox.checked = !checkbox.checked;
+      return;
+    }
+
+    const desired = checkbox.checked;
+    checkbox.disabled = true;
+    try {
+      const updated = await apiFetch('/settings/admin/ai-moderation', {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: desired })
+      });
+      checkbox.checked = Boolean(updated && updated.enabled);
+      const meta = document.getElementById('moderation-admin-ai-moderation-meta');
+      if (meta) meta.textContent = formatAiModerationMeta(updated);
       showToast('AI moderation setting updated.', 'success');
     } catch (error) {
       checkbox.checked = !desired;
@@ -10060,11 +10177,7 @@
       });
     }
 
-    const adminAiModeration = document.getElementById('settings-admin-ai-moderation-toggle');
-    if (adminAiModeration && adminAiModeration.dataset.bound !== 'true') {
-      adminAiModeration.dataset.bound = 'true';
-      adminAiModeration.addEventListener('change', () => handleAdminAiModerationToggle(adminAiModeration));
-    }
+    // Platform safety controls live on the moderation dashboard.
   }
 
   async function handleSettingsProfileSave(event) {
@@ -10237,7 +10350,6 @@
       console.warn('[settings] failed to hydrate avatar', error);
     }
     await loadSettingsData();
-    await loadAdminAiModerationSetting();
   }
 
   // -----------------------------------------------------------------------
@@ -10260,6 +10372,11 @@
       label: 'Media library',
       searchPlaceholder: 'Search filename, URL, or creator',
     },
+    reports: {
+      title: 'Open reports',
+      label: 'Reports queue',
+      searchPlaceholder: 'Search reason, description, or reporter',
+    },
   };
 
   async function initModerationPage() {
@@ -10277,6 +10394,7 @@
     state.moderation.viewerId = userId || null;
     cacheModerationNodes();
     bindModerationEvents();
+    await loadModerationAiModerationSetting();
     await loadModerationDashboard();
   }
 
@@ -10331,6 +10449,12 @@
     if (refreshButton && refreshButton.dataset.bound !== 'true') {
       refreshButton.dataset.bound = 'true';
       refreshButton.addEventListener('click', () => loadModerationDashboard());
+    }
+
+    const aiModerationToggle = document.getElementById('moderation-admin-ai-moderation-toggle');
+    if (aiModerationToggle && aiModerationToggle.dataset.bound !== 'true') {
+      aiModerationToggle.dataset.bound = 'true';
+      aiModerationToggle.addEventListener('change', () => handleModerationAiModerationToggle(aiModerationToggle));
     }
 
     const userTable = document.getElementById('moderation-user-table');
@@ -10585,6 +10709,15 @@
       case 'delete-media':
         handleModerationMediaDelete(trigger.dataset.assetId, trigger);
         break;
+      case 'resolve-report':
+        handleModerationReportResolve(trigger.dataset.reportId, trigger);
+        break;
+      case 'view-report-post':
+        openModerationPostDetail(trigger.dataset.postId);
+        break;
+      case 'view-report-user':
+        openModerationUserDetail(trigger.dataset.userId);
+        break;
       default:
         break;
     }
@@ -10602,11 +10735,15 @@
     if (dataset.filter === 'active') {
       params.set('active_only', '1');
     }
+    if (type === 'reports' && dataset.filter) {
+      params.set('status_filter', dataset.filter);
+    }
 
     const endpointMap = {
       users: '/moderation/users',
       posts: '/moderation/posts',
       media: '/moderation/media',
+      reports: '/moderation/reports',
     };
     const endpoint = endpointMap[type];
     if (!endpoint) return [];
@@ -10625,6 +10762,7 @@
       users: buildModerationUsersTable,
       posts: buildModerationPostsTable,
       media: buildModerationMediaTable,
+      reports: buildModerationReportsTable,
     };
     const builder = builderMap[type];
     const hasRows = Boolean(dataset.items.length);
@@ -10822,6 +10960,7 @@
       renderModerationStats(dashboard.stats || {});
       renderModerationUsers(dashboard.recent_users || []);
       renderModerationPosts(dashboard.recent_posts || []);
+      await loadModerationReportsSection();
     } catch (error) {
       if (errorNode && !silent) {
         errorNode.textContent = error.message || 'Unable to load moderation data.';
@@ -10842,6 +10981,7 @@
       'active-last-24h': stats.active_last_24h ?? 0,
       'total-posts': stats.total_posts ?? 0,
       'total-media-assets': stats.total_media_assets ?? 0,
+      'open-reports': stats.open_reports ?? 0,
     };
     Object.entries(mapping).forEach(([key, value]) => {
       const node = document.querySelector(`[data-moderation-stat="${key}"]`);
@@ -10953,6 +11093,142 @@
     posts.forEach(post => {
       body.appendChild(buildModerationPostRow(post));
     });
+  }
+
+  async function loadModerationReportsSection() {
+    const body = document.getElementById('moderation-report-body');
+    const empty = document.getElementById('moderation-reports-empty');
+    if (!body) return;
+    body.innerHTML = '';
+    if (empty) empty.classList.add('hidden');
+
+    try {
+      const response = await apiFetch('/moderation/reports?skip=0&limit=8&status_filter=open');
+      const items = Array.isArray(response.items) ? response.items : [];
+      if (!items.length) {
+        if (empty) empty.classList.remove('hidden');
+        return;
+      }
+      items.forEach(report => {
+        body.appendChild(buildModerationReportRow(report));
+      });
+    } catch (error) {
+      const message = error.message || 'Unable to load reports.';
+      body.innerHTML = `<tr><td colspan="4" class="px-4 py-4 text-sm text-rose-200">${escapeHtml(message)}</td></tr>`;
+    }
+  }
+
+  function buildModerationReportRow(report) {
+    const row = document.createElement('tr');
+    row.className = 'border-b border-slate-800/60 last:border-0';
+    const targetType = (report.target_type || '').toLowerCase();
+    const targetId = report.target_id || report.targetId || '';
+    const targetUserId = report.target_user_id || null;
+
+    const targetLabel = targetType === 'post'
+      ? 'Post'
+      : targetType === 'message'
+      ? 'Message'
+      : targetType === 'user'
+      ? 'Account'
+      : 'Target';
+
+    const reporter = report.reporter_username ? `@${report.reporter_username}` : truncateId(report.reporter_id);
+
+    const targetCell = document.createElement('td');
+    targetCell.className = 'px-4 py-3 align-top';
+    targetCell.innerHTML = `
+      <div class="flex flex-col gap-1">
+        <span class="font-semibold text-white">${escapeHtml(targetLabel)}</span>
+        <span class="text-[11px] text-slate-500">${escapeHtml(String(targetId).slice(0, 8))}…</span>
+        <span class="text-[11px] text-slate-500">${report.created_at ? formatDate(report.created_at) : '—'}</span>
+      </div>
+    `;
+    row.appendChild(targetCell);
+
+    const reporterCell = document.createElement('td');
+    reporterCell.className = 'px-4 py-3 align-top text-sm text-slate-200';
+    reporterCell.textContent = reporter;
+    row.appendChild(reporterCell);
+
+    const reasonCell = document.createElement('td');
+    reasonCell.className = 'px-4 py-3 align-top text-sm text-slate-200';
+    const reasonText = truncateText(report.reason || '', 120);
+    const descriptionText = truncateText(report.description || '', 160);
+    reasonCell.innerHTML = `
+      <div class="space-y-1">
+        <div class="font-semibold text-slate-100">${escapeHtml(reasonText || '—')}</div>
+        ${descriptionText ? `<div class="text-xs text-slate-400">${escapeHtml(descriptionText)}</div>` : ''}
+      </div>
+    `;
+    row.appendChild(reasonCell);
+
+    const actionsCell = document.createElement('td');
+    actionsCell.className = 'px-4 py-3 text-right align-top';
+    const buttons = [];
+
+    if (targetType === 'post' && targetId) {
+      buttons.push(`<button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-report-post" data-post-id="${targetId}">Preview</button>`);
+      if (hasModeratorPrivileges(state.moderation.viewerRole)) {
+        buttons.push(`<button type="button" class="rounded-full border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10" data-mod-action="delete-post" data-post-id="${targetId}">Delete post</button>`);
+      }
+    }
+
+    if (targetUserId) {
+      buttons.push(`<button type="button" class="rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-indigo-500/60" data-mod-action="view-report-user" data-user-id="${targetUserId}">User</button>`);
+    }
+
+    buttons.push(`<button type="button" class="rounded-full border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/10" data-mod-action="resolve-report" data-report-id="${report.id}">Resolve</button>`);
+
+    actionsCell.innerHTML = `<div class="flex flex-wrap items-center justify-end gap-2">${buttons.join('')}</div>`;
+    row.appendChild(actionsCell);
+
+    return row;
+  }
+
+  function buildModerationReportsTable(items) {
+    const table = document.createElement('table');
+    table.className = 'min-w-full divide-y divide-slate-800/60 text-left text-sm text-slate-200';
+    table.innerHTML = `
+      <thead>
+        <tr class="text-xs uppercase tracking-wider text-slate-400">
+          <th class="px-4 py-2 font-medium">Target</th>
+          <th class="px-4 py-2 font-medium">Reporter</th>
+          <th class="px-4 py-2 font-medium">Reason</th>
+          <th class="px-4 py-2 font-medium text-right">Actions</th>
+        </tr>
+      </thead>
+    `;
+    const body = document.createElement('tbody');
+    items.forEach(report => body.appendChild(buildModerationReportRow(report)));
+    table.appendChild(body);
+    return table;
+  }
+
+  async function handleModerationReportResolve(reportId, button) {
+    if (!reportId) return;
+    const confirmed = await showModerationConfirm({
+      title: 'Resolve report?',
+      message: 'This will mark the report as resolved.',
+      confirmLabel: 'Resolve',
+    });
+    if (!confirmed) return;
+    toggleInteractiveState(button, true);
+    try {
+      await apiFetch(`/moderation/reports/${encodeURIComponent(reportId)}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ action_taken: null }),
+      });
+      showToast('Report resolved.', 'success');
+      await loadModerationDashboard({ silent: true });
+      if (state.moderation.activeDataset === 'reports') {
+        await loadModerationDataset('reports');
+      }
+    } catch (error) {
+      showToast(error.message || 'Unable to resolve report.', 'error');
+    } finally {
+      toggleInteractiveState(button, false);
+    }
   }
 
   function buildModerationPostRow(post) {

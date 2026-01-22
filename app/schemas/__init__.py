@@ -46,6 +46,13 @@ from .posts import (
     PostResponse,
 )
 from .profiles import ProfileResponse, ProfileUpdateRequest
+from .reports import (
+    ModerationReportList,
+    ModerationReportResolveRequest,
+    ModerationReportSummary,
+    ReportCreateRequest,
+    ReportCreateResponse,
+)
 from .settings import (
     AdminAiModerationSettingsResponse,
     AdminAiModerationSettingsUpdate,
@@ -149,6 +156,11 @@ __all__ = [
     "HashtagTrendsResponse",
     "ProfileResponse",
     "ProfileUpdateRequest",
+    "ReportCreateRequest",
+    "ReportCreateResponse",
+    "ModerationReportSummary",
+    "ModerationReportList",
+    "ModerationReportResolveRequest",
     "StoryCreate",
     "StoryItem",
     "StoryAuthor",

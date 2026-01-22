@@ -25,6 +25,7 @@ from ..models import (
     PostComment,
     PostDislike,
     PostLike,
+    Report,
     User,
 )
 from .media_crypto import reveal_media_value
@@ -168,12 +169,14 @@ def load_moderation_dashboard(db: Session, *, recent_limit: int = 8) -> Moderati
     )
     total_posts = int(db.scalar(select(func.count(Post.id))) or 0)
     total_media_assets = int(db.scalar(select(func.count(MediaAsset.id))) or 0)
+    open_reports = int(db.scalar(select(func.count(Report.id)).where(Report.status == "open")) or 0)
 
     stats = ModerationStats(
         total_users=total_users,
         active_last_24h=active_last_24h,
         total_posts=total_posts,
         total_media_assets=total_media_assets,
+        open_reports=open_reports,
     )
 
     post_counts_subquery = (

@@ -16,6 +16,9 @@ from ..schemas import (
     ModerationPostDetail,
     ModerationPostList,
     ModerationPostUpdateRequest,
+    ModerationReportList,
+    ModerationReportResolveRequest,
+    ModerationReportSummary,
     ModerationRoleUpdateRequest,
     ModerationUserBanRequest,
     ModerationUserDetail,
@@ -46,6 +49,8 @@ from ..services import (
     update_post_record,
     update_user_role,
 )
+
+from ..services.report_service import get_report_summary, list_reports, resolve_report
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
 
@@ -242,6 +247,30 @@ async def moderation_media_delete_endpoint(
     current_user: User = Depends(require_roles("owner", "admin")),
 ) -> None:
     delete_media_asset(db, asset_id=asset_id, delete_remote=True)
+
+
+@router.get("/reports", response_model=ModerationReportList)
+async def moderation_reports_endpoint(
+    skip: int = 0,
+    limit: int = 25,
+    search: str | None = None,
+    status_filter: str | None = "open",
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> ModerationReportList:
+    total, items = list_reports(db, skip=skip, limit=limit, search=search, status_filter=status_filter)
+    return ModerationReportList(total=total, items=[ModerationReportSummary(**item) for item in items])
+
+
+@router.post("/reports/{report_id}/resolve", response_model=ModerationReportSummary)
+async def moderation_report_resolve_endpoint(
+    report_id: UUID,
+    payload: ModerationReportResolveRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(require_roles("owner", "admin")),
+) -> ModerationReportSummary:
+    resolve_report(db, report_id=report_id, actor=current_user, action_taken=payload.action_taken)
+    return ModerationReportSummary(**get_report_summary(db, report_id=report_id))
 
 
 __all__ = ["router"]
