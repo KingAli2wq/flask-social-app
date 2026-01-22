@@ -39,17 +39,11 @@ if (-not $databaseUrl) {
 }
 
 $iniContent = Get-Content $alembicIni
-$iniUpdated = $false
-$iniContent = $iniContent | ForEach-Object {
-    if ($_ -match '^\s*sqlalchemy\.url\s*=') {
-        $iniUpdated = $true
-        "sqlalchemy.url = $databaseUrl"
-    }
-    else {
-        $_
-    }
+
+if ($iniContent -match '^\s*sqlalchemy\.url\s*=') {
+    $iniContent = $iniContent -replace '^\s*sqlalchemy\.url\s*=.*$', "sqlalchemy.url = $databaseUrl"
 }
-if (-not $iniUpdated) {
+else {
     $iniContent += "sqlalchemy.url = $databaseUrl"
 }
 Set-Content -Path $alembicIni -Value $iniContent
